@@ -1,0 +1,56 @@
+/* inlined from ../_variables.css */
+:host {
+  --theme-bg: hsl(0 0% 100%);
+  --theme-bd: hsl(0 0% 100% / .8);
+  --theme-bd-2: hsl(0 0% 100% / .9);
+  --theme-color: hotpink;
+  --theme-blue: hsl(188 90% 45%);
+  --theme-purple: hsl(267 100% 58%);
+
+  --theme-text_color: hsl(0 0% 10%);
+  --theme-icon_color: hsl(0 0% 20%);
+  --theme-icon_hover-bg: hsl(0 0% 95%);
+  --theme-icon_active-bg: hsl(0 0% 90%);
+
+  --layer-top: 2147483647;
+  --layer-1: 2147483646;
+  --layer-2: 2147483645;
+  --layer-3: 2147483644;
+  --layer-4: 2147483643;
+  --layer-5: 2147483642;
+
+  @media (prefers-color-scheme: dark) {
+    --theme-bg: hsl(0 0% 10%);
+    --theme-bd: hsl(0 0% 10% / .8);
+    --theme-bd-2: hsl(0 0% 10% / .9);
+
+    --theme-text_color: hsl(0 0% 80%);
+    --theme-icon_color: hsl(0 0% 60%);
+    --theme-icon_hover-bg: hsl(0 0% 15%);
+    --theme-icon_active-bg: hsl(0 0% 20%);
+  }
+}
+
+
+:host g {
+  transform: translate(calc(50% - 10%), calc(50% - .25em));
+}
+
+:host rect {
+  vector-effect: non-scaling-stroke;
+  height: .5em;
+  width: 20%;
+  max-width: 10vmax;
+  stroke: var(--theme-color);
+  stroke-width: 1px;
+  stroke-linecap: round;
+  rx: 4;
+}
+
+:host > svg {
+  z-index: var(--layer-5);
+
+  &[hovering] rect {
+    fill: var(--theme-color);
+  }
+}

@@ -1,0 +1,211 @@
+// @vitest-environment node
+
+import { JSDOM } from 'jsdom';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+let dom: JSDOM;
+let previousGlobals: Record<string, unknown>;
+
+beforeAll(() => {
+  dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com/',
+  });
+
+  previousGlobals = {
+    window: globalThis.window,
+    document: globalThis.document,
+    customElements: globalThis.customElements,
+    HTMLElement: globalThis.HTMLElement,
+    Element: globalThis.Element,
+    NodeList: globalThis.NodeList,
+    MutationObserver: globalThis.MutationObserver,
+    DOMException: globalThis.DOMException,
+    CSSStyleSheet: globalThis.CSSStyleSheet,
+    Document: globalThis.Document,
+    DOMParser: globalThis.DOMParser,
+    getComputedStyle: globalThis.getComputedStyle,
+    navigator: globalThis.navigator,
+  };
+
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    customElements: dom.window.customElements,
+    HTMLElement: dom.window.HTMLElement,
+    Element: dom.window.Element,
+    NodeList: dom.window.NodeList,
+    MutationObserver: dom.window.MutationObserver,
+    DOMException: dom.window.DOMException,
+    CSSStyleSheet: dom.window.CSSStyleSheet,
+    Document: dom.window.Document,
+    DOMParser: dom.window.DOMParser,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+  });
+
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: dom.window.navigator,
+  });
+});
+
+afterAll(() => {
+  dom.window.close();
+  const { navigator: previousNavigator, ...restGlobals } = previousGlobals;
+  Object.assign(globalThis, restGlobals);
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: previousNavigator,
+  });
+});
+
+describe('page-edit bottom toolbar shell', () => {
+  it('includes flat bottom toolbar shell styles for idle and selected states', async () => {
+    const { visbug_css } = await import(
+      '../../public/page-edit/vendor/app/components/styles.store.js'
+    );
+
+    expect(visbug_css).toContain('[data-bottom-toolbar]');
+    expect(visbug_css).toContain('[data-bottom-toolbar-hint]');
+    expect(visbug_css).toContain('[data-bottom-tools]');
+    expect(visbug_css).toContain('[data-bottom-tool]');
+    expect(visbug_css).toContain('[data-bottom-menu]');
+    expect(visbug_css).not.toContain('[data-tool-groups]');
+  });
+
+  it('renders an idle bottom hint instead of the old left rail when nothing is selected', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    const markup = visbug.render();
+    const shellMarkup = markup.replace(/<style[\s\S]*?<\/style>/, '');
+
+    expect(shellMarkup).toContain('data-bottom-toolbar="idle"');
+    expect(shellMarkup).toContain('data-bottom-toolbar-hint');
+    expect(shellMarkup).not.toContain('data-toolbar-panel');
+    expect(shellMarkup).not.toContain('data-tool-list');
+    expect(shellMarkup).not.toContain('data-tool-group=');
+  });
+
+  it('renders flat bottom tools and popup action menus after an element is selected', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    document.body.innerHTML = '<div id="target">Hello</div>';
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('target')];
+      },
+    };
+
+    const markup = visbug.render();
+    const shellMarkup = markup.replace(/<style[\s\S]*?<\/style>/, '');
+
+    expect(shellMarkup).toContain('data-bottom-toolbar="selected"');
+    expect(shellMarkup).toContain('data-bottom-tools');
+    expect(shellMarkup).toContain('data-bottom-tool="text"');
+    expect(shellMarkup).toContain('data-bottom-tool="position"');
+    expect(shellMarkup).toContain('data-bottom-tool="size"');
+    expect(shellMarkup).toContain('data-bottom-tool="padding"');
+    expect(shellMarkup).toContain('data-bottom-tool="move"');
+    expect(shellMarkup).toContain('data-bottom-tool="inspect"');
+    expect(shellMarkup).toContain('data-bottom-divider');
+    expect(shellMarkup).toContain('data-bottom-menu');
+    expect(shellMarkup).toContain('data-bottom-action="up-1"');
+    expect(shellMarkup).toContain('data-bottom-action="width-plus-1"');
+    expect(shellMarkup).toContain('data-bottom-action="all-plus-1"');
+    expect(shellMarkup).not.toContain('data-tool-group=');
+    expect(shellMarkup).not.toContain('data-subtool=');
+  });
+
+  it('maps flat bottom tools to the current page-edit features', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    const tools = visbug.getBottomToolbarTools();
+
+    expect(tools.map(tool => tool.id)).toEqual([
+      'text',
+      'position',
+      'size',
+      'padding',
+      'margin',
+      'flex',
+      'font',
+      'color',
+      'shadow',
+      'move',
+      'guides',
+      'inspect',
+    ]);
+    expect(tools.find(tool => tool.id === 'position')?.feature).toBe('position');
+    expect(tools.find(tool => tool.id === 'size')?.feature).toBe('position');
+    expect(visbug.getBottomToolbarToolActions('position')[0]?.map(action => action.id)).toEqual([
+      'up-1',
+      'down-1',
+      'left-1',
+      'right-1',
+    ]);
+    expect(visbug.getBottomToolbarToolActions('color').length).toBeGreaterThan(0);
+  });
+
+  it('does not auto-activate an editing tool in local snapshot mode', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    const toolSelectedSpy = vi.spyOn(visbug, 'toolSelected');
+
+    visbug.connectedCallback();
+
+    expect(toolSelectedSpy).not.toHaveBeenCalled();
+    expect(visbug.activeTool).toBe(null);
+
+    visbug.disconnectedCallback();
+  });
+
+  it('activates the mapped feature when a bottom toolbar tool is chosen', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.body];
+      },
+      refreshSelectionUi: vi.fn(),
+    };
+    const positionSpy = vi.spyOn(visbug, 'position').mockImplementation(() => {
+      // @ts-expect-error test double
+      visbug.deactivate_feature = vi.fn();
+    });
+
+    visbug.activateBottomToolbarTool('position');
+
+    expect(positionSpy).toHaveBeenCalledOnce();
+    expect(visbug.activeTool).toBe('position');
+  });
+});

@@ -1,0 +1,40 @@
+html[data-webmcp-page-edit-config] [data-measuring=true] {
+  cursor: crosshair;
+}
+
+html[data-webmcp-page-edit-config] body:not([testing]) [data-selected=true] {
+  transition: all 0.15s ease;
+}
+
+html[data-webmcp-page-edit-config] [data-pseudo-select=true] {
+  outline: 1px dashed hsl(267 100% 58%);
+}
+
+html[data-webmcp-page-edit-config] [data-selected-hide=true][data-selected=true]::after {
+  display: none;
+}
+
+html[data-webmcp-page-edit-config] [data-selected=true][contenteditable=true] {
+  caret-color: hotpink;
+}
+
+html[data-webmcp-page-edit-config] [data-pinhover=true] {
+  cursor: crosshair;
+}
+
+html[data-webmcp-page-edit-config] [data-metatip=true][data-pinhover=true] {
+  cursor: not-allowed;
+}
+
+html[data-webmcp-page-edit-config] [draggable=true] {
+  cursor: grab;
+}
+
+html[data-webmcp-page-edit-config] [draggable=true]:active {
+  cursor: grabbing;
+}
+
+html[data-webmcp-page-edit-config] [draggable=true] a,
+html[data-webmcp-page-edit-config] [draggable=true] img {
+  -webkit-user-drag: none !important;
+}

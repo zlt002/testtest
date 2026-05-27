@@ -1,0 +1,62 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.tmp
+release
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# wrangler files
+.wrangler
+.dev.vars
+!.dev.vars.example
+.env
+native-server/.env
+extension/chrome
+.turbo
+web/.tanstack
+.claude
+
+# Extension is now open source and included in repo
+extension/.tanstack
+local-server/node_modules
+local-server/dist
+e2e-tests/test-results
+e2e-tests/playwright-report
+extension/.oldZips
+mcp-chrome
+web/src/routeTree.gen.ts
+web/src/routeTree.gen.ts
+packages/mcp-react-hook-form/tsconfig.tsbuildinfo
+apps/extension/entrypoints/sidepanel/routeTree.gen.ts
+
+# Ignore coding tools
+.github/copilot-instructions.md
+.serena
+captures
+.webmcp
+.webmcp/model-config.json
+.webmcp/sessions.json
+.webmcp/workspaces.json
+.worktrees
+.repowise/
+CON

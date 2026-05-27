@@ -1,0 +1,30 @@
+packages:
+  - apps/agent-backend-v2
+  - apps/extension
+  - apps/native-server
+  - shared/*
+
+catalog:
+  typescript: ^5.8.3
+  '@types/node': ^22.15.21
+  '@types/chrome': ^0.0.326
+  '@types/json-schema': ^7.0.15
+  dotenv: 16.5.0
+  zod: 3.23.8
+  uuid: ^11.1.0
+  json-schema: ^0.4.0
+  '@modelcontextprotocol/sdk': 1.15.0
+  '@mcp-b/transports': ^2.0.4
+  '@mcp-b/extension-tools': ^0.2.2
+  '@mcp-b/mcp-react-hooks': npm:@mcp-b/react-webmcp@^1.1.0
+  tsup: ^8.4.0
+
+onlyBuiltDependencies:
+  - '@axodotdev/oranda'
+  - '@tailwindcss/oxide'
+  - dtrace-provider
+  - esbuild
+  - sharp
+  - spawn-sync
+  - unrs-resolver
+  - workerd

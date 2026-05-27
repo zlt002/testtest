@@ -1,0 +1,62 @@
+{
+  "name": "@mcp-b/native-server",
+  "version": "1.0.46",
+  "description": "accr Chrome Native-Messaging host (Node)",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-chrome-bridge": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "nodemon --watch src --ext ts,js,json --ignore dist/ --exec \"pnpm run build && pnpm run register:dev\"",
+    "build": "ts-node src/scripts/build.ts",
+    "register:dev": "node dist/scripts/register-dev.js",
+    "self-check": "node dist/cli.js self-check",
+    "postinstall": "node src/scripts/check-and-build.js && node dist/scripts/postinstall.js",
+    "prepare:publish": "node ../scripts/replace-workspace-deps.cjs ./package.json",
+    "prepublishOnly": "pnpm run build",
+    "publish:npm": "npm publish --access public --no-git-checks",
+    "publish:dry": "pnpm publish --access public --no-git-checks --dry-run",
+    "version:patch": "pnpm version patch --no-git-tag-version",
+    "version:minor": "pnpm version minor --no-git-tag-version",
+    "version:major": "pnpm version major --no-git-tag-version"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "preferGlobal": true,
+  "keywords": [
+    "mcp",
+    "chrome",
+    "browser"
+  ],
+  "author": "zlt22",
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "catalog:",
+    "fastify": "^5.3.2",
+    "is-admin": "^4.0.0",
+    "pino": "^9.6.0",
+    "uuid": "catalog:"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/chrome": "catalog:",
+    "@types/jest": "^29.5.14",
+    "@types/node": "catalog:",
+    "@types/supertest": "^6.0.3",
+    "@typescript-eslint/parser": "^8.31.1",
+    "cross-env": "^7.0.3",
+    "nodemon": "^3.1.10",
+    "pino-pretty": "^13.0.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.3.2",
+    "ts-node": "^10.9.2"
+  }
+}

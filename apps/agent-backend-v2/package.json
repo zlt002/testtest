@@ -1,0 +1,23 @@
+{
+  "name": "@mcp-b/agent-backend-v2",
+  "type": "module",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.112",
+    "@mcp-b/dom-analysis-contracts": "workspace:*",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "dotenv": "catalog:",
+    "jszip": "^3.10.1",
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "^4.20.0",
+    "typescript": "catalog:"
+  }
+}
