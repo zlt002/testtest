@@ -69,6 +69,22 @@ describe('page-edit bottom toolbar shell', () => {
     expect(visbug_css).toContain('[data-bottom-tools]');
     expect(visbug_css).toContain('[data-bottom-tool]');
     expect(visbug_css).toContain('[data-bottom-menu]');
+    expect(visbug_css).toContain(
+      ':host [data-bottom-menu] {\n' +
+        '  position: absolute;\n' +
+        '  left: 50%;\n' +
+        '  bottom: calc(100% + 10px);\n' +
+        '  transform: translateX(-50%) translateY(6px);\n' +
+        '  min-width: max-content;\n' +
+        '  max-width: min(560px, calc(100vw - 32px));\n' +
+        '  display: grid;\n' +
+        '  gap: 6px;\n' +
+        '  padding: 8px;\n' +
+        '  border: 1px solid var(--theme-card_border);\n' +
+        '  border-radius: 12px;\n' +
+        '  background: var(--theme-bd-2);\n' +
+        '  box-shadow: none;',
+    );
     expect(visbug_css).not.toContain('[data-tool-groups]');
   });
 
@@ -117,12 +133,14 @@ describe('page-edit bottom toolbar shell', () => {
 
     expect(shellMarkup).toContain('data-bottom-toolbar="selected"');
     expect(shellMarkup).toContain('data-bottom-tools');
-    expect(shellMarkup).toContain('data-bottom-tool="text"');
-    expect(shellMarkup).toContain('data-bottom-tool="position"');
-    expect(shellMarkup).toContain('data-bottom-tool="size"');
-    expect(shellMarkup).toContain('data-bottom-tool="padding"');
+    expect(shellMarkup).toContain('data-bottom-tool="content"');
     expect(shellMarkup).toContain('data-bottom-tool="move"');
-    expect(shellMarkup).toContain('data-bottom-tool="inspect"');
+    expect(shellMarkup).toContain('data-bottom-tool="resize"');
+    expect(shellMarkup).toContain('data-bottom-tool="padding"');
+    expect(shellMarkup).toContain('data-bottom-tool="typography"');
+    expect(shellMarkup).toContain('data-bottom-tool="surface-colors"');
+    expect(shellMarkup).toContain('data-bottom-tool="reorder"');
+    expect(shellMarkup).not.toContain('data-bottom-tool="inspect"');
     expect(shellMarkup).toContain('data-bottom-divider');
     expect(shellMarkup).toContain('data-bottom-menu');
     expect(shellMarkup).toContain('data-bottom-action="up-1"');
@@ -141,28 +159,46 @@ describe('page-edit bottom toolbar shell', () => {
     const tools = visbug.getBottomToolbarTools();
 
     expect(tools.map(tool => tool.id)).toEqual([
-      'text',
-      'position',
-      'size',
+      'content',
+      'move',
+      'resize',
       'padding',
       'margin',
       'flex',
-      'font',
-      'color',
-      'shadow',
-      'move',
-      'guides',
-      'inspect',
+      'typography',
+      'surface-colors',
+      'reorder',
     ]);
-    expect(tools.find(tool => tool.id === 'position')?.feature).toBe('position');
-    expect(tools.find(tool => tool.id === 'size')?.feature).toBe('position');
-    expect(visbug.getBottomToolbarToolActions('position')[0]?.map(action => action.id)).toEqual([
+    expect(tools.find(tool => tool.id === 'move')?.feature).toBe('position');
+    expect(tools.find(tool => tool.id === 'resize')?.feature).toBe('position');
+    expect(visbug.getBottomToolbarToolActions('move')[0]?.map(action => action.id)).toEqual([
       'up-1',
       'down-1',
       'left-1',
       'right-1',
     ]);
-    expect(visbug.getBottomToolbarToolActions('color').length).toBeGreaterThan(0);
+    expect(visbug.getBottomToolbarToolActions('surface-colors').length).toBeGreaterThan(0);
+  });
+
+  it('exposes the 9 PM-facing toolbar tools in a fixed order', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    const tools = visbug.getBottomToolbarTools();
+
+    expect(tools.map(tool => tool.id)).toEqual([
+      'content',
+      'move',
+      'resize',
+      'padding',
+      'margin',
+      'flex',
+      'typography',
+      'surface-colors',
+      'reorder',
+    ]);
   });
 
   it('does not auto-activate an editing tool in local snapshot mode', async () => {
@@ -203,9 +239,44 @@ describe('page-edit bottom toolbar shell', () => {
       visbug.deactivate_feature = vi.fn();
     });
 
-    visbug.activateBottomToolbarTool('position');
+    visbug.activateBottomToolbarTool('move');
 
     expect(positionSpy).toHaveBeenCalledOnce();
     expect(visbug.activeTool).toBe('position');
+  });
+
+  it('keeps only the clicked bottom tool highlighted when multiple tools share one feature', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    document.body.innerHTML = '<div id="target">Hello</div>';
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('target')];
+      },
+      refreshSelectionUi: vi.fn(),
+    };
+    vi.spyOn(visbug, 'position').mockImplementation(() => {
+      // @ts-expect-error test double
+      visbug.deactivate_feature = vi.fn();
+    });
+
+    visbug.activateBottomToolbarTool('resize');
+    const markup = visbug.render();
+    const parsed = new JSDOM(markup).window.document;
+    const sizeButton = parsed.querySelector('[data-bottom-tool="resize"]');
+    const positionButton = parsed.querySelector('[data-bottom-tool="move"]');
+
+    expect(visbug.activeTool).toBe('position');
+    expect(sizeButton?.getAttribute('data-active')).toBe('true');
+    expect(positionButton?.getAttribute('data-active')).toBe('false');
   });
 });

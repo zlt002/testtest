@@ -15,6 +15,10 @@ import {
 import { VisBugStyles, visbug_css, supportsAdoptedStyleSheets } from '../styles.store.js'
 import { VisBugModel }            from './model.js'
 import * as Icons                 from './vis-bug.icons.js'
+import {
+  bottomToolbarTools,
+  getBottomToolbarTool,
+} from './bottom-toolbar.tools.js'
 import { provideSelectorEngine }  from '../../features/search.js'
 import { metaKey }                from '../../utilities/index.js'
 import { PluginRegistry }         from '../../plugins/_registry.js'
@@ -449,7 +453,6 @@ export default class VisBug extends HTMLElement {
         tools: [
           { id: 'font', label: '文字', feature: 'font' },
           { id: 'color', label: '颜色', feature: 'hueshift' },
-          { id: 'shadow', label: '阴影', feature: 'boxshadow' },
         ],
       },
       {
@@ -530,7 +533,6 @@ export default class VisBug extends HTMLElement {
       'layout:flex': '调整容器内子元素排列方式',
       'style:font': '调整字号、字重、对齐和行高',
       'style:color': '调整前景色、背景色和透明度',
-      'style:shadow': '调整阴影位置、模糊和扩散',
       'structure:sort': '调整元素顺序和层级关系',
       'structure:container': '调整容器归属关系',
       'structure:hierarchy': '调整父子层级结构',
@@ -573,36 +575,23 @@ export default class VisBug extends HTMLElement {
   }
 
   getBottomToolbarTools() {
-    return [
-      { id: 'text', group: 'content', label: '编辑文本', feature: 'text', icon: Icons.text },
-      { id: 'position', group: 'layout', label: '位置', feature: 'position', icon: Icons.position },
-      { id: 'size', group: 'layout', label: '尺寸', feature: 'position', icon: Icons.resize },
-      { id: 'padding', group: 'layout', label: '内边距', feature: 'padding', icon: Icons.padding },
-      { id: 'margin', group: 'layout', label: '外边距', feature: 'margin', icon: Icons.margin },
-      { id: 'flex', group: 'layout', label: '弹性布局', feature: 'align', icon: Icons.align },
-      { id: 'font', group: 'style', label: '字体', feature: 'font', icon: Icons.font },
-      { id: 'color', group: 'style', label: '颜色', feature: 'hueshift', icon: Icons.hueshift },
-      { id: 'shadow', group: 'style', label: '阴影', feature: 'boxshadow', icon: Icons.boxshadow },
-      { id: 'move', group: 'structure', label: '结构', feature: 'move', icon: Icons.move },
-      { id: 'guides', group: 'view', label: '参考线', feature: 'guides', icon: Icons.guides },
-      { id: 'inspect', group: 'view', label: '检查', feature: 'inspector', icon: Icons.inspector },
-    ]
+    return bottomToolbarTools
   }
 
   getBottomToolbarTool(toolId) {
-    return this.getBottomToolbarTools().find(tool => tool.id === toolId) ?? null
+    return getBottomToolbarTool(toolId)
   }
 
   getBottomToolbarToolActions(toolId) {
     switch (toolId) {
-      case 'text':
+      case 'content':
         return [[{ id: 'activate', label: '编辑' }]]
-      case 'position':
+      case 'move':
         return [
           [{ id: 'up-1', label: '上 1' }, { id: 'down-1', label: '下 1' }, { id: 'left-1', label: '左 1' }, { id: 'right-1', label: '右 1' }],
           [{ id: 'up-10', label: '上 10' }, { id: 'down-10', label: '下 10' }, { id: 'left-10', label: '左 10' }, { id: 'right-10', label: '右 10' }],
         ]
-      case 'size':
+      case 'resize':
         return [
           [{ id: 'width-plus-1', label: '宽 +1' }, { id: 'width-minus-1', label: '宽 -1' }, { id: 'height-plus-1', label: '高 +1' }, { id: 'height-minus-1', label: '高 -1' }],
           [{ id: 'width-plus-10', label: '宽 +10' }, { id: 'width-minus-10', label: '宽 -10' }, { id: 'height-plus-10', label: '高 +10' }, { id: 'height-minus-10', label: '高 -10' }],
@@ -620,29 +609,19 @@ export default class VisBug extends HTMLElement {
           [{ id: 'justify-start', label: '主轴 左' }, { id: 'justify-center', label: '主轴 中' }, { id: 'justify-end', label: '主轴 右' }, { id: 'justify-between', label: '主轴 分布' }],
           [{ id: 'align-start', label: '交叉轴 上' }, { id: 'align-center', label: '交叉轴 中' }, { id: 'align-end', label: '交叉轴 下' }, { id: 'align-between', label: '交叉轴 分布' }],
         ]
-      case 'font':
+      case 'typography':
         return [
           [{ id: 'font-plus-1', label: '字号 +1' }, { id: 'font-minus-1', label: '字号 -1' }, { id: 'font-plus-10', label: '字号 +10' }, { id: 'font-minus-10', label: '字号 -10' }],
           [{ id: 'weight-plus', label: '字重 +100' }, { id: 'weight-minus', label: '字重 -100' }, { id: 'leading-plus', label: '行高 +1' }, { id: 'leading-minus', label: '行高 -1' }],
           [{ id: 'align-left', label: '左对齐' }, { id: 'align-center', label: '居中' }, { id: 'align-right', label: '右对齐' }, { id: 'kerning-plus', label: '字距 +0.1' }, { id: 'kerning-minus', label: '字距 -0.1' }],
         ]
-      case 'color':
+      case 'surface-colors':
         return [
           [{ id: 'hue-plus', label: '色相 +1' }, { id: 'hue-minus', label: '色相 -1' }, { id: 'light-plus', label: '亮度 +1%' }, { id: 'light-minus', label: '亮度 -1%' }],
           [{ id: 'sat-plus', label: '饱和 +1%' }, { id: 'sat-minus', label: '饱和 -1%' }, { id: 'alpha-plus', label: '透明 +1%' }, { id: 'alpha-minus', label: '透明 -1%' }],
         ]
-      case 'shadow':
-        return [
-          [{ id: 'x-plus', label: 'X +1' }, { id: 'x-minus', label: 'X -1' }, { id: 'y-plus', label: 'Y +1' }, { id: 'y-minus', label: 'Y -1' }],
-          [{ id: 'blur-plus', label: '模糊 +1' }, { id: 'blur-minus', label: '模糊 -1' }, { id: 'size-plus', label: '扩散 +1' }, { id: 'size-minus', label: '扩散 -1' }],
-          [{ id: 'opacity-plus', label: '透明 +1%' }, { id: 'opacity-minus', label: '透明 -1%' }],
-        ]
-      case 'move':
+      case 'reorder':
         return [[{ id: 'move-left', label: '前移' }, { id: 'move-right', label: '后移' }]]
-      case 'guides':
-        return [[{ id: 'activate', label: '开启参考线' }]]
-      case 'inspect':
-        return [[{ id: 'activate', label: '开启检查' }]]
       default:
         return []
     }
@@ -661,7 +640,7 @@ export default class VisBug extends HTMLElement {
       <section data-bottom-toolbar="selected">
         <nav data-bottom-tools>
           ${this.getBottomToolbarTools().map((tool, index, tools) => `
-            ${index > 0 && tools[index - 1].group !== tool.group
+            ${index > 0 && tools[index - 1].interactionType !== tool.interactionType
               ? '<span data-bottom-divider aria-hidden="true"></span>'
               : ''}
             ${this.renderBottomToolbarTool(tool)}
@@ -672,7 +651,9 @@ export default class VisBug extends HTMLElement {
   }
 
   renderBottomToolbarTool(tool) {
-    const isActive = this.activeTool === tool.feature
+    const isActive = this._bottomToolbarState?.activeSubtool
+      ? this._bottomToolbarState.activeSubtool === tool.id
+      : this.activeTool === tool.feature
     const actionRows = this.getBottomToolbarToolActions(tool.id)
 
     return `
@@ -688,7 +669,7 @@ export default class VisBug extends HTMLElement {
           <span class="tool-icon">${tool.icon}</span>
         </button>
         <div data-bottom-menu>
-          ${tool.id === 'color' ? this.renderBottomToolbarColorTargets() : ''}
+          ${tool.id === 'surface-colors' ? this.renderBottomToolbarColorTargets() : ''}
           ${actionRows.map(actionRow => `
             <div data-bottom-menu-row>
               ${actionRow.map(action => `
@@ -732,6 +713,12 @@ export default class VisBug extends HTMLElement {
     const tool = this.getBottomToolbarTool(toolId)
     if (!tool) return
 
+    this._bottomToolbarState = {
+      ...(this._bottomToolbarState || {}),
+      activeGroup: tool.group ?? null,
+      activeSubtool: tool.id,
+    }
+
     this.activateTool(tool.feature)
     this.refreshLocalSnapshotToolbar()
   }
@@ -741,9 +728,15 @@ export default class VisBug extends HTMLElement {
     const selectedNodes = this.selectorEngine?.selection?.() ?? []
     if (!tool || !selectedNodes.length) return
 
+    this._bottomToolbarState = {
+      ...(this._bottomToolbarState || {}),
+      activeGroup: tool.group ?? null,
+      activeSubtool: tool.id,
+    }
+
     this.activateTool(tool.feature)
 
-    if (toolId === 'text' || toolId === 'guides' || toolId === 'inspect') {
+    if (toolId === 'content') {
       this.refreshLocalSnapshotToolbar()
       return
     }
@@ -754,10 +747,10 @@ export default class VisBug extends HTMLElement {
 
   applyBottomToolbarMutation(toolId, actionId, selectedNodes) {
     switch (toolId) {
-      case 'position':
+      case 'move':
         return this.applySelectedStyleMutation(`position:${actionId}`, () =>
           this.nudgePositionElements(selectedNodes, actionId))
-      case 'size':
+      case 'resize':
         return this.applySelectedStyleMutation(`size:${actionId}`, () =>
           this.resizeSelectedElements(selectedNodes, actionId))
       case 'padding':
@@ -769,16 +762,13 @@ export default class VisBug extends HTMLElement {
       case 'flex':
         return this.applySelectedStyleMutation(`flex:${actionId}`, () =>
           this.adjustFlexLayout(selectedNodes, actionId))
-      case 'font':
+      case 'typography':
         return this.applySelectedStyleMutation(`font:${actionId}`, () =>
           this.adjustFontStyles(selectedNodes, actionId))
-      case 'color':
+      case 'surface-colors':
         return this.applySelectedStyleMutation(`color:${actionId}`, () =>
           this.adjustSelectedColors(selectedNodes, actionId))
-      case 'shadow':
-        return this.applySelectedStyleMutation(`shadow:${actionId}`, () =>
-          this.adjustSelectedShadows(selectedNodes, actionId))
-      case 'move':
+      case 'reorder':
         return this.moveSelectedElements(selectedNodes, actionId)
     }
   }
