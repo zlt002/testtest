@@ -105,10 +105,10 @@ describe('page-edit file save action', () => {
 
     expect(markup).toContain('data-bottom-toolbar="selected"');
     expect(markup).toContain('data-bottom-tools');
-    expect(markup).toContain('data-bottom-tool="text"');
-    expect(markup).toContain('data-bottom-tool="position"');
-    expect(markup).toContain('data-bottom-tool="color"');
-    expect(markup).toContain('data-bottom-tool="inspect"');
+    expect(markup).toContain('data-bottom-tool="content"');
+    expect(markup).toContain('data-bottom-tool="move"');
+    expect(markup).toContain('data-bottom-tool="surface-colors"');
+    expect(markup).toContain('data-bottom-tool="reorder"');
     expect(markup).toContain('data-bottom-divider');
     expect(markup).not.toContain('data-toolbar-panel');
     expect(markup).not.toContain('data-tool-group=');
@@ -132,7 +132,7 @@ describe('page-edit file save action', () => {
     const markup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
 
     expect(markup).toContain('data-bottom-menu');
-    expect(markup).toContain('data-bottom-tool="position"');
+    expect(markup).toContain('data-bottom-tool="move"');
     expect(markup).toContain('data-bottom-action="up-1"');
     expect(markup).toContain('data-bottom-action="width-plus-1"');
     expect(markup).toContain('data-bottom-action="all-plus-1"');
@@ -306,7 +306,7 @@ describe('page-edit file save action', () => {
 
     const markup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
 
-    expect(markup).toContain('data-bottom-tool="position"');
+    expect(markup).toContain('data-bottom-tool="move"');
     expect(markup).toContain('data-bottom-menu');
     expect(markup).toContain('data-bottom-action="up-1"');
     expect(markup).not.toContain('data-bottom-subtool-list');

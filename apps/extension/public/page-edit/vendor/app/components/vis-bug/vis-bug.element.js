@@ -112,7 +112,6 @@ export default class VisBug extends HTMLElement {
     this._selectionActionsEverywhere = this.readSelectionActionsPreference()
     this._annotationStateUnsubscribe = null
     this._bottomToolbarState = {
-      activeGroup: null,
       activeSubtool: null,
     }
   }
@@ -424,152 +423,9 @@ export default class VisBug extends HTMLElement {
       : 'idle'
   }
 
-  getActiveBottomToolbarGroup() {
-    return this.getBottomToolbarGroups().find(group => group.id === this._bottomToolbarState?.activeGroup) ?? null
-  }
-
-  getBottomToolbarGroups() {
-    return [
-      {
-        id: 'content',
-        label: '内容',
-        tools: [
-          { id: 'text', label: '文本', feature: 'text' },
-        ],
-      },
-      {
-        id: 'layout',
-        label: '布局',
-        tools: [
-          { id: 'position', label: '位置', feature: 'position' },
-          { id: 'size', label: '尺寸', feature: 'position' },
-          { id: 'padding', label: '内边距', feature: 'padding' },
-          { id: 'margin', label: '外边距', feature: 'margin' },
-          { id: 'flex', label: '弹性布局', feature: 'align' },
-        ],
-      },
-      {
-        id: 'style',
-        label: '样式',
-        tools: [
-          { id: 'font', label: '文字', feature: 'font' },
-          { id: 'color', label: '颜色', feature: 'hueshift' },
-        ],
-      },
-      {
-        id: 'structure',
-        label: '结构',
-        tools: [
-          { id: 'sort', label: '排序', feature: 'move' },
-          { id: 'container', label: '容器', feature: 'move' },
-          { id: 'hierarchy', label: '层级', feature: 'move' },
-        ],
-      },
-      {
-        id: 'view',
-        label: '查看',
-        tools: [
-          { id: 'guides', label: '参考', feature: 'guides' },
-          { id: 'inspect', label: '检查', feature: 'inspector' },
-        ],
-      },
-    ]
-  }
-
-  renderBottomToolbar() {
-    if (this.getBottomToolbarState() === 'idle') {
-      return `
-        <section data-bottom-toolbar="idle">
-          <div data-bottom-toolbar-hint>点击页面元素开始编辑</div>
-        </section>
-      `
-    }
-
-    return `
-      <section data-bottom-toolbar="selected">
-        <nav data-tool-groups>
-          ${this.getBottomToolbarGroups().map(group => `
-            <button
-              type="button"
-              data-tool-group="${group.id}"
-              data-active="${this._bottomToolbarState?.activeGroup === group.id ? 'true' : 'false'}"
-            >${group.label}</button>
-          `).join('')}
-        </nav>
-        ${this.renderBottomToolbarSubtools()}
-      </section>
-    `
-  }
-
-  renderBottomToolbarSubtools() {
-    const activeGroup = this.getActiveBottomToolbarGroup()
-    if (!activeGroup) return ''
-
-    return `
-      <div data-bottom-subtools>
-        <div data-bottom-subtool-list>
-          ${activeGroup.tools.map(tool => `
-            <button
-              type="button"
-              data-subtool="${tool.id}"
-              data-group-id="${activeGroup.id}"
-              data-active="${this._bottomToolbarState?.activeSubtool === tool.id ? 'true' : 'false'}"
-            >${tool.label}</button>
-          `).join('')}
-        </div>
-        <div data-bottom-toolbar-help>${this.getBottomToolbarHelp(activeGroup.id, this._bottomToolbarState?.activeSubtool)}</div>
-      </div>
-    `
-  }
-
-  getBottomToolbarHelp(groupId, toolId = null) {
-    if (!groupId) return '已选中元素，先选择下方功能'
-
-    const messages = {
-      'content:text': '编辑元素里的直接文本内容',
-      'layout:position': '拖动或微调元素位置',
-      'layout:size': '拖动控制点调整宽高',
-      'layout:padding': '调整内容和边框之间的距离',
-      'layout:margin': '调整元素和周围元素之间的距离',
-      'layout:flex': '调整容器内子元素排列方式',
-      'style:font': '调整字号、字重、对齐和行高',
-      'style:color': '调整前景色、背景色和透明度',
-      'structure:sort': '调整元素顺序和层级关系',
-      'structure:container': '调整容器归属关系',
-      'structure:hierarchy': '调整父子层级结构',
-      'view:guides': '查看参考线和对齐关系',
-      'view:inspect': '查看样式和位置信息',
-    }
-
-    return messages[`${groupId}:${toolId}`] || '已选中元素，继续选择一个具体功能'
-  }
-
-  setActiveBottomToolbarGroup(groupId) {
-    this._bottomToolbarState = {
-      activeGroup: groupId || null,
-      activeSubtool: null,
-    }
-    this.refreshLocalSnapshotToolbar()
-  }
-
-  activateBottomSubtool(groupId, toolId) {
-    const group = this.getBottomToolbarGroups().find(item => item.id === groupId)
-    const tool = group?.tools.find(item => item.id === toolId)
-    if (!tool) return
-
-    this._bottomToolbarState = {
-      activeGroup: groupId,
-      activeSubtool: toolId,
-    }
-
-    this.activateTool(tool.feature)
-    this.refreshLocalSnapshotToolbar()
-  }
-
   syncBottomToolbarSelectionState() {
     if (this.getBottomToolbarState() !== 'selected') {
       this._bottomToolbarState = {
-        activeGroup: null,
         activeSubtool: null,
       }
     }
@@ -743,7 +599,6 @@ export default class VisBug extends HTMLElement {
     this.syncBottomToolbarColorTarget(toolId)
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
-      activeGroup: tool.group ?? null,
       activeSubtool: tool.id,
     }
 
@@ -760,7 +615,6 @@ export default class VisBug extends HTMLElement {
     this.syncBottomToolbarColorTarget(toolId)
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
-      activeGroup: tool.group ?? null,
       activeSubtool: tool.id,
     }
 
