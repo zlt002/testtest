@@ -171,6 +171,8 @@ describe('page-edit bottom toolbar shell', () => {
     ]);
     expect(tools.find(tool => tool.id === 'move')?.feature).toBe('position');
     expect(tools.find(tool => tool.id === 'resize')?.feature).toBe('position');
+    expect(tools.find(tool => tool.id === 'surface-colors')?.feature).toBe('hueshift');
+    expect(tools.find(tool => tool.id === 'reorder')?.feature).toBe('move');
     expect(visbug.getBottomToolbarToolActions('move')[0]?.map(action => action.id)).toEqual([
       'up-1',
       'down-1',

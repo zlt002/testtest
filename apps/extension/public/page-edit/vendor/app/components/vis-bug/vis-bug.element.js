@@ -19,6 +19,7 @@ import {
   bottomToolbarTools,
   getBottomToolbarTool,
 } from './bottom-toolbar.tools.js'
+import { getBottomToolbarAvailability } from './bottom-toolbar.capabilities.js'
 import { provideSelectorEngine }  from '../../features/search.js'
 import { metaKey }                from '../../utilities/index.js'
 import { PluginRegistry }         from '../../plugins/_registry.js'
@@ -580,6 +581,11 @@ export default class VisBug extends HTMLElement {
 
   getBottomToolbarTool(toolId) {
     return getBottomToolbarTool(toolId)
+  }
+
+  getSelectedBottomToolbarAvailability() {
+    const [selectedNode] = this.selectorEngine?.selection?.() ?? []
+    return getBottomToolbarAvailability(selectedNode)
   }
 
   getBottomToolbarToolActions(toolId) {
