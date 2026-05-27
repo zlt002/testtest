@@ -3971,7 +3971,7 @@ export function Chat() {
         >
           {stream.conversationItems.length === 0 ? (
               <div className="flex h-full items-center justify-center">
-                <div className="w-[90%] rounded-2xl border border-dashed bg-muted/20 px-4 py-5 text-center">
+                <div className="w-[90%] rounded-md border border-dashed bg-muted/20 px-4 py-5 text-center">
                   <ClaudeCodeEmptyStateIcon />
                   <div className="mt-4 text-base font-semibold">
                     {bootstrapGate.status !== 'ready'

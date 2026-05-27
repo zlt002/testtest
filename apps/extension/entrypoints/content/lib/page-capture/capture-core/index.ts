@@ -7,6 +7,7 @@ import { clonePageDocument, SOURCE_INDEX_ATTRIBUTE } from './dom/clone';
 import { inlineComputedLayoutStyles } from './dom/computed-styles';
 import { replaceResourceElementsWithPlaceholders } from './dom/placeholders';
 import { prettyPrintHtml } from './dom/pretty-print';
+import { normalizeCapturedLayout } from './layout-normalize';
 import type { CaptureCoreWarning } from './types';
 
 function insertMergedStylesheetLink(doc: Document): void {
@@ -42,6 +43,7 @@ export async function capturePageDocument(
 
   cleanupCapturedDocument(capturedDoc, doc);
   inlineComputedLayoutStyles(capturedDoc, doc);
+  normalizeCapturedLayout(capturedDoc);
   const styleSources = await collectStyleSources(capturedDoc, baseUrl, warnings, {
     originalDoc: doc,
     pruneUnused: true,

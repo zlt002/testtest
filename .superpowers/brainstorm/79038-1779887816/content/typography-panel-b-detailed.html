@@ -1,0 +1,83 @@
+<h2>字体面板详细稿</h2>
+<p class="subtitle">基于你确认的方向：输入优先、对齐图标化、文字颜色在第一层</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">推荐方案：文本格式</div>
+    <div class="mockup-body" style="display:grid;gap:14px;padding:6px 2px">
+      <div style="display:grid;grid-template-columns:repeat(4, minmax(0,1fr));gap:10px">
+        <div>
+          <div class="label" style="margin-bottom:6px">字号</div>
+          <input class="mock-input" value="16" />
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:6px">字重</div>
+          <input class="mock-input" value="400" />
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:6px">行高</div>
+          <input class="mock-input" value="1.5" />
+        </div>
+        <div>
+          <div class="label" style="margin-bottom:6px">字距</div>
+          <input class="mock-input" value="0" />
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:end;gap:18px;flex-wrap:wrap">
+        <div>
+          <div class="label" style="margin-bottom:6px">对齐</div>
+          <div style="display:flex;gap:8px">
+            <button class="mock-button" style="width:40px;padding:0">≡</button>
+            <button class="mock-button" style="width:40px;padding:0">≣</button>
+            <button class="mock-button" style="width:40px;padding:0">≡</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="label" style="margin-bottom:6px">文字颜色</div>
+          <div style="display:flex;gap:8px">
+            <button class="mock-button" style="width:52px;background:#2563eb;color:white;border-color:#2563eb">A</button>
+            <button class="mock-button" style="width:72px">更多</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="label" style="margin-bottom:6px">常用样式</div>
+          <div style="display:flex;gap:8px">
+            <button class="mock-button" style="width:40px;padding:0"><strong>B</strong></button>
+            <button class="mock-button" style="width:40px;padding:0"><em>I</em></button>
+            <button class="mock-button" style="width:40px;padding:0"><span style="text-decoration:underline">U</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="placeholder" style="height:auto;padding:14px 16px;text-align:left">
+        <strong>高级</strong><br />
+        透明度、色相/亮度/饱和度、更多文本样式放在二层，不默认展开
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="layout-1" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>四个输入一排</h3>
+      <p>信息密度高，最像专业编辑器，适合桌面端。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="layout-2" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>两列两行输入</h3>
+      <p>更松一点，移动端和窄宽度下更稳，但会更高。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">我当前建议</div>
+  <p>推荐 `1`。你的底部弹层本来就是横向展开，四个输入一排更像真正的格式工具条，也能减少面板高度。</p>
+</div>

@@ -41,11 +41,32 @@ const POSITION_PROPERTIES = [
 
 const OVERFLOW_PROPERTIES = ['overflow-x', 'overflow-y'] as const;
 
+const BOX_MODEL_PROPERTIES = [
+  'width',
+  'min-height',
+  'padding',
+  'box-sizing',
+] as const;
+
+const TRANSFORM_PROPERTIES = ['transform', 'transform-origin'] as const;
+
+const TEXT_LAYOUT_PROPERTIES = ['white-space'] as const;
+
 type ComputedProperty =
   | (typeof FLEX_CONTAINER_PROPERTIES)[number]
   | (typeof GRID_CONTAINER_PROPERTIES)[number]
   | (typeof POSITION_PROPERTIES)[number]
-  | (typeof OVERFLOW_PROPERTIES)[number];
+  | (typeof OVERFLOW_PROPERTIES)[number]
+  | (typeof BOX_MODEL_PROPERTIES)[number]
+  | (typeof TRANSFORM_PROPERTIES)[number]
+  | (typeof TEXT_LAYOUT_PROPERTIES)[number];
+
+const PADDING_LONGHAND_PROPERTIES = [
+  'padding-top',
+  'padding-right',
+  'padding-bottom',
+  'padding-left',
+] as const;
 
 function readSourceIndex(element: Element): number | null {
   const value = element.getAttribute(SOURCE_INDEX_ATTRIBUTE);
@@ -109,9 +130,40 @@ function shouldKeepProperty(property: ComputedProperty, value: string): boolean 
     case 'overflow-x':
     case 'overflow-y':
       return normalized !== 'visible';
+    case 'width':
+      return normalized !== 'auto';
+    case 'min-height':
+      return normalized !== '0px' && normalized !== '0';
+    case 'padding':
+      return normalized !== '0px' && normalized !== '0px 0px' && normalized !== '0px 0px 0px 0px';
+    case 'box-sizing':
+      return normalized !== 'content-box';
+    case 'transform':
+      return normalized !== 'none';
+    case 'transform-origin':
+      return normalized !== '50% 50%' && normalized !== '50% 50% 0px';
+    case 'white-space':
+      return normalized !== 'normal';
     default:
       return false;
   }
+}
+
+function hasInlinePropertyConflict(
+  targetStyle: CSSStyleDeclaration,
+  property: ComputedProperty
+): boolean {
+  if (targetStyle.getPropertyValue(property)) {
+    return true;
+  }
+
+  if (property === 'padding') {
+    return PADDING_LONGHAND_PROPERTIES.some((longhandProperty) =>
+      Boolean(targetStyle.getPropertyValue(longhandProperty))
+    );
+  }
+
+  return false;
 }
 
 function copyComputedProperties(
@@ -127,7 +179,7 @@ function copyComputedProperties(
 
   const computedStyle = view.getComputedStyle(source);
   for (const property of properties) {
-    if (targetStyle.getPropertyValue(property)) {
+    if (hasInlinePropertyConflict(targetStyle, property)) {
       continue;
     }
 
@@ -149,8 +201,11 @@ function applyMinimalComputedLayoutStyle(target: Element, source: Element): void
   const computedStyle = view.getComputedStyle(source);
   const display = computedStyle.getPropertyValue('display').trim().toLowerCase();
   const position = computedStyle.getPropertyValue('position').trim().toLowerCase();
-  const overflowX = computedStyle.getPropertyValue('overflow-x').trim().toLowerCase();
-  const overflowY = computedStyle.getPropertyValue('overflow-y').trim().toLowerCase();
+  const overflowX = computedStyle.getPropertyValue('overflow-x').trim().toLowerCase() || 'visible';
+  const overflowY = computedStyle.getPropertyValue('overflow-y').trim().toLowerCase() || 'visible';
+  const transform = computedStyle.getPropertyValue('transform').trim().toLowerCase() || 'none';
+
+  copyComputedProperties(target, source, BOX_MODEL_PROPERTIES.filter((property) => property !== 'width'));
 
   if (FLEX_DISPLAY_VALUES.has(display)) {
     copyComputedProperties(target, source, FLEX_CONTAINER_PROPERTIES);
@@ -166,6 +221,23 @@ function applyMinimalComputedLayoutStyle(target: Element, source: Element): void
 
   if (overflowX !== 'visible' || overflowY !== 'visible') {
     copyComputedProperties(target, source, OVERFLOW_PROPERTIES);
+  }
+
+  copyComputedProperties(target, source, TRANSFORM_PROPERTIES);
+  copyComputedProperties(target, source, TEXT_LAYOUT_PROPERTIES);
+
+  const hasExplicitWidthLayoutContext =
+    FLEX_DISPLAY_VALUES.has(display) ||
+    GRID_DISPLAY_VALUES.has(display) ||
+    position === 'sticky' ||
+    position === 'fixed' ||
+    position === 'absolute' ||
+    overflowX !== 'visible' ||
+    overflowY !== 'visible' ||
+    transform !== 'none';
+
+  if (hasExplicitWidthLayoutContext) {
+    copyComputedProperties(target, source, ['width']);
   }
 }
 

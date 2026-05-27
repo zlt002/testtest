@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 let dom: JSDOM;
 let previousGlobals: Record<string, unknown>;
 let annotationRuntime: typeof import('../../public/page-edit/runtime/annotations.js');
+let previousAttachShadow: typeof HTMLElement.prototype.attachShadow;
 
 beforeAll(() => {
   dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -58,6 +59,11 @@ beforeAll(() => {
     configurable: true,
     value: dom.window.navigator,
   });
+
+  previousAttachShadow = dom.window.HTMLElement.prototype.attachShadow;
+  dom.window.HTMLElement.prototype.attachShadow = function attachShadowForTest(init) {
+    return previousAttachShadow.call(this, { ...init, mode: 'open' });
+  };
 });
 
 beforeEach(() => {
@@ -70,6 +76,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
+  dom.window.HTMLElement.prototype.attachShadow = previousAttachShadow;
   dom.window.close();
   const { navigator: previousNavigator, ...restGlobals } = previousGlobals;
   Object.assign(globalThis, restGlobals);
@@ -167,5 +174,58 @@ describe('annotations runtime', () => {
         content: '已更新备注',
       }),
     );
+  });
+
+  it('prevents textarea backspace from bubbling to page-level shortcuts', async () => {
+    annotationRuntime ??= await import('../../public/page-edit/runtime/annotations.js');
+
+    document.body.innerHTML = `
+      <section class="list">
+        <div class="item">Alpha</div>
+      </section>
+    `;
+
+    const element = document.querySelector('.item');
+    expect(element).toBeInstanceOf(HTMLElement);
+
+    const keydownSpy = vi.fn();
+    document.addEventListener('keydown', keydownSpy);
+
+    try {
+      const openPromise = annotationRuntime.requestSelectionAnnotationContent(element as HTMLElement, {});
+      await Promise.resolve();
+
+      const dialog = document.querySelector('webmcp-page-annotation-dialog') as HTMLElement | null;
+      expect(dialog?.shadowRoot).toBeTruthy();
+
+      const contentField = dialog?.shadowRoot?.querySelector(
+        'textarea[data-field="content"]',
+      ) as HTMLTextAreaElement | null;
+      expect(contentField).toBeInstanceOf(window.HTMLTextAreaElement);
+
+      contentField?.dispatchEvent(
+        new window.KeyboardEvent('keydown', {
+          key: 'Backspace',
+          code: 'Backspace',
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }),
+      );
+
+      expect(keydownSpy).not.toHaveBeenCalled();
+
+      dialog?.shadowRoot?.querySelector('button[data-action="cancel"]')?.dispatchEvent(
+        new window.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }),
+      );
+
+      await expect(openPromise).resolves.toBeNull();
+    } finally {
+      document.removeEventListener('keydown', keydownSpy);
+    }
   });
 });

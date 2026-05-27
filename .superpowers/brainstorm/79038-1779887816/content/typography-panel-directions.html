@@ -1,0 +1,94 @@
+<h2>字体面板交互方向</h2>
+<p class="subtitle">目标是把当前“按钮堆叠”改成更适合产品经理轻量编辑的文本格式面板</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. 步进按钮型</div>
+        <div class="mockup-body" style="display:grid;gap:10px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+            <button class="mock-button">字号 +1</button>
+            <button class="mock-button">字号 -1</button>
+            <button class="mock-button">字重 +100</button>
+            <button class="mock-button">字重 -100</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+            <button class="mock-button">左对齐</button>
+            <button class="mock-button">居中</button>
+            <button class="mock-button">右对齐</button>
+            <button class="mock-button">行高 +1</button>
+          </div>
+          <div style="font-size:12px;color:#6b7280">优点：实现最省，沿用现有动作模型</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. 延续现在的“操作按钮板”</h3>
+      <p>保留现在的加减动作，只把视觉稍微整理。学习成本低，但不够像编辑器，也不适合精确输入。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Word 风格</div>
+        <div class="mockup-body" style="display:grid;gap:10px">
+          <div style="display:grid;grid-template-columns:100px 72px 72px 72px;gap:8px;align-items:center">
+            <input class="mock-input" value="16" />
+            <input class="mock-input" value="400" />
+            <input class="mock-input" value="1.5" />
+            <input class="mock-input" value="0" />
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="mock-button" style="width:38px;padding:0">L</div>
+            <div class="mock-button" style="width:38px;padding:0">C</div>
+            <div class="mock-button" style="width:38px;padding:0">R</div>
+            <div class="mock-button" style="width:38px;padding:0">B</div>
+            <div class="mock-button" style="width:38px;padding:0">I</div>
+            <div class="mock-button" style="width:38px;padding:0">U</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="mock-button" style="width:84px">文字颜色</div>
+            <div class="mock-button" style="width:84px">更多</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. 更像 Word 的编辑器型</h3>
+      <p>字号、字重、行高、字距直接输入；对齐和常见文本样式用图标按钮。更符合直觉，也方便精确修改。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. 混合型</div>
+        <div class="mockup-body" style="display:grid;gap:10px">
+          <div style="display:grid;grid-template-columns:96px 64px 64px;gap:8px;align-items:center">
+            <input class="mock-input" value="16" />
+            <div class="mock-button" style="padding:0">A+</div>
+            <div class="mock-button" style="padding:0">A-</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="mock-button" style="width:38px;padding:0">L</div>
+            <div class="mock-button" style="width:38px;padding:0">C</div>
+            <div class="mock-button" style="width:38px;padding:0">R</div>
+            <div class="mock-button" style="width:38px;padding:0">色</div>
+          </div>
+          <div class="placeholder" style="height:50px">高级：字重 / 行高 / 字距 / 透明度</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. 常用优先 + 高级折叠</h3>
+      <p>先露出字号、对齐、颜色这些最常改的；字重、行高、字距放到第二层。更克制，但高级能力会多一步。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">我当前的建议</div>
+  <p>优先看 B。因为你刚才提到两个关键点都在 B 里成立：可以输入数值、对齐可以换成图标，而且交互语义更像真正的文本编辑器。</p>
+</div>

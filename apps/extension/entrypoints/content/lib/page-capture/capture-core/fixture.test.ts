@@ -88,4 +88,78 @@ describe('capture-core fixture', () => {
     expect(artifact.styles[0]?.content).not.toContain('/fixture.woff2');
     expect(artifact.assets).toEqual([]);
   });
+
+  it('captures back-office table fixtures without preserving duplicate fixed columns or floating overlays', async () => {
+    document.documentElement.innerHTML = `
+      <head>
+        <title>CRM Customer Manage</title>
+        <style>
+          .workspace-shell { display: flex; }
+          .table-scroll { overflow: auto; width: 960px; }
+          .el-table__body-wrapper { overflow: auto; }
+        </style>
+      </head>
+      <body>
+        <main class="workspace-shell">
+          <section class="business-pane">
+            <div class="table-scroll">
+              <div class="el-table el-table--scrollable-x">
+                <div class="el-table__body-wrapper is-scrolling-middle">
+                  <table>
+                    <tbody>
+                      <tr>
+                        <td>客户编码</td>
+                        <td>A2605260010</td>
+                        <td>青岛盛和货运代理有限公司</td>
+                        <td><a>编辑</a></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="el-table__fixed">
+                  <div class="el-table__fixed-body-wrapper">
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td><label>选择列副本</label></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="el-table__fixed-right">
+                  <div class="el-table__fixed-body-wrapper">
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td><a>编辑</a></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+        <div class="feedback_tabs_main">我要建议</div>
+        <div id="INTELLIGENCE">帮助中心</div>
+        <div data-html2canvas-ignore="true">截图工具浮层</div>
+      </body>
+    `;
+
+    const artifact = await capturePageDocument(document, {
+      mode: 'page',
+      baseUrl: 'https://crm-uat.annto.com/index.html#/mod/mdm/customer-manage',
+      capturedAt: '2026-05-27T12:28:06.000Z',
+    });
+
+    expect(artifact.html).toContain('青岛盛和货运代理有限公司');
+    expect(artifact.html).toContain('A2605260010');
+    expect(artifact.html).not.toContain('feedback_tabs_main');
+    expect(artifact.html).not.toContain('INTELLIGENCE');
+    expect(artifact.html).not.toContain('截图工具浮层');
+    expect(artifact.html).not.toContain('el-table__fixed');
+    expect(artifact.html).not.toContain('el-table__fixed-right');
+  });
 });

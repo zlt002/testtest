@@ -221,6 +221,7 @@ class PageAnnotationDialog extends HTMLElement {
     this.handleSubmit = this.handleSubmit.bind(this);
     this.handleCancel = this.handleCancel.bind(this);
     this.handleKeydown = this.handleKeydown.bind(this);
+    this.handleEditorKeydown = this.handleEditorKeydown.bind(this);
     this.handleInput = this.handleInput.bind(this);
   }
 
@@ -280,6 +281,12 @@ class PageAnnotationDialog extends HTMLElement {
     }
   }
 
+  handleEditorKeydown(event) {
+    if (event.key !== 'Escape') {
+      event.stopPropagation();
+    }
+  }
+
   handleInput() {
     const contentField = this.$shadow.querySelector('textarea[data-field="content"]');
     this.#content = contentField?.value ?? '';
@@ -322,6 +329,9 @@ class PageAnnotationDialog extends HTMLElement {
     this.$shadow
       .querySelector('button[data-action="cancel"]')
       ?.addEventListener('click', this.handleCancel);
+    this.$shadow
+      .querySelector('textarea[data-field="content"]')
+      ?.addEventListener('keydown', this.handleEditorKeydown);
     this.$shadow
       .querySelector('textarea[data-field="content"]')
       ?.addEventListener('input', this.handleInput);
