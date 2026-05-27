@@ -274,6 +274,36 @@ describe('page-edit bottom toolbar shell', () => {
     expect(visbug.activeTool).toBe('position');
   });
 
+  it('ignores disabled toolbar clicks for tools that are unavailable on the current element', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    document.body.innerHTML = '<table><tr><td id="cell">A</td></tr></table>';
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('cell')];
+      },
+      refreshSelectionUi: vi.fn(),
+    };
+    const positionSpy = vi.spyOn(visbug, 'position').mockImplementation(() => {
+      // @ts-expect-error test double
+      visbug.deactivate_feature = vi.fn();
+    });
+
+    visbug.activateBottomToolbarTool('move');
+
+    expect(positionSpy).not.toHaveBeenCalled();
+    expect(visbug.activeTool).toBe(null);
+  });
+
   it('keeps only the clicked bottom tool highlighted when multiple tools share one feature', async () => {
     document.documentElement.setAttribute(
       'data-webmcp-page-edit-config',

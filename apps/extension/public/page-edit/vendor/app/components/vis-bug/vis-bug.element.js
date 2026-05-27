@@ -731,7 +731,8 @@ export default class VisBug extends HTMLElement {
 
   activateBottomToolbarTool(toolId) {
     const tool = this.getBottomToolbarTool(toolId)
-    if (!tool) return
+    const availability = this.getSelectedBottomToolbarAvailability()?.[toolId]
+    if (!tool || availability?.available === false) return
 
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
@@ -746,7 +747,8 @@ export default class VisBug extends HTMLElement {
   runBottomToolbarAction(toolId, actionId) {
     const tool = this.getBottomToolbarTool(toolId)
     const selectedNodes = this.selectorEngine?.selection?.() ?? []
-    if (!tool || !selectedNodes.length) return
+    const availability = this.getSelectedBottomToolbarAvailability()?.[toolId]
+    if (!tool || !selectedNodes.length || availability?.available === false) return
 
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
