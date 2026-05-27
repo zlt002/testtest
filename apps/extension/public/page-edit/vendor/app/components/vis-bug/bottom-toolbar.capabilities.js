@@ -15,7 +15,7 @@ const isTextLikeLeaf = node =>
 const hasDirectText = node =>
   isElementNode(node) &&
   [...node.childNodes].some(child =>
-    child.nodeType === Node.TEXT_NODE && String(child.textContent || '').trim() !== '')
+    child.nodeType === 3 && String(child.textContent || '').trim() !== '')
 
 const hasSiblingElement = node =>
   isElementNode(node) &&

@@ -150,6 +150,33 @@ describe('page-edit bottom toolbar shell', () => {
     expect(shellMarkup).not.toContain('data-subtool=');
   });
 
+  it('renders disabled tools with reason text when the selected element cannot use them', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    document.body.innerHTML = '<table><tr><td id="cell">A</td></tr></table>';
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('cell')];
+      },
+    };
+
+    const markup = visbug.render();
+
+    expect(markup).toContain('data-bottom-tool="move"');
+    expect(markup).toContain('data-disabled="true"');
+    expect(markup).toContain('当前元素不适合直接拖动位置');
+    expect(markup).toContain('data-bottom-tooltip');
+  });
+
   it('maps flat bottom tools to the current page-edit features', async () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'

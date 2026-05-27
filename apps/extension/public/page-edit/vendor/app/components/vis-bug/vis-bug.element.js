@@ -657,6 +657,12 @@ export default class VisBug extends HTMLElement {
   }
 
   renderBottomToolbarTool(tool) {
+    const availability = this.getSelectedBottomToolbarAvailability()?.[tool.id] ?? {
+      available: true,
+      reason: '',
+    }
+    const isDisabled = availability.available === false
+    const disabledReason = availability.reason || tool.label
     const isActive = this._bottomToolbarState?.activeSubtool
       ? this._bottomToolbarState.activeSubtool === tool.id
       : this.activeTool === tool.feature
@@ -669,26 +675,34 @@ export default class VisBug extends HTMLElement {
           data-bottom-tool="${tool.id}"
           data-tool="${tool.feature}"
           data-active="${isActive ? 'true' : 'false'}"
+          data-disabled="${isDisabled ? 'true' : 'false'}"
+          aria-disabled="${isDisabled ? 'true' : 'false'}"
           aria-label="${tool.label}"
-          title="${tool.label}"
+          title="${isDisabled ? disabledReason : tool.label}"
         >
           <span class="tool-icon">${tool.icon}</span>
         </button>
-        <div data-bottom-menu>
-          ${tool.id === 'surface-colors' ? this.renderBottomToolbarColorTargets() : ''}
-          ${actionRows.map(actionRow => `
-            <div data-bottom-menu-row>
-              ${actionRow.map(action => `
-                <button
-                  type="button"
-                  data-bottom-action="${action.id}"
-                  data-tool-id="${tool.id}"
-                  title="${action.label}"
-                >${action.label}</button>
+        ${isDisabled
+          ? `
+            <div data-bottom-tooltip role="tooltip">${disabledReason}</div>
+          `
+          : `
+            <div data-bottom-menu>
+              ${tool.id === 'surface-colors' ? this.renderBottomToolbarColorTargets() : ''}
+              ${actionRows.map(actionRow => `
+                <div data-bottom-menu-row>
+                  ${actionRow.map(action => `
+                    <button
+                      type="button"
+                      data-bottom-action="${action.id}"
+                      data-tool-id="${tool.id}"
+                      title="${action.label}"
+                    >${action.label}</button>
+                  `).join('')}
+                </div>
               `).join('')}
             </div>
-          `).join('')}
-        </div>
+          `}
       </div>
     `
   }
