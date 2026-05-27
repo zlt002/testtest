@@ -31,8 +31,8 @@ export class Marquee extends HTMLElement {
 
     this._position = { top, left, width, height }
 
-    this.style.setProperty('--top', `${top + window.scrollY}px`)
-    this.style.setProperty('--left', `${left + window.scrollX}px`)
+    this.style.setProperty('--top', `${top}px`)
+    this.style.setProperty('--left', `${left}px`)
     this.style.setProperty('--width', `${width}px`)
     this.style.setProperty('--height', `${height}px`)
 

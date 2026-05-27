@@ -220,7 +220,8 @@ function toOptionalTrimmedValue(value: string | undefined): string | undefined {
 function inferDetectedCliConfigMode(config: ModelConfig): 'official' | 'third_party' {
   const anthropicBaseUrl = toOptionalTrimmedValue(config.anthropicBaseUrl);
   return config.modelProvider === 'anthropic' &&
-    anthropicBaseUrl === OFFICIAL_MODEL_GATEWAY_BASE_URL
+    (anthropicBaseUrl === OFFICIAL_MODEL_GATEWAY_ROOT_URL ||
+      anthropicBaseUrl === OFFICIAL_MODEL_GATEWAY_BASE_URL)
     ? 'official'
     : 'third_party';
 }

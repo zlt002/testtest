@@ -243,6 +243,31 @@ function isNonTextFileError(error: unknown) {
   );
 }
 
+function isStaleCapabilityError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error || '').toLowerCase();
+  return (
+    message.includes('no longer exists') ||
+    message.includes('capabilitymissing') ||
+    message.includes('404')
+  );
+}
+
+function formatSkillHealthMessage(input: {
+  healthy: boolean;
+  checkedPath: string;
+  issues: string[];
+  recommendedAction: 'none' | 'remote_resync';
+}) {
+  if (input.healthy) {
+    return `${input.checkedPath} 自检正常。`;
+  }
+  const issues = input.issues.length > 0 ? input.issues.join('；') : '存在异常';
+  const action =
+    input.recommendedAction === 'remote_resync' ? '建议重新执行远端同步。' : '请检查本地目录配置。';
+  return `${input.checkedPath} 自检异常：${issues}。${action}`;
+}
+
 function isAbsoluteFilesystemPath(path: string) {
   return /^(\/|[A-Za-z]:[\\/])/.test(path);
 }
@@ -750,6 +775,26 @@ function CapabilityPanel({
     [client, noun, projectPath, type]
   );
 
+  const recoverFromStaleCapability = useCallback(async () => {
+    await loadItems({ forceRefresh: true });
+    setSelected(null);
+    setName('');
+    setContent('');
+    setFileTree([]);
+    updateSelectedFilePath(null);
+    updateCurrentFileContent('');
+    updateCurrentFileBaseline('');
+    setUnsupportedFileMessage(null);
+    setFormBaseline({ scope: 'user', name: '', content: '' });
+    setMessage(`${noun}已失效，列表已刷新。`);
+  }, [
+    loadItems,
+    noun,
+    updateCurrentFileBaseline,
+    updateCurrentFileContent,
+    updateSelectedFilePath,
+  ]);
+
   const publishPanelCatalogChanged = useCallback((changedType: 'skill' | 'command') => {
     publishCapabilityCatalogChanged({
       type: changedType,
@@ -757,8 +802,42 @@ function CapabilityPanel({
     });
   }, []);
 
+  const runSkillHealthCheck = useCallback(async () => {
+    if (type !== 'skill') {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await client.checkSkillHealth();
+      setMessage(
+        formatSkillHealthMessage({
+          healthy: result.healthy,
+          checkedPath: result.checkedPath,
+          issues: result.issues,
+          recommendedAction: result.recommendedAction,
+        })
+      );
+      if (!result.healthy) {
+        await loadItems({ forceRefresh: true });
+      }
+    } catch (healthError) {
+      setError(healthError instanceof Error ? healthError.message : '技能自检失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [client, loadItems, type]);
+
+  const hasForceRefreshedInitialSkillLoadRef = useRef(false);
+
   useEffect(() => {
-    void loadItems();
+    const shouldForceRefreshSkills =
+      type === 'skill' && !hasForceRefreshedInitialSkillLoadRef.current;
+    if (shouldForceRefreshSkills) {
+      hasForceRefreshedInitialSkillLoadRef.current = true;
+    }
+    void loadItems(shouldForceRefreshSkills ? { forceRefresh: true } : undefined);
     setSelected(null);
     setName('');
     setContent('');
@@ -954,6 +1033,10 @@ function CapabilityPanel({
           return;
         }
         pendingCapabilityIdRef.current = null;
+        if (isStaleCapabilityError(detailError)) {
+          await recoverFromStaleCapability();
+          return;
+        }
         setContent('');
         setFileTree([]);
         updateSelectedFilePath(null);
@@ -1011,11 +1094,16 @@ function CapabilityPanel({
           return;
         }
         pendingSkillFilePathRef.current = null;
+        if (isStaleCapabilityError(readError)) {
+          await recoverFromStaleCapability();
+          return;
+        }
         setError(readError instanceof Error ? readError.message : '读取文件失败');
       }
     },
     [
       client,
+      recoverFromStaleCapability,
       projectPath,
       selected,
       selectedFilePath,
@@ -1506,6 +1594,12 @@ function CapabilityPanel({
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary">{listCountBadge}</Badge>
+              {type === 'skill' ? (
+                <Button size="sm" variant="outline" onClick={() => void runSkillHealthCheck()}>
+                  <RefreshCw className="h-4 w-4" />
+                  技能自检
+                </Button>
+              ) : null}
               <Button size="sm" variant="outline" onClick={handleStartNew}>
                 <Plus className="h-4 w-4" />
               </Button>

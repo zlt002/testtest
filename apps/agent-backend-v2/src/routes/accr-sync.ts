@@ -1,9 +1,19 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readJsonBody, sendJson } from '../http/json.ts';
-import type { AccrSyncMode, AccrSyncResult } from '../accr-sync/accr-sync-service.ts';
+import type {
+  AccrSyncHealthResult,
+  AccrSyncMode,
+  AccrSyncResult,
+} from '../accr-sync/accr-sync-service.ts';
 
 type AccrSyncService = {
   run(input: { mode: AccrSyncMode; force?: boolean }): Promise<AccrSyncResult>;
+  checkHealth(): Promise<AccrSyncHealthResult>;
+};
+
+type AccrSyncInvalidationHooks = {
+  invalidateCapabilityCatalog?: (input: { type: 'skill' | 'command' }) => void;
+  invalidateCommandCatalog?: () => void;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -18,8 +28,20 @@ function resolveModeFromBody(body: Record<string, unknown>): AccrSyncMode | null
   return null;
 }
 
-export function createAccrSyncRoute(service: AccrSyncService) {
+export function createAccrSyncRoute(
+  service: AccrSyncService,
+  invalidationHooks?: AccrSyncInvalidationHooks
+) {
   return async function handleAccrSync(req: IncomingMessage, res: ServerResponse, url: URL) {
+    if (url.pathname === '/api/accr-sync/health') {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, error: 'Method not allowed' });
+        return true;
+      }
+      sendJson(res, 200, await service.checkHealth());
+      return true;
+    }
+
     if (url.pathname !== '/api/accr-sync/run') {
       return false;
     }
@@ -59,6 +81,10 @@ export function createAccrSyncRoute(service: AccrSyncService) {
 
     const force = parsedBody.force === true;
     const result = await service.run({ mode, force });
+    if (mode === 'remote' && result.ok && result.status === 'completed') {
+      invalidationHooks?.invalidateCapabilityCatalog?.({ type: 'skill' });
+      invalidationHooks?.invalidateCommandCatalog?.();
+    }
     sendJson(res, 200, result);
     return true;
   };

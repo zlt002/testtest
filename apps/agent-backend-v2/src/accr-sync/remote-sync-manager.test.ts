@@ -102,6 +102,7 @@ test('syncRemote skips download when remote version is already current', async (
     downloadArchive: async () => {
       throw new Error('should not download archive');
     },
+    isLocalSkillsHealthy: async () => true,
   });
 
   const result = await manager.syncRemote({ force: false });
@@ -114,4 +115,69 @@ test('syncRemote skips download when remote version is already current', async (
     stderr: 'already up to date',
   });
   assert.deepEqual(events, ['save-state:2026-05-26T10:00:00.000Z']);
+});
+
+test('syncRemote forces reapply when local skills directory is unhealthy', async () => {
+  const events: string[] = [];
+  const manager = createRemoteSyncManager({
+    configStore: {
+      async load() {
+        return {
+          archiveUrl: 'https://fallback.example.com/archive.tar.gz',
+          manifestUrl: 'https://example.com/manifest.json',
+          autoSync: true,
+          keepBackupCount: 5,
+          downloadTimeout: 30000,
+        };
+      },
+    },
+    stateStore: {
+      async load() {
+        return {
+          version: '2.0.0',
+          lastSyncVersion: '2.0.0',
+          lastCheckedAt: '',
+          lastBackupPath: '',
+        };
+      },
+      async save(state) {
+        events.push(`save-state:${state.version}`);
+      },
+    },
+    localSyncFiles: {
+      async apply() {
+        events.push('apply-files');
+        return { backupPath: '/tmp/backups/claude-backup.tar.gz', removedSkills: [] };
+      },
+    },
+    targetDir: '/home/user/.claude',
+    nowIso: () => '2026-05-26T10:00:00.000Z',
+    fetchManifest: async () => ({
+      version: '2.0.0',
+      archive: { url: 'https://example.com/archive.tar.gz' },
+    }),
+    downloadArchive: async () => {
+      events.push('download');
+      return '/tmp/archive.tar.gz';
+    },
+    verifyChecksum: async () => {
+      events.push('verify');
+    },
+    extractArchive: async () => {
+      events.push('extract');
+      return '/tmp/extracted';
+    },
+    isLocalSkillsHealthy: async () => false,
+  });
+
+  const result = await manager.syncRemote({ force: false });
+
+  assert.deepEqual(result, {
+    ok: true,
+    status: 'completed',
+    mode: 'remote',
+    stdout: '',
+    stderr: '',
+  });
+  assert.deepEqual(events, ['download', 'verify', 'extract', 'apply-files', 'save-state:2.0.0']);
 });

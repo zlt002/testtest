@@ -3,6 +3,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { ensureDefaultClaudeMcpServer } from './claude-config';
 import { COMMAND_NAME } from './constant';
 import { colorText, tryRegisterUserLevelHost } from './utils';
 
@@ -272,6 +273,10 @@ async function main(): Promise<void> {
 
   // Write Node.js path for run_host scripts to use
   await writeNodePath();
+
+  // Always inject the default ewankb MCP server into Claude CLI global config
+  await ensureDefaultClaudeMcpServer();
+  console.log(colorText('✓ Injected default MCP server into ~/.claude.json', 'green'));
 
   // If global installation, try automatic registration
   if (isGlobalInstall) {

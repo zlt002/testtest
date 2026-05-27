@@ -1304,6 +1304,9 @@ describe('Chat chat selection quote interaction', () => {
     const view = render(<Chat />);
 
     expect(await view.findByPlaceholderText('输入官方 API Key')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: '去配置' }));
+
+    expect(sidepanelMenuMocks.mockOpenSidepanelRoute).toHaveBeenCalledWith('/settings?mode=model');
 
     expect((view.getByRole('button', { name: '打开当前工作区' }) as HTMLButtonElement).disabled).toBe(
       true

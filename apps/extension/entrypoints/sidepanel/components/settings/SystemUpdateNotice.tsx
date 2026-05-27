@@ -41,14 +41,24 @@ async function persistPendingSidepanelReopen() {
   }
 }
 
+function reloadExtensionAndCloseCurrentSidepanel() {
+  try {
+    chrome.runtime?.reload?.();
+  } catch {
+    // Ignore reload failures and leave the success message visible.
+  }
+
+  try {
+    window.close();
+  } catch {
+    // Ignore close failures when the current surface cannot be dismissed programmatically.
+  }
+}
+
 function scheduleExtensionReload() {
   void persistPendingSidepanelReopen().finally(() => {
     window.setTimeout(() => {
-      try {
-        chrome.runtime?.reload?.();
-      } catch {
-        // Ignore reload failures and leave the success message visible.
-      }
+      reloadExtensionAndCloseCurrentSidepanel();
     }, EXTENSION_RELOAD_DELAY_MS);
   });
 }
@@ -78,7 +88,7 @@ function scheduleExtensionReloadAfterUpdate({
         try {
           const status = await onPollUpdateInfo();
           if (shouldReloadAfterUpdateStatus(status, targetPackageId)) {
-            chrome.runtime?.reload?.();
+            reloadExtensionAndCloseCurrentSidepanel();
             return;
           }
         } catch {

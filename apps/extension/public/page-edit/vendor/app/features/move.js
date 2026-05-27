@@ -323,16 +323,23 @@ const createParentUI = parent => {
 
   label.text = 'Drag Bounds'
   label.setAttribute('data-readonly-label', 'true')
-  label.position = {boundingRect: parent.getBoundingClientRect()}
+  label.setAttribute('data-edge-attached-label', 'true')
+  label.position = {
+    boundingRect: parent.getBoundingClientRect(),
+    sourceElement: parent,
+  }
   label.style.setProperty('--label-bg', 'var(--theme-purple)')
-  label.style.setProperty('--stack-offset-y', '28px')
+  label.style.setProperty('--stack-offset-y', '0px')
 
   document.body.appendChild(hover)
   document.body.appendChild(label)
 
   const observer = new MutationObserver(list => {
     hover.position = {el:parent}
-    label.position = {boundingRect: parent.getBoundingClientRect()}
+    label.position = {
+      boundingRect: parent.getBoundingClientRect(),
+      sourceElement: parent,
+    }
   })
 
   observer.observe(parent, { 

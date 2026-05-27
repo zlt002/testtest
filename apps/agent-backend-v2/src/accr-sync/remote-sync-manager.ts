@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -129,6 +129,15 @@ function hasUpdate(localVersion: string, remoteVersion: string, force: boolean):
   return force || localVersion.startsWith('local-debug-') || remoteVersion > localVersion;
 }
 
+async function defaultIsLocalSkillsHealthy(targetDir: string): Promise<boolean> {
+  try {
+    const skillStats = await stat(join(targetDir, 'skills'));
+    return skillStats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export function createRemoteSyncManager(input: {
   configStore: ConfigStore;
   stateStore: StateStore;
@@ -139,12 +148,14 @@ export function createRemoteSyncManager(input: {
   downloadArchive?: (url: string) => Promise<string>;
   verifyChecksum?: (filePath: string, expectedChecksum: string) => Promise<void>;
   extractArchive?: (archivePath: string) => Promise<string>;
+  isLocalSkillsHealthy?: (targetDir: string) => Promise<boolean>;
 }) {
   const nowIso = input.nowIso ?? (() => new Date().toISOString());
   const loadManifest = input.fetchManifest ?? fetchManifest;
   const fetchArchive = input.downloadArchive ?? downloadArchive;
   const checkChecksum = input.verifyChecksum ?? verifyChecksum;
   const unpackArchive = input.extractArchive ?? extractArchive;
+  const checkLocalSkillsHealthy = input.isLocalSkillsHealthy ?? defaultIsLocalSkillsHealthy;
 
   return {
     async syncRemote(inputValue: { force: boolean }): Promise<AccrSyncResult> {
@@ -152,8 +163,10 @@ export function createRemoteSyncManager(input: {
       const localState = await input.stateStore.load();
       const manifest = await loadManifest(config);
       const remoteVersion = manifest.version;
+      const localSkillsHealthy = await checkLocalSkillsHealthy(input.targetDir);
+      const shouldForceResync = inputValue.force || !localSkillsHealthy;
 
-      if (!hasUpdate(localState.version, remoteVersion, inputValue.force)) {
+      if (!hasUpdate(localState.version, remoteVersion, shouldForceResync)) {
         await input.stateStore.save({
           ...localState,
           lastCheckedAt: nowIso(),

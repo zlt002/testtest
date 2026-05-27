@@ -34,7 +34,7 @@
 
 :host svg {
   display: none;
-  position: absolute;
+  position: fixed;
   top: var(--top);
   left: var(--left);
   overflow: visible;

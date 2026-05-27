@@ -59,3 +59,41 @@ test('local-debug mode delegates to built-in local debug sync service', async ()
   });
   assert.deepEqual(calls, ['local']);
 });
+
+test('checkHealth delegates to built-in sync health service', async () => {
+  const service = createAccrSyncService({
+    remoteSync: {
+      async syncRemote() {
+        throw new Error('should not call remote sync');
+      },
+    },
+    localDebugSync: {
+      async syncLocalDebug() {
+        throw new Error('should not call local debug sync');
+      },
+    },
+    healthCheck: {
+      async check() {
+        return {
+          ok: true,
+          healthy: false,
+          checkedPath: '/Users/demo/.claude/skills',
+          issues: ['未找到技能目录'],
+          recommendedAction: 'remote_resync',
+          syncStateVersion: '2026.05.27',
+        };
+      },
+    },
+  });
+
+  const result = await service.checkHealth();
+
+  assert.deepEqual(result, {
+    ok: true,
+    healthy: false,
+    checkedPath: '/Users/demo/.claude/skills',
+    issues: ['未找到技能目录'],
+    recommendedAction: 'remote_resync',
+    syncStateVersion: '2026.05.27',
+  });
+});

@@ -19,7 +19,7 @@ const windowsLiteBetaStatePath = path.join(releaseDir, 'windows-lite-beta-versio
 const windowsLiteReleaseNotesPath = path.join(rootDir, 'docs', 'windows-lite-release-notes.md');
 const NATIVE_HOST_NAME = 'com.chromemcp.nativehost';
 const WINDOWS_LITE_BETA_MAJOR = 1;
-const WINDOWS_LITE_BETA_MINOR = 0;
+const WINDOWS_LITE_BETA_MINOR = 1;
 
 export function resolveCommandForPlatform(command, { platform = process.platform } = {}) {
   if (platform === 'win32' && command === 'pnpm') {
@@ -1429,7 +1429,7 @@ $installedAtProperty = 'InstalledAt'
 $chromeHostRegistryPath = 'HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\${NATIVE_HOST_NAME}'
 $edgeHostRegistryPath = 'HKCU:\\Software\\Microsoft\\Edge\\NativeMessagingHosts\\${NATIVE_HOST_NAME}'
 $manifestDir = Join-Path $env:APPDATA 'Google\\Chrome\\NativeMessagingHosts'
-$defaultInstallDir = Join-Path $env:LOCALAPPDATA 'accr-ui'
+$defaultInstallDir = ''
 $extensionId = '${extensionId}'
 
 $uiStyle = @{
@@ -1475,6 +1475,61 @@ function Get-InstalledDir {
     return ''
   }
 }
+
+function Test-PathContainsNonAscii {
+  param([string]$PathValue)
+
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    return $false
+  }
+
+  return [System.Text.RegularExpressions.Regex]::IsMatch($PathValue, '[^\\u0000-\\u007F]')
+}
+
+function Test-IsDisallowedInstallPath {
+  param([string]$PathValue)
+
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    return $false
+  }
+
+  try {
+    $fullPath = [System.IO.Path]::GetFullPath($PathValue)
+    $pathRoot = [System.IO.Path]::GetPathRoot($fullPath)
+    return $pathRoot.TrimEnd('\\').ToUpperInvariant() -eq 'C:' -or (Test-PathContainsNonAscii $fullPath)
+  } catch {
+    return $false
+  }
+}
+
+function Resolve-DefaultInstallDir {
+  try {
+    $drives = [System.IO.DriveInfo]::GetDrives() |
+      Where-Object { $_.DriveType -eq [System.IO.DriveType]::Fixed -and $_.IsReady } |
+      Sort-Object @{ Expression = {
+        if ($_.Name.ToUpperInvariant() -eq 'D:\\') { 0 }
+        elseif ($_.Name.ToUpperInvariant() -eq 'C:\\') { 2 }
+        else { 1 }
+      } }, Name
+
+    foreach ($drive in $drives) {
+      $driveRoot = $drive.RootDirectory.FullName
+      if ($driveRoot.TrimEnd('\\').ToUpperInvariant() -eq 'C:') {
+        continue
+      }
+
+      $candidateDir = Join-Path $drive.RootDirectory.FullName 'accrui'
+      if (-not (Test-PathContainsNonAscii $candidateDir)) {
+        return $candidateDir
+      }
+    }
+  } catch {
+  }
+
+  return ''
+}
+
+$defaultInstallDir = Resolve-DefaultInstallDir
 
 function Get-CombinedPathEntries {
   $pathValues = @(
@@ -1688,6 +1743,32 @@ function Write-InstallProgress {
   [System.IO.File]::WriteAllText($ProgressPath, $line, [System.Text.UTF8Encoding]::new($false))
 }
 
+function Test-PathContainsNonAscii {
+  param([string]$PathValue)
+
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    return $false
+  }
+
+  return [System.Text.RegularExpressions.Regex]::IsMatch($PathValue, '[^\\u0000-\\u007F]')
+}
+
+function Test-IsDisallowedInstallPath {
+  param([string]$PathValue)
+
+  if ([string]::IsNullOrWhiteSpace($PathValue)) {
+    return $false
+  }
+
+  try {
+    $fullPath = [System.IO.Path]::GetFullPath($PathValue)
+    $pathRoot = [System.IO.Path]::GetPathRoot($fullPath)
+    return $pathRoot.TrimEnd('\\').ToUpperInvariant() -eq 'C:' -or (Test-PathContainsNonAscii $fullPath)
+  } catch {
+    return $false
+  }
+}
+
 function Stop-BundledPorts {
   foreach ($port in 12306, 8792) {
     try {
@@ -1707,6 +1788,9 @@ try {
 
   $fullDestPath = [System.IO.Path]::GetFullPath($DestPath)
   $destRoot = [System.IO.Path]::GetPathRoot($fullDestPath)
+  if (Test-IsDisallowedInstallPath $fullDestPath) {
+    throw '请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。'
+  }
   if ($fullDestPath.TrimEnd('\\') -eq $destRoot.TrimEnd('\\')) {
     throw '安装位置不能是磁盘根目录。'
   }
@@ -1941,11 +2025,17 @@ $chooseButton.Add_Click({
   $dialog.ShowNewFolderButton = $true
   if (Test-Path -LiteralPath $pathTextBox.Text) {
     $dialog.SelectedPath = $pathTextBox.Text
-  } else {
+  } elseif (-not [string]::IsNullOrWhiteSpace($defaultInstallDir)) {
     $dialog.SelectedPath = [System.IO.Path]::GetDirectoryName($defaultInstallDir)
   }
 
   if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    if (Test-IsDisallowedInstallPath $dialog.SelectedPath) {
+      [System.Windows.Forms.MessageBox]::Show('请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。', 'accr-ui 安装程序', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+      Set-UiStatus '请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。'
+      return
+    }
+
     $pathTextBox.Text = $dialog.SelectedPath
     Set-UiStatus '已选择安装位置。'
   }
@@ -2032,6 +2122,11 @@ $installButton.Add_Click({
 
   $fullDestPath = [System.IO.Path]::GetFullPath($selectedDir)
   $destRoot = [System.IO.Path]::GetPathRoot($fullDestPath)
+  if (Test-IsDisallowedInstallPath $fullDestPath) {
+    Set-UiStatus '请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。'
+    [System.Windows.Forms.MessageBox]::Show('请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。', 'accr-ui 安装程序', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+    return
+  }
   if ($fullDestPath.TrimEnd('\\') -eq $destRoot.TrimEnd('\\')) {
     Set-UiStatus '安装位置不能是磁盘根目录。'
     return

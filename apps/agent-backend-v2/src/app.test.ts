@@ -153,6 +153,8 @@ test('sessions route returns Claude session summaries', async () => {
 
 test('accr sync route is registered in createApp', async () => {
   const runCalls: Array<{ mode: 'remote' | 'local-debug' }> = [];
+  const cacheInvalidations: string[] = [];
+  let commandInvalidationCount = 0;
   const app = createApp({
     agentService: {
       async listProjectSessions() {
@@ -187,6 +189,17 @@ test('accr sync route is registered in createApp', async () => {
         return {};
       },
     },
+    commandsService: {
+      async listCommands() {
+        return { localUi: [], project: [], user: [], plugin: [], skills: [], count: 0 };
+      },
+      async executeCommand() {
+        return { type: 'local-ui', command: '/clear', action: 'clear', message: 'ok' };
+      },
+      invalidateCache() {
+        commandInvalidationCount += 1;
+      },
+    },
     accrSyncService: {
       async run(input: { mode: 'remote' | 'local-debug' }) {
         runCalls.push(input);
@@ -197,6 +210,11 @@ test('accr sync route is registered in createApp', async () => {
           stdout: '',
           stderr: '',
         };
+      },
+    },
+    capabilityCatalogService: {
+      clearCapabilityCatalogCache(input?: { type?: string }) {
+        cacheInvalidations.push(input?.type ?? 'all');
       },
     },
   });
@@ -217,6 +235,8 @@ test('accr sync route is registered in createApp', async () => {
       stderr: '',
     });
     assert.deepEqual(runCalls, [{ mode: 'remote', force: true }]);
+    assert.deepEqual(cacheInvalidations, ['skill']);
+    assert.equal(commandInvalidationCount, 1);
   } finally {
     server.close();
   }

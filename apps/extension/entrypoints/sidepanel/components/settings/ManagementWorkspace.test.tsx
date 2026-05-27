@@ -23,6 +23,7 @@ const importPluginDirectoryMock = vi.fn();
 const setPluginEnabledMock = vi.fn();
 const deletePluginMock = vi.fn();
 const listHooksOverviewMock = vi.fn();
+const checkSkillHealthMock = vi.fn();
 
 vi.mock('@uiw/react-codemirror', () => ({
   default: ({
@@ -111,6 +112,7 @@ vi.mock('@/entrypoints/sidepanel/lib/agent-v2/client', () => ({
     setPluginEnabled: setPluginEnabledMock,
     deletePlugin: deletePluginMock,
     listHooksOverview: listHooksOverviewMock,
+    checkSkillHealth: checkSkillHealthMock,
   }),
 }));
 
@@ -285,12 +287,21 @@ describe('ManagementWorkspace', () => {
     setPluginEnabledMock.mockReset();
     deletePluginMock.mockReset();
     listHooksOverviewMock.mockReset();
+    checkSkillHealthMock.mockReset();
 
     listCapabilitiesMock.mockResolvedValue({
       capabilities: [skillCapability],
     });
     listPluginsMock.mockResolvedValue({
       plugins: [],
+    });
+    checkSkillHealthMock.mockResolvedValue({
+      ok: true,
+      healthy: true,
+      checkedPath: '/Users/demo/.claude/skills',
+      issues: [],
+      recommendedAction: 'none',
+      syncStateVersion: '2026.05.27',
     });
   });
 
@@ -334,6 +345,18 @@ describe('ManagementWorkspace', () => {
     });
 
     expect(await view.findByText('2/3')).toBeTruthy();
+  });
+
+  it('force refreshes the skill list on first load', async () => {
+    render(<ManagementWorkspace mode="skills" hideModeSelect={true} />);
+
+    await waitFor(() => {
+      expect(listCapabilitiesMock).toHaveBeenCalledWith({
+        type: 'skill',
+        projectPath: undefined,
+        forceRefresh: true,
+      });
+    });
   });
 
   it('defaults to plugin management when mode is uncontrolled', async () => {
@@ -712,6 +735,52 @@ describe('ManagementWorkspace', () => {
       await view.findByText('This file is not available for text preview or editing.')
     ).toBeTruthy();
     expect(view.queryByLabelText('code-editor')).toBeNull();
+  });
+
+  it('auto refreshes the skill list when the selected skill has become invalid', async () => {
+    listCapabilitiesMock
+      .mockResolvedValueOnce({
+        capabilities: [skillCapability],
+      })
+      .mockResolvedValueOnce({
+        capabilities: [],
+      });
+    readCapabilityMock.mockRejectedValueOnce(new Error('Capability no longer exists.'));
+
+    const view = render(<ManagementWorkspace mode="skills" hideModeSelect={true} />);
+    fireEvent.click(await view.findByText('demo-skill'));
+
+    await waitFor(() => {
+      expect(listCapabilitiesMock).toHaveBeenNthCalledWith(2, {
+        type: 'skill',
+        projectPath: undefined,
+        forceRefresh: true,
+      });
+    });
+    expect(await view.findByText('技能已失效，列表已刷新。')).toBeTruthy();
+  });
+
+  it('runs skill health check from the skill toolbar', async () => {
+    checkSkillHealthMock.mockResolvedValueOnce({
+      ok: true,
+      healthy: false,
+      checkedPath: '/Users/demo/.claude/skills',
+      issues: ['未找到技能目录'],
+      recommendedAction: 'remote_resync',
+      syncStateVersion: '2026.05.27',
+    });
+
+    const view = render(<ManagementWorkspace mode="skills" hideModeSelect={true} />);
+    fireEvent.click(await view.findByRole('button', { name: '技能自检' }));
+
+    await waitFor(() => {
+      expect(checkSkillHealthMock).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      await view.findByText(
+        '/Users/demo/.claude/skills 自检异常：未找到技能目录。建议重新执行远端同步。'
+      )
+    ).toBeTruthy();
   });
 
   it('ignores stale skill detail responses when switching skills quickly', async () => {

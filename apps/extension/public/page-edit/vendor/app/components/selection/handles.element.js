@@ -7,21 +7,33 @@ export class Handles extends HTMLElement {
     super()
     this.$shadow = this.attachShadow({mode: 'closed'})
     this.styles = supportsAdoptedStyleSheets ? [HandleStyles] : [handle_css];
+    this.boundViewportChange = this.onViewportChange.bind(this)
+    this._positionSourceEl = null
+    this._positionNodeLabelId = null
   }
 
   connectedCallback() {
     if (supportsAdoptedStyleSheets) this.$shadow.adoptedStyleSheets = this.styles
-    window.addEventListener('resize', this.on_resize.bind(this))
+    window.addEventListener('resize', this.boundViewportChange)
+    window.addEventListener('scroll', this.boundViewportChange, true)
   }
   
   disconnectedCallback() {
-    window.removeEventListener('resize', this.on_resize)
+    window.removeEventListener('resize', this.boundViewportChange)
+    window.removeEventListener('scroll', this.boundViewportChange, true)
   }
 
-  on_resize() {
-    window.requestAnimationFrame(() => {
-      const node_label_id = this.$shadow.host.getAttribute('data-label-id')
-      const [source_el] = $(`[data-label-id="${node_label_id}"]`)
+  onViewportChange() {
+    const raf =
+      typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : (callback) => window.setTimeout(callback, 0)
+
+    raf(() => {
+      const node_label_id = this._positionNodeLabelId ?? this.$shadow.host.getAttribute('data-label-id')
+      const source_el =
+        this._positionSourceEl ??
+        (node_label_id ? $(`[data-label-id="${node_label_id}"]`)[0] : null)
 
       if (!source_el) return
 
@@ -33,6 +45,8 @@ export class Handles extends HTMLElement {
   }
 
   set position({el, node_label_id}) {
+    this._positionSourceEl = el ?? null
+    this._positionNodeLabelId = node_label_id ?? null
     this.$shadow.innerHTML = this.render(el.getBoundingClientRect(), node_label_id)
 
     if (this._backdrop) {
@@ -56,8 +70,8 @@ export class Handles extends HTMLElement {
   render({ x, y, width, height, top, left }, node_label_id) {
     this.$shadow.host.setAttribute('data-label-id', node_label_id)
 
-    this.style.setProperty('--top', `${top + window.scrollY}px`)
-    this.style.setProperty('--left', `${left + window.scrollX}px`)
+    this.style.setProperty('--top', `${top}px`)
+    this.style.setProperty('--left', `${left}px`)
 
     return `
       ${this.renderStyles()}

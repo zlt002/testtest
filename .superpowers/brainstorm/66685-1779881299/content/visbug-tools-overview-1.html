@@ -1,0 +1,112 @@
+<h2>VisBug 现状梳理</h2>
+<p class="subtitle">先确认颜色工具原本的职责，再看当前底部工具条的范围</p>
+
+<div class="section">
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">颜色工具原来的行为</div>
+      <div class="mockup-body">
+        <div class="label">目标不是直接选色，而是先选作用对象</div>
+        <div class="cards" style="grid-template-columns:repeat(3,1fr);margin-top:12px;">
+          <div class="card">
+            <div class="card-body">
+              <h3>文字</h3>
+              <p>对应 `color` / SVG `stroke`</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h3>背景</h3>
+              <p>对应 `backgroundColor` / SVG `fill`</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h3>边框</h3>
+              <p>对应 `borderColor`，必要时会补默认边框</p>
+            </div>
+          </div>
+        </div>
+        <div class="pros-cons" style="margin-top:16px;">
+          <div class="pros">
+            <h4>可调参数</h4>
+            <ul>
+              <li>色相 `h`</li>
+              <li>亮度 `l`</li>
+              <li>饱和度 `s`</li>
+              <li>透明度 `a`</li>
+            </ul>
+          </div>
+          <div class="cons">
+            <h4>不是它做的事</h4>
+            <ul>
+              <li>不是传统取色板工作流</li>
+              <li>不是直接输入十六进制色值</li>
+              <li>更偏“微调现有颜色”</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mockup">
+      <div class="mockup-header">当前底部工具条（你现在这版）</div>
+      <div class="mockup-body">
+        <div class="cards" style="grid-template-columns:repeat(2,1fr);">
+          <div class="card">
+            <div class="card-body">
+              <h3>内容</h3>
+              <p>编辑文本</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h3>布局</h3>
+              <p>位置、尺寸、内边距、外边距、弹性布局</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h3>样式</h3>
+              <p>字体、颜色</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h3>结构 / 查看</h3>
+              <p>前后移、参考线、检查</p>
+            </div>
+          </div>
+        </div>
+        <p class="subtitle" style="margin-top:16px;">你刚刚已经去掉了“阴影”入口，所以当前底部栏里剩下 11 个工具。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>我对颜色工具的结论</h3>
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>保留，但改名</h3>
+        <p>把“颜色”明确成“颜色微调”，避免用户误以为是完整调色板</p>
+      </div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>保留，并补直观入口</h3>
+        <p>继续保留微调，但增加更直观的文字 / 背景 / 边框调色交互</p>
+      </div>
+    </div>
+    <div class="option" data-choice="c" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>弱化</h3>
+        <p>对产品经理来说先不主推，放到二级或“更多”里</p>
+      </div>
+    </div>
+  </div>
+</div>

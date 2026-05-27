@@ -44,7 +44,7 @@
 }
 
 :host > span.label-shell {
-  position: absolute;
+  position: fixed;
   top: var(--top);
   left: var(--left);
   max-width: var(--max-width);
@@ -64,6 +64,10 @@
   white-space: nowrap;
   padding: 0.25em 0.4em 0.15em;
   line-height: 1.1;
+}
+
+:host([data-edge-attached-label="true"]) > span.label-shell {
+  transform: translateX(var(--translate-x)) translateY(calc(-100% + 1px));
 }
 
 .label-text {

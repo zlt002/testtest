@@ -24,7 +24,9 @@ test('apply backs up target, copies files, and removes blacklisted skills', asyn
       calls.push(`remove:${path}`);
     },
     fileExists: async (path) =>
-      path.endsWith('.skillBlackList.yaml') || path.endsWith('/skills/legacy-skill'),
+      path === '/home/user/.claude' ||
+      path.endsWith('.skillBlackList.yaml') ||
+      path.endsWith('/skills/legacy-skill'),
   });
 
   const result = await sync.apply({
@@ -48,7 +50,7 @@ test('apply skips blacklist removal when no blacklist file exists', async () => 
     removeDir: async (path) => {
       calls.push(`remove:${path}`);
     },
-    fileExists: async () => false,
+    fileExists: async (path) => path === '/home/user/.claude',
   });
 
   const result = await sync.apply({
@@ -95,7 +97,7 @@ test('default backup excludes transient oauth refresh lock file from tar archive
       execCalls.push({ command, args });
     },
     copyDir: async () => {},
-    fileExists: async () => false,
+    fileExists: async (path) => path === '/tmp/demo-home/.claude',
   });
 
   await sync.apply({
@@ -113,5 +115,37 @@ test('default backup excludes transient oauth refresh lock file from tar archive
     '-C',
     '/tmp/demo-home',
     '.claude',
+  ]);
+});
+
+test('apply skips backup when target dir does not exist yet', async () => {
+  const execCalls: Array<{ command: string; args: string[] }> = [];
+  const copyCalls: Array<{ from: string; to: string }> = [];
+  const sync = createLocalSyncFiles({
+    homeDir: '/tmp/demo-home',
+    now: () => new Date('2026-05-26T13:38:35.000Z'),
+    execFileAsync: async (command, args) => {
+      execCalls.push({ command, args });
+    },
+    copyDir: async (from, to) => {
+      copyCalls.push({ from, to });
+    },
+    fileExists: async (path) => path === '/tmp/extracted/.claude',
+  });
+
+  const result = await sync.apply({
+    extractedDir: '/tmp/extracted',
+    targetDir: '/tmp/demo-home/.claude',
+    keepBackupCount: 5,
+  });
+
+  assert.equal(result.backupPath, '');
+  assert.deepEqual(result.removedSkills, []);
+  assert.deepEqual(execCalls, []);
+  assert.deepEqual(copyCalls, [
+    {
+      from: '/tmp/extracted/.claude',
+      to: '/tmp/demo-home/.claude',
+    },
   ]);
 });

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import {
   listCapabilities,
+  listBuiltinCapabilitySources,
   type CapabilityItem,
   type CapabilitySourceKind,
 } from '../management/capability-catalog-service.ts';
@@ -292,16 +293,28 @@ async function listSkillCommandsFromCapabilities(input: {
   builtinSkillSources?: Array<{ rootDir: string; prefix?: string }>;
   forceRefresh?: boolean;
 }) {
+  const builtinSources = [
+    ...(await listBuiltinCapabilitySources()),
+    ...(input.builtinSkillSources || []).map((source) => ({
+      rootDir: source.rootDir,
+      scanDir: source.rootDir,
+      prefix: source.prefix,
+    })),
+  ].filter((source, index, collection) => {
+    const key = `${resolve(source.rootDir)}::${resolve(source.scanDir)}::${source.prefix || ''}`;
+    return (
+      collection.findIndex(
+        (item) =>
+          `${resolve(item.rootDir)}::${resolve(item.scanDir)}::${item.prefix || ''}` === key
+      ) === index
+    );
+  });
   const capabilities = await listCapabilities({
     type: 'skill',
     homeDir: input.homeDir,
     projectPath: input.projectPath,
     pluginSources: input.pluginSources,
-    builtinSources: input.builtinSkillSources?.map((source) => ({
-      rootDir: source.rootDir,
-      scanDir: source.rootDir,
-      prefix: source.prefix,
-    })),
+    builtinSources,
     forceRefresh: input.forceRefresh,
   });
   const result = new Map<string, CommandCatalogEntry>();
@@ -471,13 +484,15 @@ export function createCommandsService(
       pendingCommandCatalogReads.clear();
     },
 
-    async executeCommand(input: {
+    async executeCommand(commandInput: {
       commandName: string;
       commandPath?: string;
       args?: string[];
       context?: { projectPath?: string };
     }): Promise<ExecuteCommandResult> {
-      const localCommand = LOCAL_UI_COMMANDS.find((command) => command.name === input.commandName);
+      const localCommand = LOCAL_UI_COMMANDS.find(
+        (command) => command.name === commandInput.commandName
+      );
       if (localCommand) {
         return {
           type: 'local-ui',
@@ -487,42 +502,44 @@ export function createCommandsService(
         };
       }
 
-      if (!input.commandPath) {
+      if (!commandInput.commandPath) {
         throw new Error('Command path is required for custom commands');
       }
 
       const userBase = join(home, '.claude', 'commands');
-      const projectBase = input.context?.projectPath
-        ? join(input.context.projectPath, '.claude', 'commands')
+      const projectBase = commandInput.context?.projectPath
+        ? join(commandInput.context.projectPath, '.claude', 'commands')
         : null;
       const userSkillBase = join(home, '.claude', 'skills');
-      const projectSkillBase = input.context?.projectPath
-        ? join(input.context.projectPath, '.claude', 'skills')
+      const projectSkillBase = commandInput.context?.projectPath
+        ? join(commandInput.context.projectPath, '.claude', 'skills')
         : null;
-      const builtinSkillBases =
-        input.builtinSkillSources?.map((source) => resolve(source.rootDir)) || [];
+      const builtinSkillBases = [
+        ...(await listBuiltinCapabilitySources()).map((source) => resolve(source.rootDir)),
+        ...(input.builtinSkillSources || []).map((source) => resolve(source.rootDir)),
+      ].filter((baseDir, index, collection) => collection.indexOf(baseDir) === index);
       const isSkillPath =
-        basename(input.commandPath) === 'SKILL.md' &&
-        (isUnder(userSkillBase, input.commandPath) ||
-          (projectSkillBase && isUnder(projectSkillBase, input.commandPath)) ||
-          builtinSkillBases.some((baseDir) => isUnder(baseDir, input.commandPath)));
+        basename(commandInput.commandPath) === 'SKILL.md' &&
+        (isUnder(userSkillBase, commandInput.commandPath) ||
+          (projectSkillBase && isUnder(projectSkillBase, commandInput.commandPath)) ||
+          builtinSkillBases.some((baseDir) => isUnder(baseDir, commandInput.commandPath)));
       if (
         !isSkillPath &&
         !(
-          isUnder(userBase, input.commandPath) ||
-          (projectBase && isUnder(projectBase, input.commandPath))
+          isUnder(userBase, commandInput.commandPath) ||
+          (projectBase && isUnder(projectBase, commandInput.commandPath))
         )
       ) {
         throw new Error('Command must be in .claude/commands directory');
       }
 
-      const { metadata, body } = stripFrontmatter(await readFile(input.commandPath, 'utf8'));
-      const args = input.args || [];
+      const { metadata, body } = stripFrontmatter(await readFile(commandInput.commandPath, 'utf8'));
+      const args = commandInput.args || [];
       if (isSkillPath) {
-        const content = buildSkillPrompt(input.commandName, body, args);
+        const content = buildSkillPrompt(commandInput.commandName, body, args);
         return {
           type: 'custom',
-          command: input.commandName,
+          command: commandInput.commandName,
           content,
           metadata: { ...metadata, type: 'skill' },
           hasFileIncludes: content.includes('@'),
@@ -536,7 +553,7 @@ export function createCommandsService(
 
       return {
         type: 'custom',
-        command: input.commandName,
+        command: commandInput.commandName,
         content,
         metadata,
         hasFileIncludes: content.includes('@'),

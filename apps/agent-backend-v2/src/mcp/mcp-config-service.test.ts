@@ -163,7 +163,7 @@ test('reads workspace-specific mcp config when projectPath is provided', async (
 
     const servers = await service.listServers({ projectPath: workspaceDir });
 
-    assert.deepEqual(Object.keys(servers), ['workspace_server']);
+    assert.deepEqual(Object.keys(servers), ['ewankb-server', 'workspace_server']);
     assert.equal(servers.workspace_server.command, 'node');
     assert.equal(servers.default_server, undefined);
   } finally {
@@ -235,6 +235,7 @@ test('merges user MCP servers by default', async () => {
     assert.deepEqual(Object.keys(servers).sort(), [
       'allowed_user',
       'blocked_user',
+      'ewankb-server',
       'project_demo',
     ]);
     assert.equal(servers.allowed_user.command, 'node');
@@ -266,7 +267,7 @@ test('filters disabled project servers from runtime MCP list', async () => {
       enableBrowserExtensionMcp: false,
     });
 
-    assert.deepEqual(Object.keys(await service.listServers()), ['enabled_server']);
+    assert.deepEqual(Object.keys(await service.listServers()), ['ewankb-server', 'enabled_server']);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -302,7 +303,7 @@ test('filters disabled user MCP servers from runtime MCP list via project overri
 
     const servers = await service.listServers();
 
-    assert.deepEqual(Object.keys(servers), ['codebase_memory']);
+    assert.deepEqual(Object.keys(servers), ['codebase_memory', 'ewankb-server']);
     assert.equal(servers.codebase_memory.command, 'node');
   } finally {
     await rm(dir, { recursive: true, force: true });

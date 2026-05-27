@@ -322,6 +322,33 @@ test('executeCommand expands skill files into an explicit skill prompt with user
   assert.match(result.content, /请使用上面的 skill 完成以下请求：\n查询 订单状态/);
 });
 
+test('executeCommand allows builtin skill commands discovered from builtin skill sources', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'webmcp-builtin-skill-exec-'));
+  const homeDir = join(root, 'home');
+  const builtinSkillRoot = join(root, 'builtin-skills');
+  const skillPath = join(builtinSkillRoot, 'ewankb-server-query', 'SKILL.md');
+  await mkdir(join(builtinSkillRoot, 'ewankb-server-query'), { recursive: true });
+  await writeFile(
+    skillPath,
+    '---\ndescription: Builtin ewankb query\n---\n# ewankb-server-query\n\n请查询知识库。\n',
+    'utf8'
+  );
+
+  const service = createCommandsService({
+    homeDir,
+    builtinSkillSources: [{ rootDir: builtinSkillRoot }],
+  });
+  const result = await service.executeCommand({
+    commandName: '/ewankb-server-query',
+    commandPath: skillPath,
+    args: ['graph', 'mall', '付款额度'],
+  });
+
+  assert.equal(result.type, 'custom');
+  assert.match(result.content, /请查询知识库。/);
+  assert.match(result.content, /graph mall 付款额度/);
+});
+
 test('listCommands hides disabled user skills from the skill command catalog', async () => {
   const root = await mkdtemp(join(tmpdir(), 'webmcp-command-disable-skill-'));
   const homeDir = join(root, 'home');
@@ -353,6 +380,41 @@ test('listCommands hides disabled user skills from the skill command catalog', a
   );
   assert.equal(
     catalog.skills.some((command) => command.name === '/visible-skill'),
+    true
+  );
+});
+
+test('listCommands keeps default builtin skills when extra builtin skill sources are configured', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'webmcp-command-extra-builtin-'));
+  const homeDir = join(root, 'home');
+  const extraBuiltinSkillRoot = join(root, 'extra-builtin-skills');
+  await mkdir(join(extraBuiltinSkillRoot, 'extra-global-skill'), { recursive: true });
+  await writeFile(
+    join(extraBuiltinSkillRoot, 'extra-global-skill', 'SKILL.md'),
+    '---\ndescription: Extra global skill\n---\n# Extra Global Skill\n',
+    'utf8'
+  );
+
+  const defaultService = createCommandsService({ homeDir });
+  const defaultCatalog = await defaultService.listCommands({ forceRefresh: true });
+
+  const serviceWithExtraBuiltin = createCommandsService({
+    homeDir,
+    builtinSkillSources: [{ rootDir: extraBuiltinSkillRoot }],
+  });
+  const catalogWithExtraBuiltin = await serviceWithExtraBuiltin.listCommands({
+    forceRefresh: true,
+  });
+
+  for (const command of defaultCatalog.skills) {
+    assert.equal(
+      catalogWithExtraBuiltin.skills.some((item) => item.name === command.name),
+      true,
+      `expected extra builtin catalog to retain default skill command ${command.name}`
+    );
+  }
+  assert.equal(
+    catalogWithExtraBuiltin.skills.some((command) => command.name === '/extra-global-skill'),
     true
   );
 });

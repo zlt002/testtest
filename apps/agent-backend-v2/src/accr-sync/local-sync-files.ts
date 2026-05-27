@@ -156,11 +156,9 @@ export function createLocalSyncFiles(input?: {
       targetDir: string;
       keepBackupCount: number;
     }): Promise<LocalSyncApplyResult> {
-      const backupPath = await backupDir(
-        inputValue.targetDir,
-        backupRootDir,
-        inputValue.keepBackupCount
-      );
+      const backupPath = (await fileExists(inputValue.targetDir))
+        ? await backupDir(inputValue.targetDir, backupRootDir, inputValue.keepBackupCount)
+        : '';
       const sourceDir = (await fileExists(join(inputValue.extractedDir, '.claude')))
         ? join(inputValue.extractedDir, '.claude')
         : inputValue.extractedDir;

@@ -233,7 +233,7 @@ describe('selection-actions helpers', () => {
     expect(markup).not.toContain('>编辑<');
   });
 
-  it('shows a reserved snapshot editing entry on local snapshot pages', async () => {
+  it('does not render the reserved snapshot editing entry on local snapshot pages', async () => {
     document.documentElement.setAttribute(
       'data-webmcp-page-edit-config',
       JSON.stringify({ pageMode: 'local-snapshot' }),
@@ -245,9 +245,9 @@ describe('selection-actions helpers', () => {
     const markup = label.render('snapshot');
 
     expect(markup).toContain('data-action="annotate-selection"');
-    expect(markup).toContain('data-action="edit-selection"');
-    expect(markup).toContain('disabled');
-    expect(markup).toContain('>编辑<');
+    expect(markup).not.toContain('data-action="edit-selection"');
+    expect(markup).not.toContain('disabled');
+    expect(markup).not.toContain('>编辑<');
   });
 
   it('dispatchAction emits action details with the source label id', async () => {
@@ -1237,7 +1237,7 @@ describe('selection-actions helpers', () => {
   });
 
   describe('live-page lightweight presentation', () => {
-    it('does not render class/id metadata on selection while keeping action buttons', async () => {
+    it('renders tag + class metadata on selection while keeping action buttons', async () => {
       document.documentElement.setAttribute(
         'data-webmcp-page-edit-config',
         JSON.stringify({ pageMode: 'live-page' }),
@@ -1268,7 +1268,7 @@ describe('selection-actions helpers', () => {
           'analyze-selection',
           'annotate-selection',
         ]);
-        expect(visibleMetadata).toEqual(['span']);
+        expect(visibleMetadata).toEqual(['span', '.status.active']);
       });
     });
 
@@ -1385,7 +1385,7 @@ describe('selection-actions helpers', () => {
           ).map((anchor) => anchor.textContent?.trim() ?? '');
 
           expect(actions).toHaveLength(0);
-          expect(visibleMetadata).toEqual(['span']);
+          expect(visibleMetadata).toEqual(['span', '.status.active']);
         });
       } finally {
         vi.doUnmock('../../public/page-edit/vendor/app/features/selection-presentation.js');

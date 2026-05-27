@@ -812,7 +812,7 @@ export function AgentComposer({
 
   return (
     <div className="toolbar-surface-plain">
-      <div className="space-y-2 p-3">
+      <div className="space-y-2 p-2">
         {composerNotice}
         {selectionFeedback ? (
           <div
@@ -957,7 +957,7 @@ export function AgentComposer({
                   ? 'Claude 正在等待你处理上方请求'
                   : '输入 / 调用命令，@ 选择文件，或向 Claude 提问，Enter 发送 · Shift+Enter 换行 · Tab 切换模式'
             }
-            className="min-h-[104px] max-h-[50vh] resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-sm shadow-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-0"
+            className="min-h-[104px] text-xs max-h-[50vh] resize-none overflow-y-auto border-0 bg-transparent px-3 py-3  shadow-none disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-0"
             onKeyDown={(event) => {
               if (isInputDisabled) {
                 event.preventDefault();
@@ -1101,7 +1101,7 @@ export function AgentComposer({
           ) : null}
 
           <div className="flex items-center justify-between gap-2 border-t bg-muted/20 px-2 py-1.5">
-            <div className="flex min-w-0 items-center gap-1">
+            <div className="flex min-w-0 items-center gap-2">
               <Button
                 type="button"
                 variant="ghost"
@@ -1148,6 +1148,7 @@ export function AgentComposer({
                 size="icon"
                 className="relative h-6.5 w-6.5 rounded-full"
                 title="显示命令"
+                aria-label="显示命令"
                 disabled={areWorkspaceToolsDisabled}
                 onClick={() => {
                   setIsCommandsOpen((open) => !open);

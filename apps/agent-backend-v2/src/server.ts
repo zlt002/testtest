@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { mkdirSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { basename, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -66,11 +67,12 @@ const sessionFileService = createSessionFileService({
 const syncConfigStore = createSyncConfigStore();
 const syncStateStore = createSyncStateStore();
 const localSyncFiles = createLocalSyncFiles();
+const claudeTargetDir = resolve(homedir(), '.claude');
 const remoteSyncManager = createRemoteSyncManager({
   configStore: syncConfigStore,
   stateStore: syncStateStore,
   localSyncFiles,
-  targetDir: resolve(homedir(), '.claude'),
+  targetDir: claudeTargetDir,
 });
 const modelConfigService = createModelConfigService({
   configPath: resolve(env.workdir, '.webmcp', 'model-config.json'),
@@ -212,7 +214,7 @@ const app = createApp({
         const state = await syncStateStore.load();
         const applied = await localSyncFiles.apply({
           extractedDir: env.workdir,
-          targetDir: resolve(homedir(), '.claude'),
+          targetDir: claudeTargetDir,
           keepBackupCount: config.keepBackupCount,
         });
         const version = `local-debug-${new Date().toISOString()}`;
@@ -229,6 +231,34 @@ const app = createApp({
           mode: 'local-debug' as const,
           stdout: '',
           stderr: '',
+        };
+      },
+    },
+    healthCheck: {
+      async check() {
+        const checkedPath = resolve(claudeTargetDir, 'skills');
+        const issues: string[] = [];
+        let healthy = true;
+
+        try {
+          const stats = await stat(checkedPath);
+          if (!stats.isDirectory()) {
+            healthy = false;
+            issues.push('技能目录存在，但不是文件夹');
+          }
+        } catch {
+          healthy = false;
+          issues.push('未找到技能目录');
+        }
+
+        const syncState = await syncStateStore.load().catch(() => null);
+        return {
+          ok: true as const,
+          healthy,
+          checkedPath,
+          issues,
+          recommendedAction: healthy ? ('none' as const) : ('remote_resync' as const),
+          syncStateVersion: syncState?.version || undefined,
         };
       },
     },

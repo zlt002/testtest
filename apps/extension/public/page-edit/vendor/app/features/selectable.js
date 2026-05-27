@@ -1239,25 +1239,18 @@ export function Selectable(visbug) {
   const buildSelectionLabelTemplate = (element, policy) => {
     if (!policy.showSelectionLabel) return '';
 
+    const classSelector = createClassname(element);
+
     if (!policy.showSelectionMetadata) {
       return `
         <a node>${element.nodeName.toLowerCase()}</a>
+        ${classSelector ? `<a>${classSelector}</a>` : ''}
       `;
     }
 
     return `
       <a node>${element.nodeName.toLowerCase()}</a>
-      <a>${element.id && '#' + element.id}</a>
-      ${createClassname(element)
-        .split('.')
-        .filter((name) => name != '')
-        .reduce(
-          (links, name) => `
-          ${links}
-          <a>.${name}</a>
-        `,
-          ''
-        )}
+      ${classSelector ? `<a>${classSelector}</a>` : element.id ? `<a>#${element.id}</a>` : ''}
     `;
   };
 
@@ -1405,6 +1398,7 @@ export function Selectable(visbug) {
   const overlayHoverUI = ({ el, no_hover = false, no_label = true }) => {
     if (hover_state.target === el) return;
     hover_state.target = el;
+    const classSelector = createClassname(el);
 
     hover_state.element = no_hover ? null : createHover(el);
 
@@ -1414,17 +1408,7 @@ export function Selectable(visbug) {
           el,
           `
           <a node>${el.nodeName.toLowerCase()}</a>
-          <a>${el.id && '#' + el.id}</a>
-          ${createClassname(el)
-            .split('.')
-            .filter((name) => name != '')
-            .reduce(
-              (links, name) => `
-              ${links}
-              <a>.${name}</a>
-            `,
-              ''
-            )}
+          ${classSelector ? `<a>${classSelector}</a>` : el.id ? `<a>#${el.id}</a>` : ''}
         `
         );
   };

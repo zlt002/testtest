@@ -88,6 +88,7 @@ describe('SystemUpdateNotice', () => {
   it('waits for the installed package id to catch up before reloading the extension', async () => {
     vi.useFakeTimers();
     const reload = vi.fn();
+    const close = vi.fn();
     const getCurrent = vi.fn(async () => ({ id: 17 }));
     const set = vi.fn(async () => undefined);
     const onPollUpdateInfo = vi
@@ -116,6 +117,10 @@ describe('SystemUpdateNotice', () => {
           set,
         },
       },
+    });
+    Object.defineProperty(window, 'close', {
+      configurable: true,
+      value: close,
     });
 
     const onStartUpdate = vi.fn(async () => ({ success: true, message: '服务会重启' }));
@@ -156,5 +161,6 @@ describe('SystemUpdateNotice', () => {
 
     expect(onPollUpdateInfo).toHaveBeenCalledTimes(2);
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

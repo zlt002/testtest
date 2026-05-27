@@ -13,6 +13,7 @@ import {
 } from './model-access-state';
 
 export const OFFICIAL_MODEL_GATEWAY_BASE_URL = 'https://anapi-uat.annto.com/api-sse-anthropic';
+const OFFICIAL_MODEL_GATEWAY_V1_BASE_URL = `${OFFICIAL_MODEL_GATEWAY_BASE_URL}/v1`;
 
 export type ModelAccessBootstrapClient = Pick<
   ReturnType<typeof createAgentV2Client>,
@@ -53,7 +54,11 @@ export function trimOptionalValue(value: string | undefined | null): string | un
 }
 
 function isOfficialGatewayBaseUrl(value: string | undefined): boolean {
-  return trimOptionalValue(value) === OFFICIAL_MODEL_GATEWAY_BASE_URL;
+  const normalizedValue = trimOptionalValue(value);
+  return (
+    normalizedValue === OFFICIAL_MODEL_GATEWAY_BASE_URL ||
+    normalizedValue === OFFICIAL_MODEL_GATEWAY_V1_BASE_URL
+  );
 }
 
 export function inferModelConfigMode(

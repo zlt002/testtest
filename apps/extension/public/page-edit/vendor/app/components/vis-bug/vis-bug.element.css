@@ -158,7 +158,7 @@
   border: 1px solid var(--theme-card_border);
   border-radius: 12px;
   background: var(--theme-bd-2);
-  box-shadow: var(--theme-shadow-soft);
+  box-shadow: none;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;

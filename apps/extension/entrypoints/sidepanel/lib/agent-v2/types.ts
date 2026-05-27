@@ -145,6 +145,15 @@ export type WorkspaceFolderPickResponse = {
   projectPath: string | null;
 };
 
+export type SkillHealthCheckResult = {
+  ok: true;
+  healthy: boolean;
+  checkedPath: string;
+  issues: string[];
+  recommendedAction: 'none' | 'remote_resync';
+  syncStateVersion?: string;
+};
+
 export type PageGraphRoutingRule = {
   id: string;
   enabled: boolean;

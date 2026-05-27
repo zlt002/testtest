@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 import { createBrowserExtensionMcpServer, type McpServerConfig } from './browser-extension-mcp.ts';
+import { ensureDefaultUserMcpServer } from './default-user-mcp.ts';
 import { readMcpServerOverrides, resolveMcpProjectScope } from './mcp-server-overrides.ts';
 
 const ServerNameSchema = z
@@ -34,7 +35,7 @@ async function readConfig(configPath: string): Promise<McpConfigFile> {
 
 async function readUserConfig(configPath: string): Promise<McpConfigFile> {
   try {
-    const payload = JSON.parse(await readFile(configPath, 'utf8')) as unknown;
+    const payload = await ensureDefaultUserMcpServer(configPath);
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return { mcpServers: {} };
     }
@@ -76,7 +77,7 @@ export function createMcpConfigService(options: {
   ): Record<string, McpServerConfig> {
     const disabled = new Set(disabledServers);
     return Object.fromEntries(
-      Object.entries(servers)
+      (Object.entries(servers) as Array<[string, McpServerConfig]>)
         .map(([name, server]) => [
           name,
           disabled.has(name) ? { ...server, disabled: true } : server,

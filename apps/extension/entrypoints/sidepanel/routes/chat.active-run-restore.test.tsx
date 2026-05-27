@@ -53,6 +53,9 @@ const activeRunSessionMocks = vi.hoisted(() => ({
 
 const clientMocks = vi.hoisted(() => ({
   mockGetCapabilities: vi.fn(async () => ({ workdir: '/tmp/project' })),
+  mockGetRuntimeCapabilities: vi.fn(async () => ({
+    selectedAuthSource: 'user_claude_settings',
+  })),
   mockListProjects: vi.fn(async () => [
     {
       projectKey: 'workspace',
@@ -114,6 +117,8 @@ const clientMocks = vi.hoisted(() => ({
       },
     },
   })),
+  mockUpdateModelConfig: vi.fn(async () => undefined),
+  mockUpdateRuntimeCapabilities: vi.fn(async () => undefined),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -141,6 +146,7 @@ vi.mock('../lib/agent-v2/client', () => ({
   findRemovedUploadedSessionAttachments: vi.fn(() => []),
   createAgentV2Client: () => ({
     getCapabilities: clientMocks.mockGetCapabilities,
+    getRuntimeCapabilities: clientMocks.mockGetRuntimeCapabilities,
     listProjects: clientMocks.mockListProjects,
     getSystemUpdateInfo: clientMocks.mockGetSystemUpdateInfo,
     analyzeDom: clientMocks.mockAnalyzeDom,
@@ -151,6 +157,8 @@ vi.mock('../lib/agent-v2/client', () => ({
     openFileEntry: clientMocks.mockOpenFileEntry,
     getModelConfig: clientMocks.mockGetModelConfig,
     testModelConfig: clientMocks.mockTestModelConfig,
+    updateModelConfig: clientMocks.mockUpdateModelConfig,
+    updateRuntimeCapabilities: clientMocks.mockUpdateRuntimeCapabilities,
   }),
 }));
 
@@ -382,6 +390,10 @@ describe('Chat active run restore', () => {
     });
     clientMocks.mockGetCapabilities.mockClear();
     clientMocks.mockListProjects.mockClear();
+    clientMocks.mockGetRuntimeCapabilities.mockReset();
+    clientMocks.mockGetRuntimeCapabilities.mockResolvedValue({
+      selectedAuthSource: 'user_claude_settings',
+    });
     clientMocks.mockGetSystemUpdateInfo.mockReset();
     clientMocks.mockGetSystemUpdateInfo.mockResolvedValue({ updateAvailable: false });
     clientMocks.mockAnalyzeDom.mockClear();
@@ -437,6 +449,10 @@ describe('Chat active run restore', () => {
         },
       })
     );
+    clientMocks.mockUpdateModelConfig.mockReset();
+    clientMocks.mockUpdateModelConfig.mockResolvedValue(undefined);
+    clientMocks.mockUpdateRuntimeCapabilities.mockReset();
+    clientMocks.mockUpdateRuntimeCapabilities.mockResolvedValue(undefined);
     sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage.mockReset();
     sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage.mockReturnValue(false);
     sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockReset();
@@ -539,6 +555,55 @@ describe('Chat active run restore', () => {
         projectPath: '/tmp/project',
       });
     });
+  });
+
+  it('同一工作区仅路径分隔符大小写不同的重复选择不会重置当前会话', async () => {
+    activeRunSessionMocks.mockReadAgentV2ActiveRunSession.mockResolvedValue(null);
+    clientMocks.mockGetCapabilities.mockResolvedValue({
+      workdir: 'D:\\Users\\Demo\\workspace',
+    });
+    clientMocks.mockListProjects.mockResolvedValue([
+      {
+        projectKey: 'workspace',
+        name: 'workspace',
+        projectPath: 'D:\\Users\\Demo\\workspace',
+        sessionCount: 0,
+      },
+    ]);
+    sessionSelectionMocks.mockReadAgentV2ProjectSelection.mockResolvedValue({
+      projectPath: 'D:\\Users\\Demo\\workspace',
+      selectedAt: '2026-05-22T10:00:00.000Z',
+    });
+    mockStreamState.sessionId = 'session-existing';
+    sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockImplementation(
+      (message: unknown) =>
+        (message as { type?: string }).type === 'agent_v2_project_selected'
+    );
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(mockStreamState.reset).toHaveBeenCalledTimes(1);
+    });
+    const resetCallCountBeforeBroadcast = mockStreamState.reset.mock.calls.length;
+    const clearSessionsCallCountBeforeBroadcast = mockSessionsState.clearSessions.mock.calls.length;
+
+    await act(async () => {
+      for (const listener of mockOnMessageListeners) {
+        listener({
+          type: 'agent_v2_project_selected',
+          payload: {
+            projectPath: 'd:/users/demo/workspace',
+            selectedAt: '2026-05-22T10:01:00.000Z',
+          },
+        });
+      }
+    });
+
+    expect(mockStreamState.reset).toHaveBeenCalledTimes(resetCallCountBeforeBroadcast);
+    expect(mockSessionsState.clearSessions).toHaveBeenCalledTimes(
+      clearSessionsCallCountBeforeBroadcast
+    );
   });
 
   it('active run 记录存在但无活动流时，会回退到 session selection', async () => {

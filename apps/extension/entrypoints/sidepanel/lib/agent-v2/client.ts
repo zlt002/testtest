@@ -35,6 +35,7 @@ import type {
   SessionAttachment,
   SessionRunStateRecord,
   SessionHistoryResponse,
+  SkillHealthCheckResult,
   StartRunInput,
   SystemUpdateInfo,
   SystemUpdateStartResponse,
@@ -751,6 +752,14 @@ export function createAgentV2Client(options: AgentV2ClientOptions) {
       const response = await fetch(createApiUrl(options, `/capabilities?${params}`));
       if (!response.ok) {
         throw new Error(`Failed to load capabilities: ${response.status}`);
+      }
+      return response.json();
+    },
+
+    async checkSkillHealth(): Promise<SkillHealthCheckResult> {
+      const response = await fetch(`${trimTrailingSlash(options.baseUrl)}/api/accr-sync/health`);
+      if (!response.ok) {
+        throw await buildRequestError(response, 'Failed to check skill health');
       }
       return response.json();
     },

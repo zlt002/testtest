@@ -78,6 +78,17 @@ describe('model-access-bootstrap helpers', () => {
     ).toBe('official');
   });
 
+  it('hydrateModelConfig 会将官方网关 /v1 版本也识别为 official 模式', () => {
+    expect(
+      hydrateModelConfig(
+        modelConfig({
+          configMode: undefined,
+          anthropicBaseUrl: 'https://anapi-uat.annto.com/api-sse-anthropic/v1',
+        })
+      ).configMode
+    ).toBe('official');
+  });
+
   it('hasStoredProjectModelConfig 根据 provider 判断是否已有 key', () => {
     expect(hasStoredProjectModelConfig(modelConfig({ anthropicApiKey: 'sk-demo' }))).toBe(true);
     expect(hasStoredProjectModelConfig(modelConfig({ anthropicApiKey: '   ' }))).toBe(false);

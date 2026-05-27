@@ -28,13 +28,13 @@ import {
 } from './lite-extension-identity.mjs';
 
 test('Windows Lite beta display name follows the expected branding format', () => {
-  assert.equal(buildWindowsLiteBetaDisplayName(0), 'accr-ui【beta.1.0.0】');
-  assert.equal(buildWindowsLiteBetaDisplayName(7), 'accr-ui【beta.1.0.7】');
+  assert.equal(buildWindowsLiteBetaDisplayName(0), 'accr-ui【beta.1.1.0】');
+  assert.equal(buildWindowsLiteBetaDisplayName(7), 'accr-ui【beta.1.1.7】');
 });
 
 test('Windows Lite beta manifest version stays Chrome-compatible', () => {
-  assert.equal(buildWindowsLiteBetaManifestVersion(0), '1.0.0');
-  assert.equal(buildWindowsLiteBetaManifestVersion(12), '1.0.12');
+  assert.equal(buildWindowsLiteBetaManifestVersion(0), '1.1.0');
+  assert.equal(buildWindowsLiteBetaManifestVersion(12), '1.1.12');
 });
 
 test('applyWindowsLiteBetaManifest rewrites only the packaged extension name and version', () => {
@@ -50,8 +50,8 @@ test('applyWindowsLiteBetaManifest rewrites only the packaged extension name and
 
   assert.deepEqual(manifest, {
     manifest_version: 3,
-    name: 'accr-ui【beta.1.0.5】',
-    version: '1.0.5',
+    name: 'accr-ui【beta.1.1.5】',
+    version: '1.1.5',
     key: 'abc',
   });
 });
@@ -312,8 +312,12 @@ test('installPs1 builds a WinForms installer with folder picker and progress upd
   assert.ok(script.includes('chrome-extension://abc123/'));
   assert.ok(script.includes('$progressTimer = New-Object System.Windows.Forms.Timer'));
   assert.ok(script.includes('$installButton.Add_Click'));
+  assert.ok(script.includes('function Resolve-DefaultInstallDir'));
+  assert.ok(script.includes("[System.IO.DriveInfo]::GetDrives()"));
+  assert.ok(script.includes("Join-Path $drive.RootDirectory.FullName 'accrui'"));
   assert.ok(script.includes('[System.IO.Directory]::Exists($fullDestPath)'));
   assert.ok(script.includes('[System.IO.Directory]::GetFileSystemEntries($fullDestPath).Length -gt 0'));
+  assert.ok(script.includes("throw '请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。'"));
   assert.ok(script.includes('install.ps1'));
 });
 
@@ -335,6 +339,7 @@ test('installPs1 emits the polished Chinese installer UI copy and completion sta
   assert.ok(script.includes("$Badge.Text = if ($Ok) { '已满足' } else { '未满足' }"));
   assert.ok(script.includes('已检测到 Node.js v$versionOutput，满足安装要求。'));
   assert.ok(script.includes("已选择安装位置。"));
+  assert.ok(script.includes("请不要选择 C 盘，也不要选择包含中文的安装路径，请安装到其他磁盘的英文目录。"));
   assert.ok(script.includes("正在准备安装环境..."));
   assert.ok(script.includes("安装完成，浏览器引导页已自动打开。"));
 });
@@ -357,6 +362,17 @@ test('installPs1 writes the temporary worker script with a BOM so Windows PowerS
       "[System.IO.File]::WriteAllText($workerPath, (Build-InstallWorkerScript), [System.Text.UTF8Encoding]::new($true))"
     )
   );
+});
+
+test('installPs1 embeds C-drive validation helper inside the worker script', () => {
+  const script = installPs1('abc123');
+
+  assert.ok(script.includes('function Build-InstallWorkerScript'));
+  assert.ok(script.includes("function Test-IsDisallowedInstallPath {"));
+  assert.ok(script.includes("function Test-PathContainsNonAscii {"));
+  assert.ok(script.includes('$pathRoot = [System.IO.Path]::GetPathRoot($fullPath)'));
+  assert.ok(script.includes("ToUpperInvariant() -eq 'C:'"));
+  assert.ok(script.includes("[System.Text.RegularExpressions.Regex]::IsMatch($PathValue, '[^\\u0000-\\u007F]')"));
 });
 
 test('installPs1 refreshes PATH and falls back to common install locations when rechecking dependencies', () => {

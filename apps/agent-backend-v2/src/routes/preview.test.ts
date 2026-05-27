@@ -197,6 +197,39 @@ test('GET preview asset returns css with content type', async () => {
   }
 });
 
+test('GET preview image asset includes CORP header for extension embedding', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'preview-route-'));
+  await mkdir(join(projectRoot, 'assets'), { recursive: true });
+  await writeFile(
+    join(projectRoot, 'assets', 'diagram.png'),
+    Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+      0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+      0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00,
+      0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ])
+  );
+
+  const app = createApp(baseDeps() as Parameters<typeof createApp>[0]);
+  const { server, url } = await listen(app);
+  try {
+    const redirect = await fetch(
+      `${url}/api/preview/file?projectPath=${encodeURIComponent(projectRoot)}&filePath=${encodeURIComponent('assets/diagram.png')}`,
+      { redirect: 'manual' }
+    );
+    const location = redirect.headers.get('location') || '';
+    const response = await fetch(`${url}${location}`);
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') || '', /image\/png/);
+    assert.equal(response.headers.get('cross-origin-resource-policy'), 'cross-origin');
+  } finally {
+    server.close();
+  }
+});
+
 test('GET /api/preview/events/:previewId streams reload event after file change', async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), 'preview-route-'));
   await mkdir(join(projectRoot, 'pages', 'demo'), { recursive: true });

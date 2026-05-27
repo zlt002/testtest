@@ -2,7 +2,6 @@ import $ from '../../vendor-deps/blingblingjs.js';
 import { LabelStyles, label_css, supportsAdoptedStyleSheets } from '../styles.store.js';
 import {
   getCurrentPageMode,
-  isLocalSnapshotMode,
 } from '../../../../runtime/page-mode.js';
 
 const pageEditDebugEnabled = () => {
@@ -33,7 +32,7 @@ function clampLabelIntoViewport(labelHost, view) {
 
   const shellBounds = labelShell.getBoundingClientRect();
   const top = Number.parseFloat(labelHost.style.getPropertyValue('--top')) || 0;
-  const anchorTop = top - (view.scrollY || 0);
+  const anchorTop = top;
   const anchorHeight = Number.parseFloat(labelHost.style.getPropertyValue('--anchor-height')) || 0;
   const overflowRight = shellBounds.right - (view.innerWidth - LABEL_VIEWPORT_GAP);
   const overflowLeft = LABEL_VIEWPORT_GAP - shellBounds.left;
@@ -71,18 +70,22 @@ export class Label extends HTMLElement {
     this.styles = supportsAdoptedStyleSheets ? [LabelStyles] : [label_css];
     this.boundDispatchQuery = this.dispatchQuery.bind(this);
     this.boundDispatchAction = this.dispatchAction.bind(this);
-    this.boundOnResize = this.on_resize.bind(this);
+    this.boundOnResize = this.onViewportChange.bind(this);
+    this.sourceElement = null;
+    this.nodeLabelId = null;
   }
 
   connectedCallback() {
     if (supportsAdoptedStyleSheets) this.$shadow.adoptedStyleSheets = this.styles;
     this.bindInteractiveAnchors();
     window.addEventListener('resize', this.boundOnResize);
+    window.addEventListener('scroll', this.boundOnResize, true);
   }
 
   disconnectedCallback() {
     this.unbindInteractiveAnchors();
     window.removeEventListener('resize', this.boundOnResize);
+    window.removeEventListener('scroll', this.boundOnResize, true);
   }
 
   bindInteractiveAnchors() {
@@ -95,15 +98,23 @@ export class Label extends HTMLElement {
     $('button[data-action]', this.$shadow).off('click', this.boundDispatchAction);
   }
 
-  on_resize() {
-    window.requestAnimationFrame(() => {
-      const node_label_id = this.$shadow.host.getAttribute('data-label-id');
-      const [source_el] = $(`[data-label-id="${node_label_id}"]`);
+  onViewportChange() {
+    const raf =
+      typeof window.requestAnimationFrame === 'function'
+        ? window.requestAnimationFrame.bind(window)
+        : (callback) => window.setTimeout(callback, 0);
+
+    raf(() => {
+      const node_label_id = this.nodeLabelId ?? this.$shadow.host.getAttribute('data-label-id');
+      const source_el =
+        this.sourceElement ??
+        (node_label_id ? $(`[data-label-id="${node_label_id}"]`)[0] : null);
 
       if (!source_el) return;
 
       this.position = {
         node_label_id,
+        sourceElement: source_el,
         boundingRect: source_el.getBoundingClientRect(),
       };
     });
@@ -148,7 +159,9 @@ export class Label extends HTMLElement {
     this._text = content;
   }
 
-  set position({ boundingRect, node_label_id }) {
+  set position({ boundingRect, node_label_id, sourceElement = null }) {
+    this.nodeLabelId = node_label_id ?? null;
+    this.sourceElement = sourceElement;
     this.unbindInteractiveAnchors();
     this.$shadow.innerHTML = this.render(node_label_id);
     this.bindInteractiveAnchors();
@@ -159,8 +172,8 @@ export class Label extends HTMLElement {
     const view = this.ownerDocument?.defaultView || globalThis.window;
     if (!view) return;
 
-    this.style.setProperty('--top', `${y + view.scrollY}px`);
-    this.style.setProperty('--left', `${x + view.scrollX - 1}px`);
+    this.style.setProperty('--top', `${y}px`);
+    this.style.setProperty('--left', `${x - 1}px`);
     this.style.setProperty('--anchor-height', `${height}px`);
     this.style.setProperty(
       '--max-width',
@@ -193,15 +206,6 @@ export class Label extends HTMLElement {
       { action: 'analyze-selection', label: '分析' },
       { action: 'annotate-selection', label: '备注' },
     ];
-
-    if (isLocalSnapshotMode(pageMode)) {
-      actions.push({
-        action: 'edit-selection',
-        label: '编辑',
-        disabled: true,
-        title: '本地快照编辑入口预留，后续任务补齐完整流程',
-      });
-    }
 
     return actions
       .map(

@@ -922,7 +922,7 @@ describe('AgentComposer', () => {
 
     renderComposer('');
 
-    const button = await screen.findByRole('button', { name: '鏄剧ず鍛戒护' });
+    const button = await screen.findByTitle('显示命令');
     expect(within(button).getByText('4')).toBeTruthy();
   });
 

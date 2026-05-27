@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -297,6 +297,26 @@ test('readCapability returns skill file tree and SKILL.md as the default file', 
   ]);
 });
 
+test('readCapability returns a missing capability error when the skill file no longer exists', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'webmcp-skill-detail-missing-'));
+  const homeDir = join(root, 'home');
+  const skillDir = join(homeDir, '.claude', 'skills', 'demo-skill');
+
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(join(skillDir, 'SKILL.md'), '# Demo Skill\n', 'utf8');
+
+  const [capability] = await listCapabilities({ type: 'skill', homeDir, builtinSources: [] });
+  await rm(join(skillDir, 'SKILL.md'));
+  await assert.rejects(
+    () => readCapability({ id: capability.id, homeDir, builtinSources: [] }),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 404);
+      assert.match(String((error as { message?: string }).message || ''), /no longer exists/i);
+      return true;
+    }
+  );
+});
+
 test('readCapabilityFile reads an existing skill child file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'webmcp-read-skill-file-'));
   const homeDir = join(root, 'home');
@@ -317,6 +337,32 @@ test('readCapabilityFile reads an existing skill child file', async () => {
   assert.equal(payload.path, 'scripts/helper.py');
   assert.equal(payload.content, 'print("demo")\n');
   assert.equal(payload.encoding, 'utf8');
+});
+
+test('readCapabilityFile returns a missing capability error when the child file no longer exists', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'webmcp-read-skill-file-missing-'));
+  const homeDir = join(root, 'home');
+  const skillDir = join(homeDir, '.claude', 'skills', 'demo-skill');
+
+  await mkdir(join(skillDir, 'scripts'), { recursive: true });
+  await writeFile(join(skillDir, 'SKILL.md'), '# Demo Skill\n', 'utf8');
+  await writeFile(join(skillDir, 'scripts', 'helper.py'), 'print("demo")\n', 'utf8');
+
+  const [capability] = await listCapabilities({ type: 'skill', homeDir, builtinSources: [] });
+  await assert.rejects(
+    () =>
+      readCapabilityFile({
+        id: capability.id,
+        homeDir,
+        path: 'scripts/missing.py',
+        builtinSources: [],
+      }),
+    (error: unknown) => {
+      assert.equal((error as { statusCode?: number }).statusCode, 404);
+      assert.match(String((error as { message?: string }).message || ''), /no longer exists/i);
+      return true;
+    }
+  );
 });
 
 test('readCapabilityFile normalizes Windows-style separators in skill child paths', async () => {

@@ -4,6 +4,7 @@ import {
   type BootstrapModelAccessResult,
   loadBootstrapModelAccess,
 } from './model-access-bootstrap';
+import { publishCapabilityCatalogChanged } from './capability-catalog-events';
 import { config } from './config';
 
 const ACCR_SYNC_URL = 'http://127.0.0.1:8792/api/accr-sync/run';
@@ -160,6 +161,8 @@ export async function syncRemoteAccr(): Promise<BootstrapSyncResult> {
     const payload = (await response.json().catch(() => null)) as BootstrapSyncResult | null;
 
     if (response.ok && payload?.ok && payload.status === 'completed') {
+      publishCapabilityCatalogChanged({ type: 'skill' });
+      publishCapabilityCatalogChanged({ type: 'command' });
       return payload;
     }
 

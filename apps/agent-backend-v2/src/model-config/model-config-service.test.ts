@@ -162,6 +162,55 @@ test('detects anthropic-compatible CLI settings from local Claude settings.json'
   }
 });
 
+test('detects official gateway CLI settings as official with or without /v1 suffix', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agent-backend-v2-model-config-cli-official-'));
+  const userClaudeSettingsPath = join(dir, '.claude', 'settings.json');
+  try {
+    await mkdir(join(dir, '.claude'), { recursive: true });
+    await writeFile(
+      userClaudeSettingsPath,
+      JSON.stringify(
+        {
+          env: {
+            ANTHROPIC_BASE_URL: 'https://anapi-uat.annto.com/api-sse-anthropic',
+            ANTHROPIC_AUTH_TOKEN: 'sk-ant-local',
+            ANTHROPIC_MODEL: 'claude-sonnet-4-20250514',
+          },
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+
+    const service = createModelConfigService({
+      configPath: join(dir, '.webmcp', 'model-config.json'),
+      userClaudeSettingsPath,
+      env: {
+        host: '127.0.0.1',
+        port: 8792,
+        workdir: dir,
+        model: null,
+        enableBrowserExtensionMcp: true,
+        browserExtensionMcpUrl: 'http://127.0.0.1:12306/mcp',
+        enableLiveWritePreviewDiagnostics: false,
+        claudeCodeExecutablePath: 'C:\\claude.exe',
+      },
+    });
+
+    assert.deepEqual(await service.getDetectedCliConfig(), {
+      configMode: 'official',
+      modelProvider: 'anthropic',
+      providerVariant: 'standard',
+      anthropicBaseUrl: 'https://anapi-uat.annto.com/api-sse-anthropic',
+      anthropicApiKey: 'sk-ant-local',
+      anthropicModelName: 'claude-sonnet-4-20250514',
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('detects openai-compatible CLI settings from local Claude settings.json', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'agent-backend-v2-model-config-cli-openai-'));
   const userClaudeSettingsPath = join(dir, '.claude', 'settings.json');

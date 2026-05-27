@@ -9,7 +9,7 @@ export class Corners extends Handles {
   }
 
   render({ width, height, top, left }) {
-    this.style.setProperty('--top', `${top + window.scrollY}px`)
+    this.style.setProperty('--top', `${top}px`)
     this.style.setProperty('--left', `${left}px`)
 
     return `

@@ -155,7 +155,11 @@ function normalizeSettingsMode(value: unknown): SettingsMode {
 export { trimOptionalValue } from '../lib/model-access-bootstrap';
 
 function isOfficialGatewayBaseUrl(value: string | undefined): boolean {
-  return trimOptionalValue(value) === OFFICIAL_MODEL_GATEWAY_BASE_URL;
+  const normalizedValue = trimOptionalValue(value);
+  return (
+    normalizedValue === OFFICIAL_MODEL_GATEWAY_BASE_URL ||
+    normalizedValue === `${OFFICIAL_MODEL_GATEWAY_BASE_URL}/v1`
+  );
 }
 
 function isDeepSeekAnthropicBaseUrl(value: string | undefined): boolean {
@@ -215,12 +219,19 @@ function resolveSelectedSourceAvailability(input: {
   userClaudeSettingsTestResult: AgentModelConfigAuthTestResult | null;
   projectModelConfigTestResult: AgentModelConfigAuthTestResult | null;
 }): boolean {
+  const runtimeMatchesSelectedSource =
+    input.runtimeInfo?.selectedAuthSource === input.selectedAuthSource;
+
   if (input.selectedAuthSource === 'user_claude_settings') {
-    return input.userClaudeSettingsTestResult?.ok ?? (input.runtimeInfo?.available ?? false);
+    return input.userClaudeSettingsTestResult?.ok ?? (runtimeMatchesSelectedSource
+      ? (input.runtimeInfo?.available ?? false)
+      : false);
   }
 
   if (input.selectedAuthSource === 'project_model_config') {
-    return input.projectModelConfigTestResult?.ok ?? (input.runtimeInfo?.available ?? false);
+    return input.projectModelConfigTestResult?.ok ?? (runtimeMatchesSelectedSource
+      ? (input.runtimeInfo?.available ?? false)
+      : false);
   }
 
   return input.runtimeInfo?.available ?? false;
@@ -661,7 +672,7 @@ export function ModelSettings({
                         <Label>OpenAI 模型</Label>
                         <Input
                           list="openai-model-suggestions"
-                          value={localConfig.openaiModelName ?? 'gpt-4o'}
+                          value={localConfig.openaiModelName ?? ''}
                           onChange={(event) =>
                             setLocalConfig((current) =>
                               current
@@ -682,9 +693,7 @@ export function ModelSettings({
                         <Label>OpenAI URL</Label>
                         <Input
                           type="url"
-                          value={
-                            localConfig.openaiBaseUrl ?? defaultModelConfig.openaiBaseUrl ?? ''
-                          }
+                          value={localConfig.openaiBaseUrl ?? ''}
                           onChange={(event) =>
                             setLocalConfig((current) =>
                               current
@@ -723,11 +732,7 @@ export function ModelSettings({
                         <Label>Anthropic URL</Label>
                         <Input
                           type="url"
-                          value={
-                            localConfig.anthropicBaseUrl ??
-                            defaultModelConfig.anthropicBaseUrl ??
-                            ''
-                          }
+                          value={localConfig.anthropicBaseUrl ?? ''}
                           onChange={(event) =>
                             setLocalConfig((current) =>
                               current
@@ -746,7 +751,7 @@ export function ModelSettings({
                       <div className="mb-4 space-y-2">
                         <Label>Anthropic 模型</Label>
                         <Input
-                          value={localConfig.anthropicModelName ?? 'claude-sonnet-4-20250514'}
+                          value={localConfig.anthropicModelName ?? ''}
                           onChange={(event) =>
                             setLocalConfig((current) =>
                               current
@@ -863,6 +868,8 @@ export const SettingsPanel = () => {
   const [officialQuotaPending, setOfficialQuotaPending] = useState(false);
   const [officialQuotaError, setOfficialQuotaError] = useState<string | null>(null);
   const hasAutoTestedOnInitialLoadRef = useRef(false);
+  const hasUserInteractedWithAuthSourceRef = useRef(false);
+  const skipNextModelAccessRefreshRef = useRef(false);
   const isMountedRef = useRef(true);
   const [isAutoProbePending, setIsAutoProbePending] = useState(false);
   const client = useMemo(
@@ -908,13 +915,17 @@ export const SettingsPanel = () => {
         if (!isMountedRef.current) {
           return;
         }
-        setSelectedAuthSource(capabilities.selectedAuthSource);
+        if (!hasUserInteractedWithAuthSourceRef.current) {
+          setSelectedAuthSource(capabilities.selectedAuthSource);
+        }
       })
       .catch(() => {
         if (!isMountedRef.current) {
           return;
         }
-        setSelectedAuthSource('project_model_config');
+        if (!hasUserInteractedWithAuthSourceRef.current) {
+          setSelectedAuthSource('project_model_config');
+        }
       });
 
     void readBootstrapModelAccessSnapshot({
@@ -960,6 +971,10 @@ export const SettingsPanel = () => {
 
   useEffect(() => {
     return subscribeModelAccessChanged(() => {
+      if (skipNextModelAccessRefreshRef.current) {
+        skipNextModelAccessRefreshRef.current = false;
+        return;
+      }
       void refreshSettingsModelAccess();
     });
   }, [refreshSettingsModelAccess]);
@@ -1112,21 +1127,20 @@ export const SettingsPanel = () => {
     if (!localConfig) {
       return;
     }
+    hasUserInteractedWithAuthSourceRef.current = true;
     const normalizedConfig = normalizeModelConfigForSubmit(localConfig);
     void client
       .updateModelConfig(normalizedConfig)
       .then(async (payload) => {
-        const capabilities = await client.updateRuntimeCapabilities({
+        await client.updateRuntimeCapabilities({
           selectedAuthSource: payload.runtime.selectedAuthSource,
         });
         setUserClaudeSettingsTestResult(null);
         setProjectModelConfigTestResult(null);
         setLocalConfig(hydrateModelConfig(payload.config));
-        setSelectedAuthSource(capabilities.selectedAuthSource);
-        setRuntimeInfo({
-          ...payload.runtime,
-          selectedAuthSource: capabilities.selectedAuthSource,
-        });
+        setSelectedAuthSource('project_model_config');
+        setRuntimeInfo(payload.runtime);
+        skipNextModelAccessRefreshRef.current = true;
         publishModelAccessChanged();
         toast.success('项目模型配置已保存');
       })
@@ -1135,6 +1149,7 @@ export const SettingsPanel = () => {
       });
   }
   function selectAuthSource(nextSource: AgentAuthSource) {
+    hasUserInteractedWithAuthSourceRef.current = true;
     setSelectedAuthSource(nextSource);
     if (selectedAuthSource === nextSource) {
       return;
@@ -1192,6 +1207,7 @@ export const SettingsPanel = () => {
       toast.error(error instanceof Error ? error.message : '用户级 Claude settings JSON 解析失败');
       return;
     }
+    hasUserInteractedWithAuthSourceRef.current = true;
     setUserClaudeSettingsSavePending(true);
     void client
       .updateUserClaudeSettings(userClaudeSettingsText)
@@ -1199,16 +1215,14 @@ export const SettingsPanel = () => {
         setUserClaudeSettings(snapshot);
         setUserClaudeSettingsText(normalizeUserClaudeSettingsJson(snapshot));
         const payload = await client.getModelConfig();
-        const capabilities = await client.updateRuntimeCapabilities({
+        await client.updateRuntimeCapabilities({
           selectedAuthSource: payload.runtime.selectedAuthSource,
         });
         setUserClaudeSettingsTestResult(null);
         setProjectModelConfigTestResult(null);
-        setSelectedAuthSource(capabilities.selectedAuthSource);
-        setRuntimeInfo({
-          ...payload.runtime,
-          selectedAuthSource: capabilities.selectedAuthSource,
-        });
+        setSelectedAuthSource('user_claude_settings');
+        setRuntimeInfo(payload.runtime);
+        skipNextModelAccessRefreshRef.current = true;
         publishModelAccessChanged();
         toast.success('用户级 Claude settings 已保存');
       })

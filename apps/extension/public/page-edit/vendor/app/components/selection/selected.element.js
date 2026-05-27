@@ -18,12 +18,8 @@ export class Selected extends Handles {
   }
 
   render({ width, height, top, left }) {
-    const view = this.ownerDocument?.defaultView || globalThis.window;
-    const scrollY = view?.scrollY ?? 0;
-    const scrollX = view?.scrollX ?? 0;
-
-    this.style.setProperty('--top', `${top + scrollY}px`);
-    this.style.setProperty('--left', `${left + scrollX}px`);
+    this.style.setProperty('--top', `${top}px`);
+    this.style.setProperty('--left', `${left}px`);
 
     return `
       ${this.renderStyles()}

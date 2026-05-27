@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { JSDOM } from 'jsdom';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type {
   AgentAuthSource,
@@ -692,6 +692,191 @@ describe('ModelSettings', () => {
     consoleErrorSpy.mockRestore();
     windowConsoleErrorSpy.mockRestore();
   });
+
+  it('keeps the anthropic url input empty after clearing it in third-party mode', () => {
+    function StatefulModelSettings() {
+      const [localConfig, setLocalConfig] = useState<AgentModelConfig | null>(
+        baseModelConfig({
+          configMode: 'third_party',
+          modelProvider: 'anthropic',
+          anthropicModelName: 'qwen3.6-plus',
+          anthropicApiKey: 'sk-third-party',
+          anthropicBaseUrl: 'https://example.com/anthropic/v1',
+        })
+      );
+
+      if (!localConfig) {
+        throw new Error('localConfig 不应为空');
+      }
+
+      return (
+        <ModelSettings
+          localConfig={localConfig}
+          setLocalConfig={setLocalConfig}
+          runtimeInfo={baseRuntimeInfo({
+            authSource: 'project_model_config',
+            selectedAuthSource: 'project_model_config',
+            claudeCliAvailable: false,
+            reason: '当前使用项目模型配置作为运行时认证来源。',
+          })}
+          selectedAuthSource="project_model_config"
+          userClaudeSettings={baseUserClaudeSettings()}
+          userClaudeSettingsText={baseUserClaudeSettings().rawJson ?? ''}
+          onChangeUserClaudeSettingsText={vi.fn()}
+          officialModels={[]}
+          officialModelsPending={false}
+          officialModelsError={null}
+          officialQuota={null}
+          officialQuotaPending={false}
+          officialQuotaError={null}
+          onRefreshOfficialData={vi.fn()}
+          onSelectAuthSource={vi.fn()}
+          onSaveUserClaudeSettings={vi.fn()}
+          onSaveProjectConfig={vi.fn()}
+          onTestUserClaudeSettings={vi.fn()}
+          onTestProjectModelConfig={vi.fn()}
+          userClaudeSettingsTestResult={null}
+          userClaudeSettingsSavePending={false}
+          userClaudeSettingsTestPending={false}
+          projectModelConfigTestResult={null}
+          projectModelConfigTestPending={false}
+        />
+      );
+    }
+
+    const view = render(
+      <StatefulModelSettings />
+    );
+
+    const input = getInputBySectionLabel(view.container, 'Anthropic URL');
+    expect(input.value).toBe('https://example.com/anthropic/v1');
+
+    fireEvent.change(input, { target: { value: '' } });
+
+    expect(input.value).toBe('');
+  });
+
+  it('keeps the anthropic model input empty after clearing it in third-party mode', () => {
+    function StatefulModelSettings() {
+      const [localConfig, setLocalConfig] = useState<AgentModelConfig | null>(
+        baseModelConfig({
+          configMode: 'third_party',
+          modelProvider: 'anthropic',
+          anthropicModelName: 'qwen3.6-plus',
+          anthropicApiKey: 'sk-third-party',
+          anthropicBaseUrl: 'https://example.com/anthropic/v1',
+        })
+      );
+
+      if (!localConfig) {
+        throw new Error('localConfig 不应为空');
+      }
+
+      return (
+        <ModelSettings
+          localConfig={localConfig}
+          setLocalConfig={setLocalConfig}
+          runtimeInfo={baseRuntimeInfo({
+            authSource: 'project_model_config',
+            selectedAuthSource: 'project_model_config',
+            claudeCliAvailable: false,
+            reason: '当前使用项目模型配置作为运行时认证来源。',
+          })}
+          selectedAuthSource="project_model_config"
+          userClaudeSettings={baseUserClaudeSettings()}
+          userClaudeSettingsText={baseUserClaudeSettings().rawJson ?? ''}
+          onChangeUserClaudeSettingsText={vi.fn()}
+          officialModels={[]}
+          officialModelsPending={false}
+          officialModelsError={null}
+          officialQuota={null}
+          officialQuotaPending={false}
+          officialQuotaError={null}
+          onRefreshOfficialData={vi.fn()}
+          onSelectAuthSource={vi.fn()}
+          onSaveUserClaudeSettings={vi.fn()}
+          onSaveProjectConfig={vi.fn()}
+          onTestUserClaudeSettings={vi.fn()}
+          onTestProjectModelConfig={vi.fn()}
+          userClaudeSettingsTestResult={null}
+          userClaudeSettingsSavePending={false}
+          userClaudeSettingsTestPending={false}
+          projectModelConfigTestResult={null}
+          projectModelConfigTestPending={false}
+        />
+      );
+    }
+
+    const view = render(<StatefulModelSettings />);
+
+    const input = getInputBySectionLabel(view.container, 'Anthropic 模型');
+    expect(input.value).toBe('qwen3.6-plus');
+
+    fireEvent.change(input, { target: { value: '' } });
+
+    expect(input.value).toBe('');
+  });
+
+  it('keeps the openai model input empty after clearing it in third-party mode', () => {
+    function StatefulModelSettings() {
+      const [localConfig, setLocalConfig] = useState<AgentModelConfig | null>(
+        baseModelConfig({
+          configMode: 'third_party',
+          modelProvider: 'openai',
+          openaiModelName: 'gpt-4.1-mini',
+          openaiApiKey: 'sk-openai-demo',
+          openaiBaseUrl: 'https://example.com/openai/v1',
+        })
+      );
+
+      if (!localConfig) {
+        throw new Error('localConfig 不应为空');
+      }
+
+      return (
+        <ModelSettings
+          localConfig={localConfig}
+          setLocalConfig={setLocalConfig}
+          runtimeInfo={baseRuntimeInfo({
+            authSource: 'project_model_config',
+            selectedAuthSource: 'project_model_config',
+            claudeCliAvailable: false,
+            reason: '当前使用项目模型配置作为运行时认证来源。',
+          })}
+          selectedAuthSource="project_model_config"
+          userClaudeSettings={baseUserClaudeSettings()}
+          userClaudeSettingsText={baseUserClaudeSettings().rawJson ?? ''}
+          onChangeUserClaudeSettingsText={vi.fn()}
+          officialModels={[]}
+          officialModelsPending={false}
+          officialModelsError={null}
+          officialQuota={null}
+          officialQuotaPending={false}
+          officialQuotaError={null}
+          onRefreshOfficialData={vi.fn()}
+          onSelectAuthSource={vi.fn()}
+          onSaveUserClaudeSettings={vi.fn()}
+          onSaveProjectConfig={vi.fn()}
+          onTestUserClaudeSettings={vi.fn()}
+          onTestProjectModelConfig={vi.fn()}
+          userClaudeSettingsTestResult={null}
+          userClaudeSettingsSavePending={false}
+          userClaudeSettingsTestPending={false}
+          projectModelConfigTestResult={null}
+          projectModelConfigTestPending={false}
+        />
+      );
+    }
+
+    const view = render(<StatefulModelSettings />);
+
+    const input = getInputBySectionLabel(view.container, 'OpenAI 模型');
+    expect(input.value).toBe('gpt-4.1-mini');
+
+    fireEvent.change(input, { target: { value: '' } });
+
+    expect(input.value).toBe('');
+  });
 });
 
 describe('SettingsPanel', () => {
@@ -1190,6 +1375,50 @@ describe('SettingsPanel', () => {
         )
       ).toBeNull();
     });
+  });
+
+  it('keeps project model config editor selected after saving even when runtime stays on user Claude settings', async () => {
+    routeSearch.mode = 'model';
+    agentClientMocks.getRuntimeCapabilities.mockImplementationOnce(async () => ({
+      selectedAuthSource: 'user_claude_settings' as AgentAuthSource,
+    }));
+    agentClientMocks.getModelConfig.mockImplementationOnce(async () => ({
+      config: baseModelConfig(),
+      runtime: baseRuntimeInfo({
+        authSource: 'user_claude_settings',
+        selectedAuthSource: 'user_claude_settings',
+        available: true,
+      }),
+      detectedCliConfig: null,
+      userClaudeSettings: baseUserClaudeSettings(),
+    }));
+    agentClientMocks.updateModelConfig.mockImplementationOnce(async (config) => ({
+      config,
+      runtime: baseRuntimeInfo({
+        authSource: 'user_claude_settings',
+        selectedAuthSource: 'user_claude_settings',
+        available: true,
+        reason: '当前使用用户级 Claude settings 作为运行时认证来源。',
+      }),
+    }));
+    agentClientMocks.updateRuntimeCapabilities.mockImplementationOnce(async () => ({
+      selectedAuthSource: 'user_claude_settings' as AgentAuthSource,
+    }));
+
+    const view = render(<SettingsPanel />);
+
+    await waitForModelSettingsReady(view);
+    fireEvent.click(view.getByRole('button', { name: '选择 项目模型配置' }));
+    fireEvent.click(view.getByRole('button', { name: '保存项目模型配置' }));
+
+    await waitFor(() => {
+      expect(agentClientMocks.updateModelConfig).toHaveBeenCalledTimes(1);
+    });
+
+    expect(view.getByRole('button', { name: '选择 项目模型配置' }).getAttribute('class')).toContain(
+      'bg-primary'
+    );
+    expect(view.container.textContent).toContain('当前生效：用户级 Claude settings');
   });
 
   it('hides unavailable-source warning when the selected source test already succeeded', async () => {

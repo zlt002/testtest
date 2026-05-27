@@ -15,6 +15,7 @@ import {
 } from '../constant';
 import { createMcpServer } from '../mcp/mcp-server';
 import type { NativeMessagingHost } from '../native-messaging-host';
+import { recoverNativeServerPortConflict } from './port-recovery';
 import { logger } from '../util/logger';
 
 // Define request body type (if data needs to be retrieved from HTTP requests)
@@ -29,9 +30,11 @@ export class Server {
   public mcpServer: McpServer | null = null;
   public transportsMap: Map<string, StreamableHTTPServerTransport | SSEServerTransport> = new Map();
   private agentSupervisor = new AgentBackendSupervisor();
+  private recoverPortConflict: typeof recoverNativeServerPortConflict;
 
-  constructor() {
+  constructor(options?: { recoverPortConflict?: typeof recoverNativeServerPortConflict }) {
     this.fastify = Fastify({ logger: SERVER_CONFIG.LOGGER_ENABLED });
+    this.recoverPortConflict = options?.recoverPortConflict ?? recoverNativeServerPortConflict;
     this.setupPlugins();
     this.setupRoutes();
   }
@@ -274,6 +277,25 @@ export class Server {
       });
       // No need to return, Promise resolves void by default
     } catch (err) {
+      const isAddressInUseError =
+        !!err && typeof err === 'object' && 'code' in err && err.code === 'EADDRINUSE';
+
+      if (isAddressInUseError) {
+        const recovered = await this.recoverPortConflict({ port });
+        if (recovered) {
+          await this.fastify.listen({ port, host: SERVER_CONFIG.HOST });
+          this.isRunning = true;
+          void this.agentSupervisor.ensureStarted().catch((error) => {
+            logger.error(
+              `[companion] Agent Backend V2 startup failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          });
+          return;
+        }
+      }
+
       this.isRunning = false; // Startup failed, reset status
       // Throw error instead of exiting directly, let caller (possibly NativeHost) handle
       throw err; // or return Promise.reject(err);

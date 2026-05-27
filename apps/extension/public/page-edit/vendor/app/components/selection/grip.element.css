@@ -33,7 +33,7 @@
 
 
 :host g {
-  transform: translate(calc(50% - 10%), calc(50% - .25em));
+  transform: translate(calc(50% - 10%), 6px);
 }
 
 :host rect {

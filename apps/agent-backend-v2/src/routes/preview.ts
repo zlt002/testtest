@@ -34,7 +34,10 @@ export function createPreviewRoute(service = createPreviewService()) {
       }
       const [, previewId, relativePath] = match;
       const asset = await service.readAsset(previewId, decodeAssetPath(relativePath));
-      res.writeHead(200, { 'Content-Type': asset.contentType });
+      res.writeHead(200, {
+        'Content-Type': asset.contentType,
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+      });
       res.end(asset.body);
       return true;
     }

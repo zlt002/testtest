@@ -65,7 +65,6 @@ export function createApp(deps: {
   systemUpdateService?: Parameters<typeof createSystemUpdateRoute>[0];
 }) {
   const handleAgentV2 = createAgentV2Route(deps.agentService);
-  const handleAccrSync = deps.accrSyncService ? createAccrSyncRoute(deps.accrSyncService) : null;
   const handleFiles = createFilesRoute(deps.fileService);
   const handleMcp = createMcpRoute(deps.mcpService);
   const handleMcpRegistry = deps.mcpRegistryService
@@ -77,11 +76,23 @@ export function createApp(deps: {
   const invalidateCommandCatalog = () => {
     (commandsService as { invalidateCache?: () => void }).invalidateCache?.();
   };
-  const invalidateCapabilityCatalog = () => {
+  const invalidateCapabilityCatalog = (input?: { type?: 'skill' | 'command' }) => {
     (
-      capabilityCatalogService as { clearCapabilityCatalogCache?: () => void }
-    ).clearCapabilityCatalogCache?.();
+      capabilityCatalogService as {
+        clearCapabilityCatalogCache?: (input?: { type?: 'skill' | 'command' }) => void;
+      }
+    ).clearCapabilityCatalogCache?.(input);
   };
+  const handleAccrSync = deps.accrSyncService
+    ? createAccrSyncRoute(deps.accrSyncService, {
+        invalidateCapabilityCatalog: (input) => {
+          if (input.type === 'skill') {
+            invalidateCapabilityCatalog({ type: 'skill' });
+          }
+        },
+        invalidateCommandCatalog,
+      })
+    : null;
   const handleCommands = createCommandsRoute(commandsService, pluginManagementService);
   const handlePlugins = createPluginsRoute(pluginManagementService, {
     invalidateCapabilityCatalog,

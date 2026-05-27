@@ -91,6 +91,19 @@ function createHttpError(message: string, statusCode = 500, code = 'Error') {
   return error;
 }
 
+function isMissingFileError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
+}
+
+function missingCapabilityError(relativePath = 'SKILL.md') {
+  return createHttpError(`Capability file no longer exists: ${relativePath}`, 404, 'CapabilityMissing');
+}
+
 function assertType(type: unknown = 'skill'): CapabilityType {
   if (type === 'skill' || type === 'command') {
     return type;
@@ -258,7 +271,7 @@ function sourceFor(sourceKind: CapabilitySourceKind, rootDir: string) {
   return { kind: sourceKind, path: rootDir, writable: true };
 }
 
-async function listBuiltinCapabilitySources(): Promise<BuiltinCapabilitySource[]> {
+export async function listBuiltinCapabilitySources(): Promise<BuiltinCapabilitySource[]> {
   const sources: BuiltinCapabilitySource[] = [];
   sources.push({
     rootDir: BUILTIN_SKILLS_DIR,
@@ -383,7 +396,15 @@ async function capabilityFromFile(input: {
   pluginSourceKind?: string;
 }): Promise<CapabilityItem> {
   const filepath = resolve(input.filepath);
-  const content = await readFile(filepath, 'utf8');
+  let content = '';
+  try {
+    content = await readFile(filepath, 'utf8');
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      throw missingCapabilityError(basename(filepath));
+    }
+    throw error;
+  }
   return {
     id: encodeCapabilityId({
       type: input.type,
@@ -559,7 +580,15 @@ async function assertNoSymlinkTraversal(rootDir: string, relativePath: string) {
   let currentPath = resolve(rootDir);
   for (const segment of relativePath.split('/')) {
     currentPath = join(currentPath, segment);
-    const entry = await lstat(currentPath);
+    let entry;
+    try {
+      entry = await lstat(currentPath);
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        throw missingCapabilityError(relativePath);
+      }
+      throw error;
+    }
     if (entry.isSymbolicLink()) {
       throw createHttpError('Capability file path cannot traverse symlinks.', 400);
     }
@@ -1107,9 +1136,18 @@ export async function readCapability(input: {
   builtinSources?: BuiltinCapabilitySource[];
 }) {
   const { decoded, readable, capability } = await resolveCapabilitySummary(input);
+  let content = '';
+  try {
+    content = await readFile(readable.filepath, 'utf8');
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      throw missingCapabilityError('SKILL.md');
+    }
+    throw error;
+  }
   return {
     capability,
-    content: await readFile(readable.filepath, 'utf8'),
+    content,
     ...(decoded.type === 'skill'
       ? {
           rootDir: capabilityRootDir(decoded.type, readable.filepath),
@@ -1131,7 +1169,15 @@ export async function readCapabilityFile(input: {
 }) {
   const { rootDir, relativePath, targetPath } = await resolveCapabilityChildFile(input);
   await assertNoSymlinkTraversal(rootDir, relativePath);
-  const fileStats = await stat(targetPath);
+  let fileStats;
+  try {
+    fileStats = await stat(targetPath);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      throw missingCapabilityError(relativePath);
+    }
+    throw error;
+  }
   if (!fileStats.isFile()) {
     throw createHttpError('Capability file must be a regular file.', 400);
   }
@@ -1143,7 +1189,15 @@ export async function readCapabilityFile(input: {
     pluginSources: input.pluginSources,
     builtinSources: input.builtinSources,
   })).capability;
-  const file = await readEditableTextFile(targetPath);
+  let file;
+  try {
+    file = await readEditableTextFile(targetPath);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      throw missingCapabilityError(relativePath);
+    }
+    throw error;
+  }
   return {
     capability,
     rootDir,

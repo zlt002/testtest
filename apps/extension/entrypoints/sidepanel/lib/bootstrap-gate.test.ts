@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from 'vitest';
-import { runBootstrapGate } from './bootstrap-gate';
+import { runBootstrapGate, syncRemoteAccr } from './bootstrap-gate';
 
 describe('runBootstrapGate', () => {
   it('并行执行远端同步和模型检查，并在二者可用后进入 ready', async () => {
@@ -100,5 +100,43 @@ describe('runBootstrapGate', () => {
       status: 'blocked',
       blockedReason: 'model_config',
     });
+  });
+
+  it('远端同步成功后会广播 skill 和 command catalog 变更', async () => {
+    const originalFetch = globalThis.fetch;
+    const originalWindow = globalThis.window;
+    const dispatchEvent = vi.fn();
+
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        status: 'completed',
+        mode: 'remote',
+      }),
+    })) as typeof fetch;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        dispatchEvent,
+      },
+    });
+
+    try {
+      const result = await syncRemoteAccr();
+      expect(result).toMatchObject({
+        ok: true,
+        status: 'completed',
+        mode: 'remote',
+      });
+      expect(dispatchEvent).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
   });
 });

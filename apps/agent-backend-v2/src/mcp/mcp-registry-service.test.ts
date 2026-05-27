@@ -42,6 +42,13 @@ test('lists browser_extension as built-in and project servers as installed', asy
       })),
       [
         {
+          name: 'ewankb-server',
+          builtIn: false,
+          type: 'sse',
+          disabled: false,
+          status: 'enabled',
+        },
+        {
           name: 'browser_extension',
           builtIn: true,
           type: 'http',
@@ -57,7 +64,8 @@ test('lists browser_extension as built-in and project servers as installed', asy
         },
       ]
     );
-    const headers = registry.servers[1].config.headers as Record<string, string>;
+    const headers = registry.servers.find((server) => server.name === 'context7')?.config
+      .headers as Record<string, string>;
     assert.equal(headers.CONTEXT7_API_KEY, 'secret');
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -124,8 +132,59 @@ test('lists Claude CLI user MCP servers from claude config', async () => {
           disabled: true,
           status: 'disabled',
         },
+        {
+          name: 'ewankb-server',
+          source: 'user',
+          type: 'sse',
+          disabled: false,
+          status: 'enabled',
+        },
       ]
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('auto injects default ewankb user MCP server when claude config is missing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agent-backend-v2-mcp-registry-ewankb-'));
+  try {
+    const claudeConfigPath = join(dir, '.claude.json');
+    const service = createMcpRegistryService({
+      configPath: join(dir, '.mcp.json'),
+      userConfigPath: claudeConfigPath,
+      projectPath: dir,
+      permissionsPath: join(dir, 'permissions.json'),
+      browserExtensionMcpUrl: 'http://127.0.0.1:12306/mcp',
+      enableBrowserExtensionMcp: false,
+    });
+
+    const registry = await service.listServers();
+
+    assert.deepEqual(
+      registry.servers.map((server) => ({
+        name: server.name,
+        source: server.source,
+        type: server.type,
+        disabled: server.disabled,
+      })),
+      [
+        {
+          name: 'ewankb-server',
+          source: 'user',
+          type: 'sse',
+          disabled: false,
+        },
+      ]
+    );
+
+    const payload = JSON.parse(await readFile(claudeConfigPath, 'utf8'));
+    assert.deepEqual(payload.mcpServers['ewankb-server'], {
+      disabled: false,
+      type: 'sse',
+      transport: 'sse',
+      url: 'http://10.27.15.64:22902/sse',
+    });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -156,7 +215,8 @@ test('updates server disabled flag without removing config', async () => {
       args: ['server.js'],
       disabled: true,
     });
-    assert.equal((await service.listServers()).servers[0].status, 'disabled');
+    const demoServer = (await service.listServers()).servers.find((server) => server.name === 'demo');
+    assert.equal(demoServer?.status, 'disabled');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -190,7 +250,10 @@ test('updates user server disabled flag through project overrides', async () => 
       await readFile(join(dir, '.webmcp', 'mcp-server-overrides.json'), 'utf8')
     ) as { disabledServers: string[] };
     assert.deepEqual(overrides.disabledServers, ['gitnexus']);
-    assert.equal((await service.listServers()).servers[0].status, 'disabled');
+    const gitnexusServer = (await service.listServers()).servers.find(
+      (server) => server.name === 'gitnexus'
+    );
+    assert.equal(gitnexusServer?.status, 'disabled');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -214,7 +277,10 @@ test('updates built-in browser_extension disabled flag through project overrides
       await readFile(join(dir, '.webmcp', 'mcp-server-overrides.json'), 'utf8')
     ) as { disabledServers: string[] };
     assert.deepEqual(overrides.disabledServers, ['browser_extension']);
-    assert.equal((await service.listServers()).servers[0].status, 'disabled');
+    const browserExtensionServer = (await service.listServers()).servers.find(
+      (server) => server.name === 'browser_extension'
+    );
+    assert.equal(browserExtensionServer?.status, 'disabled');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -238,7 +304,8 @@ test('reads and writes raw mcp json', async () => {
 
     const raw = await service.readRawConfig();
     assert.match(raw.rawJson, /"demo"/);
-    assert.equal((await service.listServers()).servers[0].config.url, 'https://example.com/mcp');
+    const demoServer = (await service.listServers()).servers.find((server) => server.name === 'demo');
+    assert.equal(demoServer?.config.url, 'https://example.com/mcp');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -279,7 +346,7 @@ test('lists workspace-specific project mcp servers when projectPath is provided'
 
     assert.deepEqual(
       registry.servers.map((server) => server.name),
-      ['workspace_server']
+      ['ewankb-server', 'workspace_server']
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -310,7 +377,7 @@ test('listServers reuses cached registry until forced refresh', async () => {
     const first = await service.listServers();
     assert.deepEqual(
       first.servers.map((server) => server.name),
-      ['first']
+      ['ewankb-server', 'first']
     );
 
     await writeFile(
@@ -326,11 +393,11 @@ test('listServers reuses cached registry until forced refresh', async () => {
 
     assert.deepEqual(
       (await service.listServers()).servers.map((server) => server.name),
-      ['first']
+      ['ewankb-server', 'first']
     );
     assert.deepEqual(
       (await service.listServers({ forceRefresh: true })).servers.map((server) => server.name),
-      ['first', 'second']
+      ['ewankb-server', 'first', 'second']
     );
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -509,9 +576,11 @@ test('discovers live MCP tools and updates registry counts', async () => {
         },
       ]
     );
-    const [server] = (await service.listServers()).servers;
-    assert.equal(server.totalToolCount, 2);
-    assert.equal(server.enabledToolCount, 2);
+    const context7Server = (await service.listServers()).servers.find(
+      (server) => server.name === 'context7'
+    );
+    assert.equal(context7Server?.totalToolCount, 2);
+    assert.equal(context7Server?.enabledToolCount, 2);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

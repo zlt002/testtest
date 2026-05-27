@@ -236,7 +236,7 @@ function ClaudeCodeModelAccessNotice({
   isSubmitting,
   error,
   forceVisible = false,
-  onRetry,
+  onConfig,
   onApiKeyChange,
   onOpenPortal,
   onSubmit,
@@ -247,7 +247,7 @@ function ClaudeCodeModelAccessNotice({
   isSubmitting: boolean;
   error: string | null;
   forceVisible?: boolean;
-  onRetry?: () => void;
+  onConfig?: () => void;
   onApiKeyChange: (value: string) => void;
   onOpenPortal: () => void;
   onSubmit: () => void;
@@ -257,11 +257,13 @@ function ClaudeCodeModelAccessNotice({
   }
 
   const isHardFailure = status === 'requires_official_api_key';
+  const hasConfigAction = Boolean(onConfig);
 
   return (
     <div className="mt-5 w-full max-w-[360px] text-left">
       <div className="space-y-3">
         <Input
+          className="text-xs"
           ref={inputRef}
           type="password"
           value={value}
@@ -271,25 +273,42 @@ function ClaudeCodeModelAccessNotice({
           disabled={isSubmitting}
           onChange={(event) => onApiKeyChange(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            if (event.key === "Enter") {
               event.preventDefault();
               onSubmit();
             }
           }}
         />
-        <div className="flex flex-wrap gap-2">
-                    {onRetry ? (
-            <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-              重新检查
+        <div className={hasConfigAction ? "grid grid-cols-3 gap-2" : "flex justify-end gap-2"}>
+          {onConfig ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={onConfig}
+            >
+              去配置
             </Button>
           ) : null}
-          <Button type="button" variant="outline" size="sm" onClick={onOpenPortal}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={hasConfigAction ? "w-full" : "min-w-[8.5rem]"}
+            onClick={onOpenPortal}
+          >
             查看 Key
           </Button>
-          <Button type="button" size="sm" disabled={isSubmitting} onClick={onSubmit}>
-            {isSubmitting ? '启用中...' : isHardFailure ? '启用官方 Key' : '启用官方 Key'}
+          <Button
+            type="button"
+            size="sm"
+            className={hasConfigAction ? "w-full" : "min-w-[8.5rem]"}
+            disabled={isSubmitting}
+            onClick={onSubmit}
+          >
+            {isSubmitting ? "启用中..." : isHardFailure ? "保存" : "保存"}
           </Button>
-
         </div>
         {error ? <div className="text-xs text-destructive">{error}</div> : null}
       </div>
@@ -1682,6 +1701,13 @@ function resolveWritePreviewLocation(projectPath: string | undefined, filePath: 
 
 function isHtmlPreviewFilePath(filePath: string) {
   return /\.html?$/i.test(filePath.trim());
+}
+
+function sameProjectPath(left?: string, right?: string) {
+  if (!left || !right) {
+    return false;
+  }
+  return left.replace(/\\/g, '/').toLowerCase() === right.replace(/\\/g, '/').toLowerCase();
 }
 
 function openFilePreview(file: RunFileReference, fallbackProjectPath: string | undefined) {
@@ -3373,7 +3399,8 @@ export function Chat() {
       if (!selection.projectPath) {
         return;
       }
-      const isSameProject = activeProjectPathRef.current === selection.projectPath;
+      const currentProjectPath = activeProjectPathRef.current || backendWorkdir;
+      const isSameProject = sameProjectPath(currentProjectPath, selection.projectPath);
       if (isSameProject && selection.kind !== 'new_session') {
         return;
       }
@@ -3416,6 +3443,7 @@ export function Chat() {
     return () => chrome.runtime.onMessage.removeListener(handleMessage);
   }, [
     attachmentsRef,
+    backendWorkdir,
     clearSelectionQuote,
     discardComposerAttachments,
     sessions.clearSessions,
@@ -3606,6 +3634,10 @@ export function Chat() {
     void openSidepanelRoute('/settings?mode=workspace');
   };
 
+  const openModelManagement = () => {
+    void openSidepanelRoute('/settings?mode=model');
+  };
+
   const handleOpenQuickActionEntry = async (entryPath: string) => {
     if (!quickProjectPath) {
       setQuickActionFeedback({
@@ -3762,7 +3794,7 @@ export function Chat() {
         </DialogContent>
       </Dialog>
 
-      <div className="bg-background/80 px-3 py-2">
+      <div className="bg-background/80 p-2">
         <div className="flex items-center justify-between gap-2">
           <div
             className={`flex min-w-0 flex-1 items-center gap-1 ${
@@ -3951,7 +3983,7 @@ export function Chat() {
                   </div>
                   {bootstrapGate.status !== 'ready' ? (
                     <>
-                      <div className="mx-auto mt-3 max-w-[360px] text-sm leading-6 text-muted-foreground">
+                      <div className="mx-auto mt-3 max-w-[360px] text-xs leading-6 text-muted-foreground">
                         {bootstrapGate.description}
                       </div>
                       {'detail' in bootstrapGate && bootstrapGate.detail ? (
@@ -3965,7 +3997,7 @@ export function Chat() {
                           {bootstrapGate.detail}
                         </div>
                       ) : null}
-                      {bootstrapGate.status !== 'blocked' ? (
+                      {bootstrapGate.status === 'sync_failed' ? (
                         <div className="mt-5 flex flex-wrap justify-center gap-2">
                           <Button size="sm" onClick={() => void bootstrapGate.retry()}>
                             重新检查
@@ -3998,9 +4030,9 @@ export function Chat() {
                       isSubmitting={isSavingOfficialApiKey}
                       error={officialApiKeyError}
                       forceVisible={bootstrapGate.status === 'blocked'}
-                      onRetry={
+                      onConfig={
                         bootstrapGate.status === 'blocked'
-                          ? () => void bootstrapGate.retry()
+                          ? openModelManagement
                           : undefined
                       }
                       onApiKeyChange={(value) => {

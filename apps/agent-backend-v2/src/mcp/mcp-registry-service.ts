@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { createBrowserExtensionMcpServer, type McpServerConfig } from './browser-extension-mcp.ts';
+import { ensureDefaultUserMcpServer } from './default-user-mcp.ts';
 import { type DiscoveredMcpTool, discoverMcpTools } from './mcp-tool-discovery.ts';
 import {
   readMcpServerOverrides,
@@ -380,7 +381,7 @@ async function readConfig(configPath: string): Promise<McpConfigFile> {
 }
 
 async function readUserConfig(configPath: string): Promise<ClaudeConfigFile> {
-  const payload = await readJsonFile<unknown>(configPath, {});
+  const payload = await ensureDefaultUserMcpServer(configPath);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { mcpServers: {} };
   }
