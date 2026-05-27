@@ -620,6 +620,8 @@ export default class VisBug extends HTMLElement {
           [{ id: 'font-plus-1', label: '字号 +1' }, { id: 'font-minus-1', label: '字号 -1' }, { id: 'font-plus-10', label: '字号 +10' }, { id: 'font-minus-10', label: '字号 -10' }],
           [{ id: 'weight-plus', label: '字重 +100' }, { id: 'weight-minus', label: '字重 -100' }, { id: 'leading-plus', label: '行高 +1' }, { id: 'leading-minus', label: '行高 -1' }],
           [{ id: 'align-left', label: '左对齐' }, { id: 'align-center', label: '居中' }, { id: 'align-right', label: '右对齐' }, { id: 'kerning-plus', label: '字距 +0.1' }, { id: 'kerning-minus', label: '字距 -0.1' }],
+          [{ id: 'hue-plus', label: '色相 +1' }, { id: 'hue-minus', label: '色相 -1' }, { id: 'light-plus', label: '亮度 +1%' }, { id: 'light-minus', label: '亮度 -1%' }],
+          [{ id: 'sat-plus', label: '饱和 +1%' }, { id: 'sat-minus', label: '饱和 -1%' }, { id: 'alpha-plus', label: '透明 +1%' }, { id: 'alpha-minus', label: '透明 -1%' }],
         ]
       case 'surface-colors':
         return [
@@ -688,7 +690,9 @@ export default class VisBug extends HTMLElement {
           `
           : `
             <div data-bottom-menu>
-              ${tool.id === 'surface-colors' ? this.renderBottomToolbarColorTargets() : ''}
+              ${tool.id === 'typography' || tool.id === 'surface-colors'
+                ? this.renderBottomToolbarColorTargets(tool.id)
+                : ''}
               ${actionRows.map(actionRow => `
                 <div data-bottom-menu-row>
                   ${actionRow.map(action => `
@@ -707,13 +711,15 @@ export default class VisBug extends HTMLElement {
     `
   }
 
-  renderBottomToolbarColorTargets() {
-    const activeTarget = this.colorPicker?.getActive?.() || 'background'
-    const targets = [
-      { id: 'foreground', label: '文字' },
-      { id: 'background', label: '背景' },
-      { id: 'border', label: '边框' },
-    ]
+  renderBottomToolbarColorTargets(toolId = 'surface-colors') {
+    const activeTarget = this.colorPicker?.getActive?.()
+      || (toolId === 'typography' ? 'foreground' : 'background')
+    const targets = toolId === 'typography'
+      ? [{ id: 'foreground', label: '文字' }]
+      : [
+          { id: 'background', label: '背景' },
+          { id: 'border', label: '边框' },
+        ]
 
     return `
       <div data-bottom-menu-row data-color-targets>
@@ -734,6 +740,7 @@ export default class VisBug extends HTMLElement {
     const availability = this.getSelectedBottomToolbarAvailability()?.[toolId]
     if (!tool || availability?.available === false) return
 
+    this.syncBottomToolbarColorTarget(toolId)
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
       activeGroup: tool.group ?? null,
@@ -750,6 +757,7 @@ export default class VisBug extends HTMLElement {
     const availability = this.getSelectedBottomToolbarAvailability()?.[toolId]
     if (!tool || !selectedNodes.length || availability?.available === false) return
 
+    this.syncBottomToolbarColorTarget(toolId)
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
       activeGroup: tool.group ?? null,
@@ -785,8 +793,7 @@ export default class VisBug extends HTMLElement {
         return this.applySelectedStyleMutation(`flex:${actionId}`, () =>
           this.adjustFlexLayout(selectedNodes, actionId))
       case 'typography':
-        return this.applySelectedStyleMutation(`font:${actionId}`, () =>
-          this.adjustFontStyles(selectedNodes, actionId))
+        return this.applyTypographyMutation(selectedNodes, actionId)
       case 'surface-colors':
         return this.applySelectedStyleMutation(`color:${actionId}`, () =>
           this.adjustSelectedColors(selectedNodes, actionId))
@@ -994,10 +1001,41 @@ export default class VisBug extends HTMLElement {
     const action = colorActions[actionId]
     if (!action) return
 
-    if (!this.colorPicker?.getActive?.())
-      this.colorPicker?.setActive?.('background')
-
     changeHue(elements, action[0], action[1], this.colorPicker)
+  }
+
+  syncBottomToolbarColorTarget(toolId) {
+    if (toolId === 'typography') {
+      this.colorPicker?.setActive?.('foreground')
+      return
+    }
+
+    if (toolId !== 'surface-colors') return
+
+    const activeTarget = this.colorPicker?.getActive?.()
+    if (activeTarget !== 'background' && activeTarget !== 'border')
+      this.colorPicker?.setActive?.('background')
+  }
+
+  applyTypographyMutation(selectedNodes, actionId) {
+    const colorActions = new Set([
+      'hue-plus',
+      'hue-minus',
+      'light-plus',
+      'light-minus',
+      'sat-plus',
+      'sat-minus',
+      'alpha-plus',
+      'alpha-minus',
+    ])
+
+    if (colorActions.has(actionId)) {
+      return this.applySelectedStyleMutation(`typography-color:${actionId}`, () =>
+        this.adjustSelectedColors(selectedNodes, actionId))
+    }
+
+    return this.applySelectedStyleMutation(`font:${actionId}`, () =>
+      this.adjustFontStyles(selectedNodes, actionId))
   }
 
   adjustSelectedShadows(elements, actionId) {

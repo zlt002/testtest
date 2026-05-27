@@ -209,6 +209,48 @@ describe('page-edit bottom toolbar shell', () => {
     expect(visbug.getBottomToolbarToolActions('surface-colors').length).toBeGreaterThan(0);
   });
 
+  it('splits typography and surface color targets into separate bottom toolbar groups', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+
+    const typographyTargets = visbug.renderBottomToolbarColorTargets('typography');
+    expect(typographyTargets).toContain('data-bottom-color-target="foreground"');
+    expect(typographyTargets).toContain('>文字<');
+    expect(typographyTargets).not.toContain('data-bottom-color-target="background"');
+    expect(typographyTargets).not.toContain('data-bottom-color-target="border"');
+
+    const surfaceTargets = visbug.renderBottomToolbarColorTargets('surface-colors');
+    expect(surfaceTargets).toContain('data-bottom-color-target="background"');
+    expect(surfaceTargets).toContain('data-bottom-color-target="border"');
+    expect(surfaceTargets).toContain('>背景<');
+    expect(surfaceTargets).toContain('>边框<');
+    expect(surfaceTargets).not.toContain('data-bottom-color-target="foreground"');
+  });
+
+  it('keeps typography color adjustments on the typography tool', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    const actionIds = visbug
+      .getBottomToolbarToolActions('typography')
+      .flat()
+      .map(action => action.id);
+
+    expect(actionIds).toContain('hue-plus');
+    expect(actionIds).toContain('hue-minus');
+    expect(actionIds).toContain('light-plus');
+    expect(actionIds).toContain('light-minus');
+    expect(actionIds).toContain('sat-plus');
+    expect(actionIds).toContain('sat-minus');
+    expect(actionIds).toContain('alpha-plus');
+    expect(actionIds).toContain('alpha-minus');
+  });
+
   it('exposes the 9 PM-facing toolbar tools in a fixed order', async () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
