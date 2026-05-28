@@ -205,6 +205,67 @@ describe('inlineComputedLayoutStyles', () => {
     expect(capturedCopy.style.boxSizing).toBe('border-box');
   });
 
+  it('preserves VXE inner fixed section offsets while leaving outer fixed containers to layout naturally', () => {
+    document.head.innerHTML = `
+      <style>
+        .vxe-table--fixed-right-wrapper {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 11px;
+          left: 1190px;
+          overflow: hidden;
+        }
+
+        .vxe-table--body-wrapper.fixed-right--wrapper {
+          position: absolute;
+          top: 34px;
+          right: 0;
+          bottom: 0;
+          left: 0;
+          overflow: hidden auto;
+        }
+      </style>
+    `;
+    document.body.innerHTML = `
+      <div class="vxe-table--fixed-right-wrapper" style="height: 717px; width: 170px;">
+        <div class="vxe-table--body-wrapper fixed-right--wrapper" style="height: 683px; min-height: 110px; top: 34px;">
+          body
+        </div>
+      </div>
+    `;
+
+    const capturedDoc = document.implementation.createHTMLDocument('capture');
+    capturedDoc.body.innerHTML = `
+      <div ${SOURCE_INDEX_ATTRIBUTE}="0" class="vxe-table--fixed-right-wrapper" style="height: 717px; width: 170px;">
+        <div
+          ${SOURCE_INDEX_ATTRIBUTE}="1"
+          class="vxe-table--body-wrapper fixed-right--wrapper"
+          style="height: 683px; min-height: 110px; top: 34px;"
+        >
+          body
+        </div>
+      </div>
+    `;
+
+    inlineComputedLayoutStyles(capturedDoc, document);
+
+    const fixedRightWrapper = capturedDoc.querySelector('.vxe-table--fixed-right-wrapper') as HTMLElement;
+    const fixedRightBody = capturedDoc.querySelector(
+      '.vxe-table--body-wrapper.fixed-right--wrapper'
+    ) as HTMLElement;
+
+    expect(fixedRightWrapper.style.position).toBe('');
+    expect(fixedRightWrapper.style.left).toBe('');
+    expect(fixedRightWrapper.style.right).toBe('');
+    expect(fixedRightWrapper.style.bottom).toBe('');
+    expect(fixedRightBody.style.position).toBe('absolute');
+    expect(fixedRightBody.style.left).toBe('0px');
+    expect(fixedRightBody.style.right).toBe('0px');
+    expect(fixedRightBody.style.bottom).toBe('0px');
+    expect(fixedRightBody.style.top).toBe('34px');
+  });
+
   it('does not write padding shorthand when inline padding longhands already exist', () => {
     document.head.innerHTML = `
       <style>

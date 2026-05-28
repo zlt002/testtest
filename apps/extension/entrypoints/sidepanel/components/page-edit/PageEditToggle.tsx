@@ -87,10 +87,10 @@ export function PageEditToggle() {
       const nextState = await activateMutation.mutateAsync();
       setStateOverride(nextState as PageEditState);
       setFeedback(getPageEditActivationSuccessMessage(nextState as PageEditState));
-      await stateQuery.refetch();
+      setIsActionPending(false);
+      void stateQuery.refetch();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
       setIsActionPending(false);
     }
   };
@@ -117,11 +117,11 @@ export function PageEditToggle() {
       await deactivateMutation.mutateAsync({ tabId });
       setStateOverride(null);
       setFeedback(getPageEditSuccessMessage(null));
-      await stateQuery.refetch();
+      setIsActionPending(false);
+      void stateQuery.refetch();
     } catch (error) {
       setStateOverride(previousState);
       setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
       setIsActionPending(false);
     }
   };

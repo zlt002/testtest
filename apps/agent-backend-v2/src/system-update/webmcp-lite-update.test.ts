@@ -156,6 +156,54 @@ test('fetchWebMcpLiteUpdateInfo falls back from HEAD 405 to range GET', async ()
   assert.equal(result.packageId, 'W/"etag-1"');
 });
 
+test('prepareWebMcpLiteUpdate reports a clear error when package URL returns HTML instead of zip', async () => {
+  const appDir = await mkdtemp(join(tmpdir(), 'webmcp-lite-html-response-'));
+  await writeFile(
+    join(appDir, WEBMCP_UPDATE_SOURCE_CONFIG_FILE),
+    JSON.stringify(
+      {
+        windowsLiteZipUrl:
+          'https://git.midea.com/zhanglt21/claudecodeuibox/-/blob/main/test/accr-ui-windows-lite-x64.zip',
+        projectUrl: 'https://git.midea.com/zhanglt21/claudecodeuibox/-/tree/main/test',
+      },
+      null,
+      2
+    ),
+    'utf8'
+  );
+
+  const htmlResponse = Buffer.from(
+    '<!doctype html><html><body>blob page instead of zip</body></html>',
+    'utf8'
+  );
+
+  await assert.rejects(
+    prepareWebMcpLiteUpdate({
+      appDir,
+      platform: 'win32',
+      fetchImpl: async (_url, options = {}) => {
+        const method = (options as { method?: string }).method ?? 'GET';
+        if (method === 'HEAD') {
+          return createResponse({
+            headers: {
+              etag: 'W/"blob-page"',
+              'content-type': 'text/html; charset=utf-8',
+            },
+          });
+        }
+        return createResponse({
+          headers: {
+            etag: 'W/"blob-page"',
+            'content-type': 'text/html; charset=utf-8',
+          },
+          buffer: htmlResponse,
+        });
+      },
+    }),
+    /更新地址返回的不是 zip 文件，请将 windowsLiteZipUrl 改为可直接下载的 raw\/download 链接/
+  );
+});
+
 test('getWebMcpLiteUpdateDistribution prefers app-local update source config over env vars', async () => {
   const appDir = await mkdtemp(join(tmpdir(), 'webmcp-lite-source-config-'));
   await writeFile(

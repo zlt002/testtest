@@ -237,7 +237,53 @@ describe('probeBootstrapModelAccess', () => {
 });
 
 describe('loadBootstrapModelAccess', () => {
-  it('会串起读取快照、双来源探测和 view state 汇总', async () => {
+  it('启动阶段只看静态配置存在性，不再执行认证探测', async () => {
+    const testModelConfig = vi.fn();
+    const result = await loadBootstrapModelAccess({
+      client: {
+        getRuntimeCapabilities: vi.fn(async () => ({
+          selectedAuthSource: 'user_claude_settings' as const,
+        })),
+        getModelConfig: vi.fn(async () => ({
+          success: true,
+          config: modelConfig({
+            anthropicApiKey: undefined,
+          }),
+          runtime: runtimeInfo({
+            available: false,
+            hasProjectModelConfig: false,
+          }),
+          detectedCliConfig: null,
+          userClaudeSettings: userClaudeSettings({
+            rawJson:
+              '{\n  "env": {\n    "ANTHROPIC_AUTH_TOKEN": "sk-user-settings"\n  }\n}\n',
+          }),
+        })),
+        testModelConfig,
+      },
+      fallbackLocalConfig: modelConfig({ anthropicApiKey: undefined }),
+    });
+
+    expect(testModelConfig).not.toHaveBeenCalled();
+    expect(result.userClaudeSettingsTestResult).toBeNull();
+    expect(result.projectModelConfigTestResult).toBeNull();
+    expect(result.viewState.overallStatus).toBe('available');
+    expect(result.viewState.userClaudeSettings).toBe('success');
+  });
+
+  it('会串起读取快照并按静态配置汇总启动视图', async () => {
+    const testModelConfig = vi.fn(
+      async (_config, input) =>
+        ({
+          result: testResult(
+            input.targetAuthSource === 'user_claude_settings',
+            runtimeInfo({
+              authSource: input.targetAuthSource,
+              selectedAuthSource: input.targetAuthSource,
+            })
+          ),
+        }) as never
+    );
     const result = await loadBootstrapModelAccess({
       client: {
         getRuntimeCapabilities: vi.fn(async () => ({
@@ -248,27 +294,22 @@ describe('loadBootstrapModelAccess', () => {
           config: modelConfig(),
           runtime: runtimeInfo(),
           detectedCliConfig: null,
-          userClaudeSettings: userClaudeSettings(),
+          userClaudeSettings: userClaudeSettings({
+            rawJson:
+              '{\n  "env": {\n    "ANTHROPIC_AUTH_TOKEN": "sk-user-settings"\n  }\n}\n',
+          }),
         })),
-        testModelConfig: vi.fn(
-          async (_config, input) =>
-            ({
-              result: testResult(
-                input.targetAuthSource === 'user_claude_settings',
-                runtimeInfo({
-                  authSource: input.targetAuthSource,
-                  selectedAuthSource: input.targetAuthSource,
-                })
-              ),
-            }) as never
-        ),
+        testModelConfig,
       },
       fallbackLocalConfig: modelConfig({ anthropicApiKey: undefined }),
     });
 
+    expect(testModelConfig).not.toHaveBeenCalled();
     expect(result.localConfig.modelProvider).toBe('anthropic');
-    expect(result.userClaudeSettingsTestResult?.ok).toBe(true);
-    expect(result.projectModelConfigTestResult?.ok).toBe(false);
-    expect(result.viewState.overallStatus).toBe('partial');
+    expect(result.userClaudeSettingsTestResult).toBeNull();
+    expect(result.projectModelConfigTestResult).toBeNull();
+    expect(result.viewState.overallStatus).toBe('available');
+    expect(result.viewState.userClaudeSettings).toBe('success');
+    expect(result.viewState.projectModelConfig).toBe('success');
   });
 });

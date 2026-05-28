@@ -3,14 +3,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { initPageCaptureStylesheetFetchListener } from './page-capture-stylesheet-fetch';
 
+vi.mock('./NativeHostManager', () => ({
+  ensureCompanionReady: vi.fn(),
+}));
+
 const addListener = vi.fn();
 const addConnectListener = vi.fn();
 const fetchMock = vi.fn();
+const ensureCompanionReady = vi.fn();
 
 beforeEach(() => {
   addListener.mockReset();
   addConnectListener.mockReset();
   fetchMock.mockReset();
+  ensureCompanionReady.mockReset();
   vi.useRealTimers();
 
   vi.stubGlobal('chrome', {
@@ -24,6 +30,12 @@ beforeEach(() => {
     },
   });
   vi.stubGlobal('fetch', fetchMock);
+});
+
+beforeEach(async () => {
+  const nativeModule = await import('./NativeHostManager');
+  vi.mocked(nativeModule.ensureCompanionReady).mockReset();
+  vi.mocked(nativeModule.ensureCompanionReady).mockImplementation(ensureCompanionReady);
 });
 
 describe('page capture stylesheet fetch listener', () => {
@@ -84,6 +96,41 @@ describe('page capture stylesheet fetch listener', () => {
         success: false,
         error:
           'Failed to fetch stylesheet https://pss.bdstatic.com/r/www/cache/static/@baidu/cosmic/tokens_edf7c94f.css: Failed to fetch',
+      });
+    });
+  });
+
+  it('reads file protocol stylesheets through the local agent backend', async () => {
+    ensureCompanionReady.mockResolvedValue({
+      agentBaseUrl: 'http://127.0.0.1:8792',
+    });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ content: '.local { color: green; }' }),
+    });
+    initPageCaptureStylesheetFetchListener();
+
+    const listener = addListener.mock.calls[0]?.[0];
+    const sendResponse = vi.fn();
+    listener(
+      {
+        type: 'page-capture-fetch-stylesheet',
+        sourceUrl:
+          'file:///Users/zhanglt21/Desktop/accrnew/accr-ui/captures/20260528T071044Z-gls/style.css',
+      },
+      {},
+      sendResponse
+    );
+
+    await vi.waitFor(() => {
+      expect(ensureCompanionReady).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:8792/api/files/content?projectPath=%2FUsers%2Fzhanglt21%2FDesktop%2Faccrnew%2Faccr-ui%2Fcaptures%2F20260528T071044Z-gls&filePath=style.css'
+      );
+      expect(sendResponse).toHaveBeenCalledWith({
+        type: 'page-capture-fetch-stylesheet-result',
+        success: true,
+        content: '.local { color: green; }',
       });
     });
   });

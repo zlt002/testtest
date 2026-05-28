@@ -1323,6 +1323,15 @@ export function Selectable(visbug) {
       : '*';
   };
 
+  const notifyLocalSnapshotBridgeNotReady = () => {
+    if (window.location.protocol !== 'file:' || getWorkbenchMode() !== 'local-snapshot') {
+      return false;
+    }
+
+    window.alert('当前 file:// 页面工作台连接未完成，请先刷新页面后再操作。');
+    return true;
+  };
+
   const unselect_all = ({ silent = false } = {}) => {
     selected.forEach((el) =>
       $(el).attr({
@@ -1537,6 +1546,7 @@ export function Selectable(visbug) {
 
         if (detail?.action === 'send-selection') {
           if (requiresSelectionBridgeNonce && !selectionBridgeNonce) {
+            notifyLocalSnapshotBridgeNotReady();
             return;
           }
 
@@ -1565,6 +1575,7 @@ export function Selectable(visbug) {
 
         if (detail?.action === 'capture-selection') {
           if (requiresSelectionBridgeNonce && !selectionBridgeNonce) {
+            notifyLocalSnapshotBridgeNotReady();
             return;
           }
 
@@ -1585,6 +1596,7 @@ export function Selectable(visbug) {
 
         if (detail?.action === 'analyze-selection') {
           if (requiresSelectionBridgeNonce && !selectionBridgeNonce) {
+            notifyLocalSnapshotBridgeNotReady();
             return;
           }
 
@@ -1605,6 +1617,7 @@ export function Selectable(visbug) {
 
         if (detail?.action === 'annotate-selection') {
           if (!selectionBridgeNonce) {
+            notifyLocalSnapshotBridgeNotReady();
             return;
           }
 

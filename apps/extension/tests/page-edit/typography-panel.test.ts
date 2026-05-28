@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { JSDOM } from 'jsdom';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let dom: JSDOM;
 let previousGlobals: Record<string, unknown>;
@@ -589,7 +589,7 @@ describe('typography panel state', () => {
       },
       refreshSelectionUi() {},
     };
-    visbug.refreshLocalSnapshotToolbar = () => {};
+    visbug.refreshBottomToolbar = vi.fn();
 
     expect(visbug.getSpacingPanelState('padding').mode).toBe('linked');
 
@@ -598,5 +598,6 @@ describe('typography panel state', () => {
 
     visbug.toggleSpacingPanelMode('padding');
     expect(visbug.getSpacingPanelState('padding').mode).toBe('linked');
+    expect(visbug.refreshBottomToolbar).toHaveBeenCalledTimes(2);
   });
 });

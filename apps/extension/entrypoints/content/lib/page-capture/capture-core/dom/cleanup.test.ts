@@ -166,6 +166,124 @@ describe('capture-core cleanup', () => {
     expect(capturedDoc.querySelector('svg')).toBeNull();
   });
 
+  it('preserves VXE hidden placeholder cells that carry main-table column widths', () => {
+    document.documentElement.innerHTML = `
+      <head>
+        <style>
+          .fixed--hidden {
+            visibility: hidden;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="vxe-table--render-wrapper">
+          <div class="vxe-table--main-wrapper">
+            <div class="vxe-table--header-wrapper body--wrapper">
+              <table class="vxe-table--header">
+                <colgroup>
+                  <col name="col_2" style="width: 42px;">
+                  <col name="col_109" style="width: 285px;">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="vxe-header--column col_2 fixed--hidden" colid="col_2"></th>
+                    <th class="vxe-header--column col_109" colid="col_109">订单号</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <div class="vxe-table--body-wrapper body--wrapper">
+              <table class="vxe-table--body">
+                <colgroup>
+                  <col name="col_2" style="width: 42px;">
+                  <col name="col_109" style="width: 285px;">
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td class="vxe-body--column col_2 fixed--hidden" colid="col_2" style="height: 35px;"></td>
+                    <td class="vxe-body--column col_109" colid="col_109">IN12605281422098509</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </body>
+    `;
+
+    const capturedDoc = document.implementation.createHTMLDocument(document.title);
+    capturedDoc.head.innerHTML = document.head.innerHTML;
+    capturedDoc.body.innerHTML = document.body.innerHTML;
+    for (const [index, element] of Array.from(capturedDoc.body.querySelectorAll('*')).entries()) {
+      element.setAttribute(SOURCE_INDEX_ATTRIBUTE, String(index));
+    }
+
+    cleanupCapturedDocument(capturedDoc, document);
+
+    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper th[colid="col_2"]')).not.toBeNull();
+    expect(capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper td[colid="col_2"]')).not.toBeNull();
+    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper th[colid="col_109"]')?.textContent).toContain('订单号');
+    expect(capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper td[colid="col_109"]')?.textContent).toContain('IN12605281422098509');
+  });
+
+  it('preserves VXE hidden placeholder cells inside fixed-right wrappers so the visible action column stays aligned', () => {
+    document.documentElement.innerHTML = `
+      <head>
+        <style>
+          .fixed--hidden {
+            visibility: hidden;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="vxe-table--fixed-right-wrapper">
+          <div class="vxe-table--header-wrapper fixed-right--wrapper">
+            <table class="vxe-table--header">
+              <colgroup>
+                <col name="col_3" style="width: 50px;">
+                <col name="col_40" style="width: 180px;">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="vxe-header--column col_3 fixed--hidden" colid="col_3"></th>
+                  <th class="vxe-header--column col_40" colid="col_40">操作</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+          <div class="vxe-table--body-wrapper fixed-right--wrapper">
+            <table class="vxe-table--body">
+              <colgroup>
+                <col name="col_3" style="width: 50px;">
+                <col name="col_40" style="width: 180px;">
+              </colgroup>
+              <tbody>
+                <tr>
+                  <td class="vxe-body--column col_3 fixed--hidden" colid="col_3"></td>
+                  <td class="vxe-body--column col_40" colid="col_40">复制新增详情</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </body>
+    `;
+
+    const capturedDoc = document.implementation.createHTMLDocument(document.title);
+    capturedDoc.head.innerHTML = document.head.innerHTML;
+    capturedDoc.body.innerHTML = document.body.innerHTML;
+    for (const [index, element] of Array.from(capturedDoc.body.querySelectorAll('*')).entries()) {
+      element.setAttribute(SOURCE_INDEX_ATTRIBUTE, String(index));
+    }
+
+    cleanupCapturedDocument(capturedDoc, document);
+
+    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.fixed-right--wrapper th[colid="col_3"]')).not.toBeNull();
+    expect(capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-right--wrapper td[colid="col_3"]')).not.toBeNull();
+    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.fixed-right--wrapper th[colid="col_40"]')?.textContent).toContain('操作');
+    expect(capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-right--wrapper td[colid="col_40"]')?.textContent).toContain('复制新增详情');
+  });
+
   it('reveals rendered nodes that were saved with animation opacity zero', () => {
     document.documentElement.innerHTML = `
       <body>

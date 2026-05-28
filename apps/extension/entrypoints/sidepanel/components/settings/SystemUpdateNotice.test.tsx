@@ -57,7 +57,7 @@ describe('SystemUpdateNotice', () => {
       onStartUpdate: vi.fn(async () => ({ success: true })),
       onPollUpdateInfo: vi.fn(async () => ({ updateAvailable: false })),
     });
-    expect(view.container.textContent).not.toContain('发现新版本');
+    expect(view.container.textContent).not.toContain('更新');
   });
 
   it('confirms and starts update when user clicks update now', async () => {

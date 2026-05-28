@@ -66,9 +66,10 @@ describe('capture-core fixture', () => {
 
     expect(artifact.html).toContain('<link rel="stylesheet" href="style.css">');
     const placeholderMatches = artifact.html.match(/data-webmcp-placeholder="resource"/g) || [];
-    expect(placeholderMatches).toHaveLength(2);
+    expect(placeholderMatches).toHaveLength(1);
     expect(artifact.html).toContain('aria-label="img placeholder"');
-    expect(artifact.html).toContain('aria-label="svg placeholder"');
+    expect(artifact.html).not.toContain('aria-label="svg placeholder"');
+    expect(artifact.html).toContain('<svg width="24" height="24" aria-label="Visible icon">');
     expect(artifact.html).toContain('Visible capture text');
     expect(artifact.html).not.toContain('hidden text');
     expect(artifact.html).not.toContain('aria hidden text');
@@ -80,8 +81,8 @@ describe('capture-core fixture', () => {
 
     expect(artifact.styles).toHaveLength(1);
     expect(artifact.styles[0]).toMatchObject({ path: 'style.css' });
-    expect(artifact.styles[0]?.content).toContain('.fixture-visible { color: rgb(1, 2, 3); }');
-    expect(artifact.styles[0]?.content).toContain('.inline-visible { color: teal; }');
+    expect(artifact.styles[0]?.content).toContain('.fixture-visible{ color: rgb(1, 2, 3); }');
+    expect(artifact.styles[0]?.content).toContain('.inline-visible {color: teal;}');
     expect(artifact.styles[0]?.content).not.toContain('/remote.png');
     expect(artifact.styles[0]?.content).not.toContain('/imported.png');
     expect(artifact.styles[0]?.content).not.toContain('/inline.png');
@@ -199,5 +200,46 @@ describe('capture-core fixture', () => {
     expect(artifact.html).not.toContain('el-table__fixed-right');
     expect(artifact.html).toContain('position: sticky; left: 0px;');
     expect(artifact.html).toContain('position: sticky; right: 0px;');
+  });
+
+  it('injects a lightweight header scroll-sync runtime for captured split table wrappers', async () => {
+    document.documentElement.innerHTML = `
+      <head>
+        <title>Scroll Sync Fixture</title>
+      </head>
+      <body>
+        <div class="vxe-table vxe-table--render-default">
+          <div class="vxe-table--render-wrapper">
+            <div class="vxe-table--main-wrapper">
+              <div class="vxe-table--header-wrapper body--wrapper">
+                <div class="vxe-body--x-space" style="width: 14462px;"></div>
+                <table class="vxe-table--header" style="width: 1832px; margin-left: 0px;">
+                  <thead><tr><th colid="col_109">订单号</th></tr></thead>
+                </table>
+              </div>
+              <div class="vxe-table--body-wrapper body--wrapper" style="min-height: 110px; height: 522px;">
+                <div class="vxe-body--x-space" style="width: 14462px;"></div>
+                <div class="vxe-body--y-space" style="height: 350px;"></div>
+                <table class="vxe-table--body" style="width: 1832px; margin-left: 0px; margin-top: 0px;">
+                  <tbody><tr><td colid="col_109">IN22605281348348284</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </body>
+    `;
+
+    const artifact = await capturePageDocument(document, {
+      mode: 'page',
+      baseUrl: 'https://el-uat.annto.com/v3/#/microOms/order-manage/order-center',
+      capturedAt: '2026-05-28T06:40:00.000Z',
+    });
+
+    expect(artifact.html).toContain('data-webmcp-runtime="scroll-sync"');
+    expect(artifact.html).toContain('vxe-table--body-wrapper.body--wrapper');
+    expect(artifact.html).toContain('el-table__body-wrapper');
+    expect(artifact.html).toContain('headerTable.style.marginLeft');
+    expect(artifact.html).toContain("bodyWrapper.addEventListener('scroll'");
   });
 });

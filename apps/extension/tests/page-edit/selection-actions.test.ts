@@ -33,6 +33,7 @@ beforeAll(() => {
     customElements: globalThis.customElements,
     HTMLElement: globalThis.HTMLElement,
     Element: globalThis.Element,
+    SVGElement: globalThis.SVGElement,
     NodeList: globalThis.NodeList,
     MutationObserver: globalThis.MutationObserver,
     DOMException: globalThis.DOMException,
@@ -51,6 +52,7 @@ beforeAll(() => {
     customElements: dom.window.customElements,
     HTMLElement: dom.window.HTMLElement,
     Element: dom.window.Element,
+    SVGElement: dom.window.SVGElement,
     NodeList: dom.window.NodeList,
     MutationObserver: dom.window.MutationObserver,
     DOMException: dom.window.DOMException,
@@ -244,7 +246,16 @@ describe('selection-actions helpers', () => {
     label.text = '<a node>span</a><a>.status</a>';
     const markup = label.render('snapshot');
 
+    expect(markup).toContain('data-action="send-selection"');
+    expect(markup).toContain('data-action="select-parent"');
+    expect(markup).toContain('data-action="capture-selection"');
     expect(markup).toContain('data-action="annotate-selection"');
+    expect(markup).not.toContain('data-action="analyze-selection"');
+    expect(markup).toContain('>发送<');
+    expect(markup).toContain('>父级<');
+    expect(markup).toContain('>采集<');
+    expect(markup).toContain('>备注<');
+    expect(markup).not.toContain('>分析<');
     expect(markup).not.toContain('data-action="edit-selection"');
     expect(markup).not.toContain('disabled');
     expect(markup).not.toContain('>编辑<');
@@ -875,6 +886,53 @@ describe('selection-actions helpers', () => {
     }
   });
 
+  it('alerts users to refresh file pages when send action fires before the bridge nonce is ready', async () => {
+    const originalUrl = window.location.href;
+    dom.reconfigure({ url: 'file:///Users/demo/Desktop/mock/index.html' });
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    await import('../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js');
+    const visbug = document.createElement('vis-bug') as HTMLElement & {
+      selectorEngine: { select: (element: HTMLElement) => void };
+    };
+
+    try {
+      document.body.innerHTML = `
+        <section id="card"><span class="status">运单查询</span></section>
+      `;
+      const target = document.querySelector('.status') as HTMLElement;
+      const originalPostMessage = window.postMessage;
+      const postMessage = vi.fn();
+      window.postMessage = postMessage as typeof window.postMessage;
+      document.body.appendChild(visbug);
+
+      try {
+        visbug.selectorEngine.select(target);
+        const label = document.querySelector('visbug-label') as HTMLElement;
+        label.dispatchEvent(
+          new CustomEvent('selection-action', {
+            bubbles: true,
+            detail: { action: 'send-selection' },
+          }),
+        );
+
+        expect(alertSpy).toHaveBeenCalledWith(
+          '当前 file:// 页面工作台连接未完成，请先刷新页面后再操作。'
+        );
+        expect(postMessage).not.toHaveBeenCalled();
+      } finally {
+        visbug.remove();
+        window.postMessage = originalPostMessage;
+      }
+    } finally {
+      alertSpy.mockRestore();
+      dom.reconfigure({ url: originalUrl });
+    }
+  });
+
   it('opens a readonly selector dialog and posts annotate payload after submit on live pages', async () => {
     await withSelectableFixture(async ({ selectable }) => {
       document.body.innerHTML = `
@@ -1087,7 +1145,7 @@ describe('selection-actions helpers', () => {
     });
   });
 
-  it('renders live-page floating toolbar actions in visbug', async () => {
+  it('does not render the bottom toolbar shell in live-page mode', async () => {
     document.documentElement.setAttribute(
       'data-webmcp-page-edit-config',
       JSON.stringify({ pageMode: 'live-page' }),
@@ -1096,23 +1154,23 @@ describe('selection-actions helpers', () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
     );
-    const visbug = new VisBug();
-    const markup = visbug.render();
+    const visbug = document.createElement('vis-bug') as InstanceType<typeof VisBug>;
+    const markup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
 
-    expect(markup).toContain('data-action="capture-page"');
-    expect(markup).toContain('data-action="toggle-annotation-markers"');
-    expect(markup).toContain('data-role="annotation-count"');
-    expect(markup).not.toContain('<li data-tool="accessibility"');
-    expect(markup).not.toContain('<li data-tool="search"');
+    expect(markup).not.toContain('data-bottom-toolbar=');
+    expect(markup).not.toContain('data-bottom-toolbar-actions');
+    expect(markup).not.toContain('data-action="capture-page"');
+    expect(markup).not.toContain('data-action="toggle-annotation-markers"');
+    expect(markup).not.toContain('data-role="annotation-count"');
   });
 
-  it('pins live-page toolbar sizing to a fixed host font size instead of page rem scale', async () => {
+  it('pins live-page bottom toolbar sizing to a fixed host font size instead of page rem scale', async () => {
     const { visbug_css } = await import('../../public/page-edit/vendor/app/components/styles.store.js');
 
     expect(visbug_css).toContain('font-size: 16px;');
-    expect(visbug_css).toContain('[data-live-toolbar] > li.toolbar-action > button {');
-    expect(visbug_css).toContain('width: 38px;');
-    expect(visbug_css).toContain('[data-live-toolbar] [data-role=\"annotation-icon\"] > svg {');
+    expect(visbug_css).toContain(':host [data-bottom-toolbar-action] {');
+    expect(visbug_css).toContain('width: 34px;');
+    expect(visbug_css).toContain(':host [data-bottom-toolbar-action] [data-role="annotation-icon"] > svg {');
     expect(visbug_css).toContain('width: 15px;');
   });
 

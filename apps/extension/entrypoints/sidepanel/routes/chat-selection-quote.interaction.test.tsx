@@ -126,12 +126,82 @@ const sidepanelMenuMocks = vi.hoisted(() => ({
   mockOpenSidepanelRoute: vi.fn(async () => undefined),
 }));
 
-const bootstrapGateMocks = vi.hoisted(() => ({
-  mockUseBootstrapGateState: vi.fn(() => ({
-    status: 'ready' as const,
-    retry: vi.fn(async () => undefined),
-  })),
-}));
+const bootstrapGateMocks = vi.hoisted(() => {
+  const mockBootstrapGateResult = {
+    status: 'ready',
+    sync: {
+      ok: true,
+      status: 'completed',
+      mode: 'remote',
+    },
+    modelAccess: {
+      selectedAuthSource: 'user_claude_settings',
+      runtimeInfo: {
+        authSource: 'user_claude_settings',
+        selectedAuthSource: 'user_claude_settings',
+        available: true,
+        claudeCliAvailable: true,
+        hasProjectModelConfig: true,
+        reason: '测试可用',
+      },
+      localConfig: {
+        configMode: 'official',
+        modelProvider: 'anthropic',
+        providerVariant: 'standard',
+        anthropicModelName: 'qwen3.6-plus',
+        anthropicApiKey: 'sk-official',
+        anthropicBaseUrl: 'https://example.com/v1',
+      },
+      userClaudeSettings: null,
+      userClaudeSettingsText: '{}\n',
+      userClaudeSettingsTestResult: {
+        ok: true,
+        message: '测试成功',
+        runtimeAuthSummary: '认证摘要',
+        runtime: {
+          authSource: 'user_claude_settings',
+          selectedAuthSource: 'user_claude_settings',
+          available: true,
+          claudeCliAvailable: true,
+          hasProjectModelConfig: true,
+          reason: '测试成功',
+        },
+      },
+      projectModelConfigTestResult: {
+        ok: true,
+        message: '测试成功',
+        runtimeAuthSummary: '认证摘要',
+        runtime: {
+          authSource: 'project_model_config',
+          selectedAuthSource: 'user_claude_settings',
+          available: true,
+          claudeCliAvailable: true,
+          hasProjectModelConfig: true,
+          reason: '测试成功',
+        },
+      },
+      viewState: {
+        overallStatus: 'available',
+        summary: '已检测到可用模型配置。',
+        userClaudeSettings: 'success',
+        projectModelConfig: 'success',
+      },
+    },
+  };
+
+  return {
+    mockBootstrapGateResult,
+    mockUseBootstrapGateState: vi.fn(() => ({
+      status: 'ready' as const,
+      result: mockBootstrapGateResult,
+      backgroundSync: {
+        status: 'completed' as const,
+      },
+      retry: vi.fn(async () => undefined),
+      retrySync: vi.fn(async () => undefined),
+    })),
+  };
+});
 
 const clientMocks = vi.hoisted(() => ({
   mockGetCapabilities: vi.fn(async () => ({ workdir: '/tmp/project' })),
@@ -155,6 +225,8 @@ const clientMocks = vi.hoisted(() => ({
   mockExecuteCommand: vi.fn(async () => null),
   mockGetSessionRunState: vi.fn(async () => null),
   mockOpenFileEntry: vi.fn(async () => undefined),
+  mockUpdateModelConfig: vi.fn(async () => undefined),
+  mockUpdateRuntimeCapabilities: vi.fn(async () => undefined),
   mockGetModelConfig: vi.fn(async () => ({
     config: {
       configMode: 'official',
@@ -239,6 +311,8 @@ vi.mock('../lib/agent-v2/client', () => ({
     executeCommand: clientMocks.mockExecuteCommand,
     getSessionRunState: clientMocks.mockGetSessionRunState,
     openFileEntry: clientMocks.mockOpenFileEntry,
+    updateModelConfig: clientMocks.mockUpdateModelConfig,
+    updateRuntimeCapabilities: clientMocks.mockUpdateRuntimeCapabilities,
     getModelConfig: clientMocks.mockGetModelConfig,
     testModelConfig: clientMocks.mockTestModelConfig,
   }),
@@ -777,6 +851,10 @@ describe('Chat chat selection quote interaction', () => {
     clientMocks.mockGetSessionRunState.mockResolvedValue(null);
     clientMocks.mockOpenFileEntry.mockReset();
     clientMocks.mockOpenFileEntry.mockResolvedValue(undefined);
+    clientMocks.mockUpdateModelConfig.mockReset();
+    clientMocks.mockUpdateModelConfig.mockResolvedValue(undefined);
+    clientMocks.mockUpdateRuntimeCapabilities.mockReset();
+    clientMocks.mockUpdateRuntimeCapabilities.mockResolvedValue(undefined);
     sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage.mockReset();
     sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage.mockReturnValue(false);
     sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockReset();
@@ -809,7 +887,12 @@ describe('Chat chat selection quote interaction', () => {
     bootstrapGateMocks.mockUseBootstrapGateState.mockReset();
     bootstrapGateMocks.mockUseBootstrapGateState.mockReturnValue({
       status: 'ready',
+      result: bootstrapGateMocks.mockBootstrapGateResult,
+      backgroundSync: {
+        status: 'completed',
+      },
       retry: vi.fn(async () => undefined),
+      retrySync: vi.fn(async () => undefined),
     });
     vi.stubGlobal(
       'ResizeObserver',
@@ -966,8 +1049,8 @@ describe('Chat chat selection quote interaction', () => {
     const view = render(<Chat />);
 
     await waitFor(() => {
-      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(1);
-      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(2);
+      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(0);
+      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(0);
       expect((view.getByRole('button', { name: '新建会话' }) as HTMLButtonElement).disabled).toBe(
         false
       );
@@ -976,8 +1059,8 @@ describe('Chat chat selection quote interaction', () => {
     fireEvent.click(view.getByRole('button', { name: '新建会话' }));
 
     await waitFor(() => {
-      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(1);
-      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(2);
+      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(0);
+      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(0);
     });
   });
 
@@ -989,16 +1072,16 @@ describe('Chat chat selection quote interaction', () => {
     const firstView = render(<Chat />);
 
     await waitFor(() => {
-      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(1);
-      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(2);
+      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(0);
+      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(0);
     });
 
     firstView.unmount();
     render(<Chat />);
 
     await waitFor(() => {
-      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(1);
-      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(2);
+      expect(clientMocks.mockGetModelConfig).toHaveBeenCalledTimes(0);
+      expect(clientMocks.mockTestModelConfig).toHaveBeenCalledTimes(0);
     });
   });
 
@@ -1254,8 +1337,14 @@ describe('Chat chat selection quote interaction', () => {
     bootstrapGateMocks.mockUseBootstrapGateState.mockReturnValue({
       status: 'running',
       title: '正在检查使用环境',
-      description: '正在同步技能并检查模型配置，请稍候。',
+      description: '正在检查模型配置，请稍候。技能会在后台继续同步。',
+      result: null,
+      backgroundSync: {
+        status: 'running',
+        detail: '正在后台同步技能，完成后会自动刷新可用命令。',
+      },
       retry: vi.fn(async () => undefined),
+      retrySync: vi.fn(async () => undefined),
     });
 
     const view = render(<Chat />);
@@ -1283,7 +1372,15 @@ describe('Chat chat selection quote interaction', () => {
       status: 'blocked',
       title: '模型不可用',
       description: '技能已同步，但当前模型不可用，需要配置官方 Key。',
+      result: {
+        ...bootstrapGateMocks.mockBootstrapGateResult,
+        status: 'blocked',
+      },
+      backgroundSync: {
+        status: 'completed',
+      },
       retry: vi.fn(async () => undefined),
+      retrySync: vi.fn(async () => undefined),
     });
     clientMocks.mockTestModelConfig.mockResolvedValue({
       result: {
@@ -1327,6 +1424,48 @@ describe('Chat chat selection quote interaction', () => {
       true
     );
     expect((view.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('保存官方 Key 后不会再次触发实时模型探测', async () => {
+    mockStreamState.conversationItems = [];
+    const retryMock = vi.fn(async () => ({
+      status: 'ready' as const,
+      ...bootstrapGateMocks.mockBootstrapGateResult,
+    }));
+    bootstrapGateMocks.mockUseBootstrapGateState.mockReturnValue({
+      status: 'blocked',
+      title: '模型不可用',
+      description: '技能已同步，但当前模型不可用，需要配置官方 Key。',
+      result: {
+        ...bootstrapGateMocks.mockBootstrapGateResult,
+        status: 'blocked',
+      },
+      backgroundSync: {
+        status: 'completed',
+      },
+      retry: retryMock,
+      retrySync: vi.fn(async () => undefined),
+    });
+    clientMocks.mockTestModelConfig.mockImplementation(async () => {
+      throw new Error('保存 Key 后不应触发实时模型探测');
+    });
+
+    const view = render(<Chat />);
+
+    const input = await view.findByPlaceholderText('输入官方 API Key');
+    fireEvent.change(input, {
+      target: { value: 'sk-new-official-key' },
+    });
+    fireEvent.click(view.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => {
+      expect(clientMocks.mockUpdateModelConfig).toHaveBeenCalledTimes(1);
+      expect(clientMocks.mockUpdateRuntimeCapabilities).toHaveBeenCalledWith({
+        selectedAuthSource: 'project_model_config',
+      });
+      expect(retryMock).toHaveBeenCalledTimes(1);
+    });
+    expect(clientMocks.mockTestModelConfig).not.toHaveBeenCalled();
   });
 
   it('选中工作区后会解除输入区锁定并清掉工作区提示', async () => {

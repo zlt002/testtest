@@ -35,12 +35,16 @@ import { createServerAgentV2Service } from './server-agent-v2-service.ts';
 import { createSessionFileService } from './session-files/session-file-service.ts';
 import { createSessionMetadataService } from './sessions/session-metadata-service.ts';
 import { buildGlobalSkillSources } from './skills/global-skill-sources.ts';
-import { createWorkspaceService } from './workspaces/workspace-service.ts';
+import {
+  createWorkspaceService,
+  resolveDefaultWorkspacePath,
+} from './workspaces/workspace-service.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadDotenv({ path: resolve(__dirname, '../.dev.vars'), override: true });
 
 const env = loadEnv();
+const defaultWorkspacePath = resolveDefaultWorkspacePath(env.workdir);
 const globalSkillSources = buildGlobalSkillSources(env.globalSkillRoots);
 const runtime = createClaudeSessionPool();
 const runStateStore = createSessionRunStateStore();
@@ -49,9 +53,10 @@ const capabilitiesService = createCapabilitiesService({
   workdir: env.workdir,
 });
 const fileService = createFileService();
+mkdirSync(defaultWorkspacePath, { recursive: true });
 const workspaceService = createWorkspaceService({
   configPath: resolve(env.workdir, '.webmcp', 'workspaces.json'),
-  defaultWorkspacePath: env.workdir,
+  defaultWorkspacePath,
 });
 const sessionMetadataService = createSessionMetadataService({
   configPath: resolve(env.workdir, '.webmcp', 'sessions.json'),

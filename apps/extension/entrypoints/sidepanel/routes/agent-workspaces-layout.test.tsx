@@ -1,9 +1,30 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AgentWorkspacesContent } from './agent-workspaces';
 
 const longSessionTitle =
   '<browser_context> windowId: 737273780 tabId: 737270850 url: https://example.com/some/very/long/path';
+const mockListFiles = vi.fn(async () => []);
+
+vi.stubGlobal(
+  'ResizeObserver',
+  class ResizeObserver {
+    observe() {}
+    disconnect() {}
+  }
+);
+
+vi.stubGlobal('chrome', {
+  storage: {
+    local: {
+      remove: vi.fn(async () => undefined),
+    },
+    onChanged: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    },
+  },
+});
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => ({}),
@@ -25,7 +46,7 @@ vi.mock('../lib/file-preview-browser', () => ({
 
 vi.mock('../lib/agent-v2/client', () => ({
   createAgentV2Client: () => ({
-    listFiles: vi.fn(async () => []),
+    listFiles: mockListFiles,
     addWorkspace: vi.fn(),
     renameWorkspace: vi.fn(),
     deleteWorkspace: vi.fn(),
@@ -50,6 +71,7 @@ vi.mock('../lib/agent-v2/session-selection', () => ({
   clearAgentV2WorkspaceIntent: vi.fn(async () => undefined),
   publishAgentV2ProjectSelection: vi.fn(async () => undefined),
   publishAgentV2SessionSelection: vi.fn(async () => undefined),
+  readAgentV2CurrentSession: vi.fn(async () => null),
   readAgentV2ProjectSelection: vi.fn(async () => null),
   readAgentV2WorkspaceIntent: vi.fn(async () => null),
 }));
@@ -82,8 +104,15 @@ vi.mock('../lib/agent-v2/useAgentV2Sessions', () => ({
   }),
 }));
 
+vi.mock('../lib/agent-v2/useAgentV2SessionRuns', () => ({
+  useAgentV2SessionRuns: () => ({
+    data: undefined,
+  }),
+}));
+
 describe('AgentWorkspacesContent layout', () => {
   it('keeps long generated session titles inside the session card', async () => {
+    mockListFiles.mockResolvedValue([]);
     render(<AgentWorkspacesContent embedded />);
 
     const title = await screen.findByText(longSessionTitle);
@@ -96,6 +125,7 @@ describe('AgentWorkspacesContent layout', () => {
   });
 
   it('renders responsive session and file tabs for narrow layouts', async () => {
+    mockListFiles.mockResolvedValue([]);
     const { container } = render(<AgentWorkspacesContent embedded />);
 
     expect(await screen.findByRole('button', { name: '切换到会话记录' })).toBeTruthy();
@@ -108,6 +138,7 @@ describe('AgentWorkspacesContent layout', () => {
   });
 
   it('prefers the file management tab when opened with a target entry path', async () => {
+    mockListFiles.mockResolvedValue([]);
     render(
       <AgentWorkspacesContent
         embedded
@@ -120,5 +151,70 @@ describe('AgentWorkspacesContent layout', () => {
       'bg-primary'
     );
     expect(screen.getByRole('button', { name: '切换到会话记录' })).toHaveClass('border');
+  });
+
+  it('keeps the parent directory after clicking the toolbar back button', async () => {
+    mockListFiles.mockReset();
+    mockListFiles
+      .mockResolvedValueOnce([
+        {
+          path: 'README.md',
+          name: 'README.md',
+          type: 'file',
+          size: 128,
+          modifiedAt: '2026-05-12T06:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          path: 'captures/example/index.html',
+          name: 'index.html',
+          type: 'file',
+          size: 64,
+          modifiedAt: '2026-05-12T06:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          path: 'captures/notes.txt',
+          name: 'notes.txt',
+          type: 'file',
+          size: 32,
+          modifiedAt: '2026-05-12T07:00:00.000Z',
+        },
+      ])
+      .mockResolvedValue([
+        {
+          path: 'captures/example/index.html',
+          name: 'index.html',
+          type: 'file',
+          size: 64,
+          modifiedAt: '2026-05-12T06:00:00.000Z',
+        },
+      ]);
+
+    render(
+      <AgentWorkspacesContent
+        embedded
+        targetProjectPath="/Users/zhanglt21/Desktop/accrnew/accr-ui"
+        targetEntryPath="captures/example"
+      />
+    );
+
+    await screen.findByText('index.html');
+
+    fireEvent.click(screen.getByRole('button', { name: '返回上一级目录' }));
+
+    await waitFor(() => {
+      expect(mockListFiles.mock.calls.length).toBeGreaterThanOrEqual(3);
+    });
+    expect(mockListFiles).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        dirPath: 'captures',
+        maxDepth: 0,
+        includeMetadata: false,
+      })
+    );
   });
 });

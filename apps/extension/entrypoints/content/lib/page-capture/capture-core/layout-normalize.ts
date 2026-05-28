@@ -297,6 +297,36 @@ function ensureVxeColgroupColumns(
   }
 }
 
+function sumVxeColgroupWidth(table: HTMLElement | null): number {
+  if (!table) {
+    return 0;
+  }
+
+  const colgroup = table.querySelector(':scope > colgroup');
+  if (!(colgroup instanceof HTMLElement)) {
+    return 0;
+  }
+
+  return Array.from(colgroup.children).reduce((total, child) => {
+    if (!(child instanceof HTMLElement) || child.tagName !== 'COL') {
+      return total;
+    }
+
+    return total + readInlinePixelValue(child.style.width);
+  }, 0);
+}
+
+function syncVxeTableWidthToColgroup(table: HTMLElement | null): void {
+  if (!table) {
+    return;
+  }
+
+  const totalWidth = sumVxeColgroupWidth(table);
+  if (totalWidth > 0) {
+    table.style.width = `${totalWidth}px`;
+  }
+}
+
 function flattenVxeFixedRowsIntoMainRows(
   mainRows: Element[],
   fixedRows: Element[],
@@ -357,64 +387,164 @@ function flattenVxeFixedRowsIntoMainRows(
   return { copied, colIds: Array.from(copiedColIds) };
 }
 
-function flattenVxeFixedWrapperPair(root: HTMLElement, side: 'left' | 'right'): boolean {
+function getDirectChild(root: HTMLElement, selector: string): HTMLElement | null {
+  const element = root.querySelector(`:scope > ${selector}`);
+  return element instanceof HTMLElement ? element : null;
+}
+
+function getVxeMainWrapper(root: HTMLElement): HTMLElement | null {
+  if (root.classList.contains('vxe-table--main-wrapper')) {
+    return root;
+  }
+
+  return getDirectChild(root, '.vxe-table--main-wrapper');
+}
+
+function getVxeMainSectionWrapper(
+  root: HTMLElement,
+  selector: '.vxe-table--header-wrapper.body--wrapper' | '.vxe-table--body-wrapper.body--wrapper'
+): HTMLElement | null {
+  const mainWrapper = getVxeMainWrapper(root);
+  if (mainWrapper) {
+    return getDirectChild(mainWrapper, selector);
+  }
+
+  return getDirectChild(root, selector);
+}
+
+function getVxeFixedContainer(root: HTMLElement, side: 'left' | 'right'): HTMLElement | null {
+  const directContainer = getDirectChild(root, `.vxe-table--fixed-${side}-wrapper`);
+  if (directContainer) {
+    return directContainer;
+  }
+
+  const fixedWrapper = getDirectChild(root, '.vxe-table--fixed-wrapper');
+  if (fixedWrapper) {
+    return getDirectChild(fixedWrapper, `.vxe-table--fixed-${side}-wrapper`);
+  }
+
+  return null;
+}
+
+function cleanupEmptyVxeFixedWrapper(root: HTMLElement): void {
+  const fixedWrapper = getDirectChild(root, '.vxe-table--fixed-wrapper');
+  if (!fixedWrapper) {
+    return;
+  }
+
+  const hasRemainingFixedChildren = Array.from(fixedWrapper.children).some(
+    (child) =>
+      child instanceof HTMLElement &&
+      (child.classList.contains('vxe-table--fixed-left-wrapper') ||
+        child.classList.contains('vxe-table--fixed-right-wrapper'))
+  );
+
+  if (!hasRemainingFixedChildren) {
+    fixedWrapper.remove();
+  }
+}
+
+function getVxeFixedSectionWrapper(
+  root: HTMLElement,
+  side: 'left' | 'right',
+  section: 'header' | 'body'
+): HTMLElement | null {
   const fixedClass = side === 'left' ? 'fixed-left--wrapper' : 'fixed-right--wrapper';
-  const mainHeaderWrapper = root.querySelector(':scope > .vxe-table--header-wrapper.body--wrapper');
-  const mainBodyWrapper = root.querySelector(':scope > .vxe-table--body-wrapper.body--wrapper');
-  const fixedHeaderWrapper = root.querySelector(`:scope > .vxe-table--header-wrapper.${fixedClass}`);
-  const fixedBodyWrapper = root.querySelector(`:scope > .vxe-table--body-wrapper.${fixedClass}`);
+  const sectionSelector =
+    section === 'header' ? `.vxe-table--header-wrapper.${fixedClass}` : `.vxe-table--body-wrapper.${fixedClass}`;
+  const fixedContainer = getVxeFixedContainer(root, side);
+  if (fixedContainer) {
+    return getDirectChild(fixedContainer, sectionSelector);
+  }
+
+  return getDirectChild(root, sectionSelector);
+}
+
+function mainRowsContainAllVxeColumns(
+  wrapper: HTMLElement | null,
+  rowSelector: string,
+  colIds: string[]
+): boolean {
+  if (!wrapper || colIds.length === 0) {
+    return false;
+  }
+
+  return colIds.every((colId) => wrapper.querySelector(`${rowSelector}[colid="${colId}"]`));
+}
+
+function flattenVxeFixedWrapperPair(root: HTMLElement, side: 'left' | 'right'): boolean {
+  const fixedContainer = getVxeFixedContainer(root, side);
+  const mainHeaderWrapper = getVxeMainSectionWrapper(root, '.vxe-table--header-wrapper.body--wrapper');
+  const mainBodyWrapper = getVxeMainSectionWrapper(root, '.vxe-table--body-wrapper.body--wrapper');
+  const fixedHeaderWrapper = getVxeFixedSectionWrapper(root, side, 'header');
+  const fixedBodyWrapper = getVxeFixedSectionWrapper(root, side, 'body');
 
   let copiedHeader = false;
   let copiedBody = false;
 
   if (mainHeaderWrapper instanceof HTMLElement && fixedHeaderWrapper instanceof HTMLElement) {
+    const mainHeaderTable = mainHeaderWrapper.querySelector(':scope > table');
+    const fixedHeaderTable = fixedHeaderWrapper.querySelector(':scope > table');
     const headerResult = flattenVxeFixedRowsIntoMainRows(
       Array.from(mainHeaderWrapper.querySelectorAll('tr')),
       Array.from(fixedHeaderWrapper.querySelectorAll('tr')),
       side
     );
     ensureVxeColgroupColumns(
-      mainHeaderWrapper.querySelector(':scope > table'),
-      fixedHeaderWrapper.querySelector(':scope > table'),
+      mainHeaderTable,
+      fixedHeaderTable,
       headerResult.colIds,
       side
     );
-    copiedHeader = headerResult.copied;
+    syncVxeTableWidthToColgroup(mainHeaderTable instanceof HTMLElement ? mainHeaderTable : null);
+    copiedHeader =
+      headerResult.colIds.length > 0 &&
+      mainRowsContainAllVxeColumns(mainHeaderWrapper, 'th', headerResult.colIds);
   }
 
   if (mainBodyWrapper instanceof HTMLElement && fixedBodyWrapper instanceof HTMLElement) {
+    const mainBodyTable = mainBodyWrapper.querySelector(':scope > table');
+    const fixedBodyTable = fixedBodyWrapper.querySelector(':scope > table');
     const bodyResult = flattenVxeFixedRowsIntoMainRows(
       Array.from(mainBodyWrapper.querySelectorAll('tr')),
       Array.from(fixedBodyWrapper.querySelectorAll('tr')),
       side
     );
     ensureVxeColgroupColumns(
-      mainBodyWrapper.querySelector(':scope > table'),
-      fixedBodyWrapper.querySelector(':scope > table'),
+      mainBodyTable,
+      fixedBodyTable,
       bodyResult.colIds,
       side
     );
-    copiedBody = bodyResult.copied;
+    syncVxeTableWidthToColgroup(mainBodyTable instanceof HTMLElement ? mainBodyTable : null);
+    copiedBody =
+      bodyResult.colIds.length > 0 &&
+      mainRowsContainAllVxeColumns(mainBodyWrapper, 'td', bodyResult.colIds);
   }
 
-  const shouldRemove =
-    (!fixedHeaderWrapper || copiedHeader) &&
-    (!fixedBodyWrapper || copiedBody);
+  const hasFixedHeader = fixedHeaderWrapper instanceof HTMLElement;
+  const hasFixedBody = fixedBodyWrapper instanceof HTMLElement;
+  const shouldRemove = (!hasFixedHeader || copiedHeader) && (!hasFixedBody || copiedBody);
 
   if (shouldRemove) {
-    fixedHeaderWrapper?.remove();
-    fixedBodyWrapper?.remove();
+    if (fixedContainer) {
+      fixedContainer.remove();
+    } else {
+      fixedHeaderWrapper?.remove();
+      fixedBodyWrapper?.remove();
+    }
   }
 
   return shouldRemove;
 }
 
 function flattenVxeFixedTableColumns(doc: Document): void {
-  for (const root of Array.from(doc.querySelectorAll('.vxe-table--main-wrapper')).filter(
+  for (const root of Array.from(doc.querySelectorAll('.vxe-table--render-wrapper, .vxe-table--main-wrapper')).filter(
     (element): element is HTMLElement => element instanceof HTMLElement
   )) {
     flattenVxeFixedWrapperPair(root, 'left');
     flattenVxeFixedWrapperPair(root, 'right');
+    cleanupEmptyVxeFixedWrapper(root);
   }
 }
 
@@ -476,6 +606,29 @@ function freezeHorizontalScrollContainer(scrollContainer: HTMLElement): void {
 
   scrollContainer.style.overflowX = 'hidden';
 
+  if (
+    scrollContainer.classList.contains('vxe-table--body-wrapper') &&
+    scrollContainer.classList.contains('body--wrapper')
+  ) {
+    const mainWrapper = scrollContainer.closest('.vxe-table--main-wrapper');
+    const headerTable = mainWrapper?.querySelector(
+      ':scope > .vxe-table--header-wrapper.body--wrapper > table'
+    );
+    const bodyTable = scrollContainer.querySelector(':scope > table');
+
+    const vxeTables = [headerTable, bodyTable].filter(
+      (element): element is HTMLElement => element instanceof HTMLElement
+    );
+
+    for (const table of vxeTables) {
+      const existingMarginLeft = table.style.marginLeft.trim();
+      table.style.marginLeft = existingMarginLeft
+        ? `calc(${existingMarginLeft} - ${scrollLeft}px)`
+        : `-${scrollLeft}px`;
+    }
+    return;
+  }
+
   const tableContentLayers = Array.from(
     scrollContainer.querySelectorAll(
       ':scope > .el-table__header-wrapper > table, :scope > .el-table__body-wrapper > table'
@@ -514,6 +667,5 @@ function freezeCapturedScrollState(doc: Document): void {
 
 export function normalizeCapturedLayout(doc: Document): void {
   flattenFixedTableColumns(doc);
-  flattenVxeFixedTableColumns(doc);
   freezeCapturedScrollState(doc);
 }

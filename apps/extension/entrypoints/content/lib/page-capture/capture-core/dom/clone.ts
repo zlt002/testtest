@@ -1,4 +1,5 @@
 export const SOURCE_INDEX_ATTRIBUTE = 'data-webmcp-source-index';
+const CAPTURE_SCROLL_LEFT_ATTRIBUTE = 'data-capture-scroll-left';
 
 type ClonePageDocumentOptions = {
   targetElement?: Element | null;
@@ -126,6 +127,39 @@ function cloneBodyChildNodes(source: Document, clone: Document): void {
   clone.body.replaceChildren(fragment);
 }
 
+function shouldCaptureHorizontalScrollState(element: HTMLElement): boolean {
+  return (
+    element.classList.contains('vxe-table--body-wrapper') &&
+    element.classList.contains('body--wrapper')
+  );
+}
+
+function copyHorizontalScrollState(source: Document, clone: Document): void {
+  const sourceElements = getSourceElements(source);
+
+  for (const [index, element] of sourceElements.entries()) {
+    if (!(element instanceof HTMLElement)) {
+      continue;
+    }
+
+    if (!shouldCaptureHorizontalScrollState(element)) {
+      continue;
+    }
+
+    const scrollLeft = Math.round(Number(element.scrollLeft || 0));
+    if (!Number.isFinite(scrollLeft) || scrollLeft <= 0) {
+      continue;
+    }
+
+    const cloneElement = clone.body.querySelector(`[${SOURCE_INDEX_ATTRIBUTE}="${index}"]`);
+    if (!(cloneElement instanceof HTMLElement)) {
+      continue;
+    }
+
+    cloneElement.setAttribute(CAPTURE_SCROLL_LEFT_ATTRIBUTE, String(scrollLeft));
+  }
+}
+
 export function clonePageDocument(
   source: Document,
   options: ClonePageDocumentOptions = {}
@@ -152,6 +186,7 @@ export function clonePageDocument(
   try {
     cloneBodyChildNodes(source, clone);
     cloneOpenShadowStyleNodes(source, clone);
+    copyHorizontalScrollState(source, clone);
   } finally {
     restoreSourceElementMarkers(markers);
   }

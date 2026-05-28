@@ -293,6 +293,40 @@ async function responseToBuffer(response: Awaited<ReturnType<FetchLike>>) {
   throw new Error('读取 accr Lite 更新包响应内容失败。');
 }
 
+function looksLikeHtmlDocument(buffer: Buffer) {
+  const prefix = buffer.subarray(0, 512).toString('utf8').trimStart().toLowerCase();
+  return (
+    prefix.startsWith('<!doctype html') ||
+    prefix.startsWith('<html') ||
+    prefix.startsWith('<?xml') ||
+    prefix.includes('<head') ||
+    prefix.includes('<body')
+  );
+}
+
+function assertDownloadedPackageLooksLikeZip({
+  packageUrl,
+  response,
+  zipBuffer,
+}: {
+  packageUrl: string;
+  response: Awaited<ReturnType<FetchLike>>;
+  zipBuffer: Buffer;
+}) {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const isLikelyHtml =
+    contentType.includes('text/html') ||
+    contentType.includes('text/plain') ||
+    packageUrl.includes('/-/blob/') ||
+    looksLikeHtmlDocument(zipBuffer);
+
+  if (isLikelyHtml) {
+    throw new Error(
+      '更新地址返回的不是 zip 文件，请将 windowsLiteZipUrl 改为可直接下载的 raw/download 链接。'
+    );
+  }
+}
+
 async function extractWebMcpLiteZip(zipBuffer: Buffer, extractDir: string) {
   const zip = await JSZip.loadAsync(zipBuffer);
   const rawEntries = Object.values(zip.files).filter(
@@ -512,6 +546,11 @@ export async function prepareWebMcpLiteUpdate({
   }
 
   const zipBuffer = await responseToBuffer(response);
+  assertDownloadedPackageLooksLikeZip({
+    packageUrl: distribution.packageUrl,
+    response,
+    zipBuffer,
+  });
   const validation = await validateWebMcpLiteZip(zipBuffer, { appDir, platform: currentPlatform });
   if (!validation.valid) {
     throw new Error(`accr Lite 更新包无效，缺少: ${validation.missingPaths.join(', ')}`);

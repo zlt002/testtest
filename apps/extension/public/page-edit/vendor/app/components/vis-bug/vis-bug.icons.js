@@ -186,3 +186,109 @@ export const chevron_down = `
     <path d="M6 10l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 `
+
+export const flex_direction_row = `
+  <svg viewBox="0 0 24 24">
+    <rect x="4" y="9" width="4" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="10" y="9" width="4" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="16" y="9" width="4" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M5 5h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M16.5 2.8L19.4 5l-2.9 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`
+
+export const flex_direction_column = `
+  <svg viewBox="0 0 24 24">
+    <rect x="9" y="4" width="6" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="9" y="10" width="6" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="9" y="16" width="6" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M5 5v14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M2.8 16.5L5 19.4l2.2-2.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`
+
+export const flex_wrap_on = `
+  <svg viewBox="0 0 24 24">
+    <rect x="4" y="5" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="10" y="5" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="16" y="5" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="4" y="15" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="10" y="15" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M18 12h-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M13.5 9.8L9.8 12l3.7 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`
+
+export const flex_wrap_off = `
+  <svg viewBox="0 0 24 24">
+    <rect x="3" y="10" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="9" y="10" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="15" y="10" width="4" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M4 5h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <path d="M15.8 2.8L19.2 5l-3.4 2.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`
+
+export const flex_justify_start = `
+  <svg viewBox="0 0 24 24">
+    <path d="M5 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="7.5" y="7" width="4" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="13.5" y="7" width="3" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_justify_center = `
+  <svg viewBox="0 0 24 24">
+    <path d="M12 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/>
+    <rect x="7" y="7" width="4" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="13" y="7" width="4" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_justify_end = `
+  <svg viewBox="0 0 24 24">
+    <path d="M19 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="8" y="7" width="3" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="12.5" y="7" width="4" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_justify_between = `
+  <svg viewBox="0 0 24 24">
+    <path d="M5 4v16M19 4v16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="7.5" y="7" width="3" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="13.5" y="7" width="3" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_align_start = `
+  <svg viewBox="0 0 24 24">
+    <path d="M4 5h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="7" y="7.5" width="4" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="13" y="7.5" width="4" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_align_center = `
+  <svg viewBox="0 0 24 24">
+    <path d="M4 12h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/>
+    <rect x="7" y="8" width="4" height="8" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="13" y="9.5" width="4" height="5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_align_end = `
+  <svg viewBox="0 0 24 24">
+    <path d="M4 19h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="7" y="9.5" width="4" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="13" y="12.5" width="4" height="4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`
+
+export const flex_align_between = `
+  <svg viewBox="0 0 24 24">
+    <path d="M4 5h16M4 19h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    <rect x="9" y="7.5" width="6" height="3" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <rect x="9" y="13.5" width="6" height="3" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+  </svg>
+`

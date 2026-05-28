@@ -149,14 +149,17 @@ describe('page-edit bottom toolbar shell', () => {
     expect(shellMarkup).not.toContain('data-bottom-tool="inspect"');
     expect(shellMarkup).toContain('data-bottom-divider');
     expect(shellMarkup).toContain('data-bottom-menu');
-    expect(shellMarkup).toContain('data-bottom-action="up-1"');
-    expect(shellMarkup).toContain('data-bottom-action="width-plus-1"');
+    expect(shellMarkup).not.toContain('data-bottom-action="up-1"');
+    expect(shellMarkup).toContain('data-size-panel');
+    expect(shellMarkup).toContain('data-size-input="width"');
+    expect(shellMarkup).toContain('data-size-input="height"');
     expect(shellMarkup).toContain('data-spacing-panel="padding"');
     expect(shellMarkup).toContain('data-spacing-panel="margin"');
     expect(shellMarkup).toContain('data-spacing-input="vertical"');
     expect(shellMarkup).toContain('data-spacing-input="horizontal"');
     expect(shellMarkup).not.toContain('data-tool-group=');
     expect(shellMarkup).not.toContain('data-subtool=');
+    expect(shellMarkup).not.toContain('data-bottom-action="width-plus-1"');
   });
 
   it('renders disabled tools with reason text when the selected element cannot use them', async () => {
@@ -213,12 +216,7 @@ describe('page-edit bottom toolbar shell', () => {
     expect(tools.find(tool => tool.id === 'move')?.feature).toBe('position');
     expect(tools.find(tool => tool.id === 'resize')?.feature).toBe('position');
     expect(tools.find(tool => tool.id === 'reorder')?.feature).toBe('move');
-    expect(visbug.getBottomToolbarToolActions('move')[0]?.map(action => action.id)).toEqual([
-      'up-1',
-      'down-1',
-      'left-1',
-      'right-1',
-    ]);
+    expect(visbug.getBottomToolbarToolActions('move')).toEqual([]);
     expect(visbug.render()).not.toContain('data-action="save-file"');
   });
 

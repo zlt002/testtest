@@ -153,6 +153,47 @@ describe('PageEditToggle', () => {
     expect(screen.getByRole('button', { name: '进入编辑' })).toBeTruthy();
   });
 
+  it('allows reopening immediately after close succeeds even if state refetch is still pending', async () => {
+    const { fireEvent, render, screen } = await import('@testing-library/react');
+    const { PageEditToggle } = await import('./PageEditToggle');
+    queryState = {
+      tabId: 77,
+      windowId: 1,
+      url: 'https://example.com/doc',
+      status: 'active',
+      activatedAt: 123,
+      pageMode: 'live-page',
+      capabilities: {
+        canAnnotate: true,
+        canCapture: true,
+        canSend: true,
+        canEdit: false,
+        canSave: false,
+      },
+    };
+    getBrowserContext.mockResolvedValue({
+      windowId: 1,
+      tabId: 77,
+      title: 'Example',
+      url: 'https://example.com/doc',
+    });
+    deactivateMutateAsync.mockResolvedValueOnce(null);
+    getStateRefetch.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // keep refetch pending to verify the button is unlocked before it settles
+        })
+    );
+
+    render(<PageEditToggle />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '退出编辑' }));
+
+    await screen.findByText('页面工作台已关闭');
+    const reopenButton = screen.getByRole('button', { name: '进入编辑' });
+    expect(reopenButton.hasAttribute('disabled')).toBe(false);
+  });
+
   it('keeps the toggle disabled and shows deactivating feedback until close finishes', async () => {
     const { fireEvent, render, screen } = await import('@testing-library/react');
     const { PageEditToggle } = await import('./PageEditToggle');

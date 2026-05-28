@@ -156,7 +156,7 @@ export function SystemUpdateNotice({
         onClick={() => setOpen(true)}
       >
         <DownloadCloud className="h-3.5 w-3.5" />
-        <span>发现新版本</span>
+        <span>更新</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[min(92vw,520px)] p-4">

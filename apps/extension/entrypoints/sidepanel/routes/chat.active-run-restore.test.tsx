@@ -546,12 +546,20 @@ describe('Chat active run restore', () => {
 
   it('首次启动时会自动选中后端默认工作区', async () => {
     activeRunSessionMocks.mockReadAgentV2ActiveRunSession.mockResolvedValue(null);
+    clientMocks.mockListProjects.mockResolvedValue([
+      {
+        projectKey: 'project',
+        name: 'project',
+        projectPath: '/tmp/project/workspace/project',
+        sessionCount: 0,
+      },
+    ]);
 
     render(<Chat />);
 
     await waitFor(() => {
       expect(sessionSelectionMocks.mockPublishAgentV2ProjectSelection).toHaveBeenCalledWith({
-        projectPath: '/tmp/project',
+        projectPath: '/tmp/project/workspace/project',
       });
     });
   });

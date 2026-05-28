@@ -1,3 +1,6 @@
+import { ensureCompanionReady } from './NativeHostManager';
+import { fileUrlToLocalPath } from './page-edit-file-save';
+
 type StylesheetFetchRequest = {
   type: 'page-capture-fetch-stylesheet';
   sourceUrl: string;
@@ -36,7 +39,38 @@ function createTimeoutError(sourceUrl: string, timeoutMs: number): Error {
   return new Error(`Failed to fetch stylesheet ${sourceUrl}: timeout after ${timeoutMs}ms`);
 }
 
+async function readLocalStylesheetThroughAgent(sourceUrl: string): Promise<string> {
+  const discovery = await ensureCompanionReady();
+  const localPath = fileUrlToLocalPath(sourceUrl);
+  const normalizedPath = localPath.replace(/\\/g, '/');
+  const lastSlashIndex = normalizedPath.lastIndexOf('/');
+  const projectPath =
+    lastSlashIndex >= 0 ? normalizedPath.slice(0, lastSlashIndex) || '/' : normalizedPath;
+  const filePath = lastSlashIndex >= 0 ? normalizedPath.slice(lastSlashIndex + 1) : normalizedPath;
+  const params = new URLSearchParams({
+    projectPath,
+    filePath,
+  });
+  const response = await fetch(`${discovery.agentBaseUrl}/api/files/content?${params}`);
+  if (!response.ok) {
+    throw new Error(`Failed to read local stylesheet ${sourceUrl}: HTTP ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { content?: string };
+  return payload.content || '';
+}
+
 async function fetchStylesheet(sourceUrl: string): Promise<string> {
+  if (sourceUrl.startsWith('file://')) {
+    try {
+      return await readLocalStylesheetThroughAgent(sourceUrl);
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch stylesheet ${sourceUrl}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
   let response: Response;
   const controller = new AbortController();
   let timeoutError: Error | null = null;

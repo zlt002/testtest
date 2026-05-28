@@ -123,10 +123,10 @@ export function deriveModelAccessViewState(input: {
       summary: hasSuccess
         ? '当前已有可用模型来源，正在补充检测其余来源。'
         : isAwaitingFirstSuccessfulProbe
-          ? '正在检查 Claude CLI、项目模型配置和真实联通性，请稍候。'
+          ? '正在检查 Claude CLI 和项目模型配置，请稍候。'
           : hasConfigGap
             ? '当前需先补齐模型配置。'
-            : '正在检查 Claude CLI、项目模型配置和真实联通性，请稍候。',
+            : '正在检查 Claude CLI 和项目模型配置，请稍候。',
       userClaudeSettings,
       projectModelConfig,
     };

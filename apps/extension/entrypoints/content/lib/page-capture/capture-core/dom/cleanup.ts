@@ -48,11 +48,34 @@ function shouldPreserveRuntimeStyleNode(element: Element): boolean {
   return element.localName === 'style' || element.localName === 'link';
 }
 
+function shouldPreserveVxeHiddenLayoutCell(element: Element): boolean {
+  if (
+    !['th', 'td'].includes(element.localName) ||
+    !element.classList.contains('fixed--hidden')
+  ) {
+    return false;
+  }
+
+  const sectionWrapper = element.closest(
+    [
+      '.vxe-table--header-wrapper.body--wrapper',
+      '.vxe-table--body-wrapper.body--wrapper',
+      '.vxe-table--header-wrapper.fixed-left--wrapper',
+      '.vxe-table--body-wrapper.fixed-left--wrapper',
+      '.vxe-table--header-wrapper.fixed-right--wrapper',
+      '.vxe-table--body-wrapper.fixed-right--wrapper',
+    ].join(', ')
+  );
+
+  return Boolean(sectionWrapper);
+}
+
 function isElementHidden(element: Element, originalElement?: Element): boolean {
   if (
     shouldPreserveHiddenStyleContainer(element) ||
     shouldPreserveMicroAppHeadStyleNode(element) ||
-    shouldPreserveRuntimeStyleNode(element)
+    shouldPreserveRuntimeStyleNode(element) ||
+    shouldPreserveVxeHiddenLayoutCell(element)
   ) {
     return false;
   }

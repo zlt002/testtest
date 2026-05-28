@@ -38,6 +38,7 @@ import { AssistantBubble } from '@/entrypoints/sidepanel/components/chat/Assista
 import { SystemUpdateEntry } from '@/entrypoints/sidepanel/components/settings/SystemUpdateEntry';
 import { UserBubble } from '@/entrypoints/sidepanel/components/chat/UserBubble';
 import { Button } from '@/entrypoints/sidepanel/components/ui/button';
+import { Badge } from '@/entrypoints/sidepanel/components/ui/badge';
 import { Input } from '@/entrypoints/sidepanel/components/ui/input';
 import {
   Dialog,
@@ -180,7 +181,7 @@ import {
   type WindowTakeoverConfirmationRequiredMessage,
   type WindowTakeoverState,
 } from '../lib/window-takeover';
-import { useBootstrapGateState } from '../lib/bootstrap-gate';
+import { type BootstrapGateResult, useBootstrapGateState } from '../lib/bootstrap-gate';
 import { resolveRunFileOpenTarget } from './chat-file-open';
 
 function ClaudeCodeEmptyStateIcon() {
@@ -211,6 +212,12 @@ type EmptyStateModelAccessStatus =
 function trimOptionalValue(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function resolveDefaultWorkspacePath(workdir: string): string {
+  const normalized = workdir.replace(/[\\/]+$/, '');
+  const separator = normalized.includes('\\') ? '\\' : '/';
+  return `${normalized}${separator}workspace${separator}project`;
 }
 
 function buildOfficialApiKeyPatch(
@@ -305,7 +312,7 @@ function ClaudeCodeModelAccessNotice({
             className={hasConfigAction ? "w-full" : "min-w-[8.5rem]"}
             onClick={onOpenPortal}
           >
-            查看 Key
+            查看Key
           </Button>
           <Button
             type="button"
@@ -328,10 +335,10 @@ function resolveEmptyStateHeading(input: {
   overallStatus: ReturnType<typeof deriveModelAccessViewState>['overallStatus'];
 }): string {
   if (!input.modelAccessLoaded || input.overallStatus === 'probing') {
-    return '模型检测中';
+    return '模型配置检测中';
   }
   if (input.overallStatus === 'available' || input.overallStatus === 'partial') {
-    return 'Claude Code 已就绪';
+    return 'Claude Code 可开始使用';
   }
   return '当前模型需先配置';
 }
@@ -345,7 +352,7 @@ function resolveEmptyStateSummary(input: {
   overallStatus: ReturnType<typeof deriveModelAccessViewState>['overallStatus'];
 }): string {
   if (!input.modelAccessLoaded) {
-    return '正在检查本地 CLI、项目模型配置和真实联通性，请稍候。';
+    return '正在检查本地 CLI 和项目模型配置，请稍候。';
   }
 
   const { runtimeInfo, userClaudeSettingsStatus, projectModelConfigStatus, overallStatus } = input;
@@ -354,30 +361,44 @@ function resolveEmptyStateSummary(input: {
   if (overallStatus === 'available' || overallStatus === 'partial') {
     if (activeSource === 'user_claude_settings' && userClaudeSettingsStatus === 'success') {
       return projectModelConfigStatus === 'failed' || projectModelConfigStatus === 'needs_config'
-        ? '已检测到可用的用户级 Claude settings，可直接开始对话。项目模型配置暂未就绪。'
-        : '已检测到可用的用户级 Claude settings，可直接开始对话。';
+        ? '已检测到用户级 Claude settings 配置，可直接开始对话。项目模型配置暂未就绪。'
+        : '已检测到用户级 Claude settings 配置，可直接开始对话。';
     }
 
     if (activeSource === 'project_model_config' && projectModelConfigStatus === 'success') {
       return userClaudeSettingsStatus === 'failed' || userClaudeSettingsStatus === 'unavailable'
-        ? '已检测到可用的项目模型配置，可直接开始对话。用户级 Claude settings 暂未就绪。'
-        : '已检测到可用的项目模型配置，可直接开始对话。';
+        ? '已检测到项目模型配置，可直接开始对话。用户级 Claude settings 暂未就绪。'
+        : '已检测到项目模型配置，可直接开始对话。';
     }
 
     if (userClaudeSettingsStatus === 'success' && projectModelConfigStatus === 'success') {
-      return '已检测到用户级 Claude settings 和项目模型配置都可用。';
+      return '已检测到用户级 Claude settings 和项目模型配置。';
     }
 
     if (userClaudeSettingsStatus === 'success') {
-      return `已检测到可用的${formatAuthSourceLabel('user_claude_settings')}，可直接开始对话。`;
+      return `已检测到${formatAuthSourceLabel('user_claude_settings')}配置，可直接开始对话。`;
     }
 
     if (projectModelConfigStatus === 'success') {
-      return `已检测到可用的${formatAuthSourceLabel('project_model_config')}，可直接开始对话。`;
+      return `已检测到${formatAuthSourceLabel('project_model_config')}，可直接开始对话。`;
     }
   }
 
   return input.summary;
+}
+
+function shouldSuggestModelConfigFromError(error: string): boolean {
+  const normalizedError = error.toLowerCase();
+  return (
+    normalizedError.includes('api key') ||
+    normalizedError.includes('authentication') ||
+    normalizedError.includes('auth') ||
+    normalizedError.includes('401') ||
+    normalizedError.includes('403') ||
+    normalizedError.includes('模型') ||
+    normalizedError.includes('配置') ||
+    normalizedError.includes('claude settings')
+  );
 }
 
 type ChatModelAccessSnapshot = {
@@ -395,6 +416,50 @@ let chatModelAccessSnapshotPromise: Promise<ChatModelAccessSnapshot> | null = nu
 function clearChatModelAccessSnapshotCache() {
   chatModelAccessSnapshotCache = null;
   chatModelAccessSnapshotPromise = null;
+}
+
+function deriveEmptyStateModelAccessStatus(input: {
+  overallStatus: ReturnType<typeof deriveModelAccessViewState>['overallStatus'];
+  userClaudeSettingsTestResult: AgentModelConfigAuthTestResult | null;
+  projectModelConfigTestResult: AgentModelConfigAuthTestResult | null;
+}): EmptyStateModelAccessStatus {
+  const bothSourcesFailed =
+    input.userClaudeSettingsTestResult != null &&
+    input.projectModelConfigTestResult != null &&
+    !hasSuccessfulModelConfigTest(input.userClaudeSettingsTestResult) &&
+    !hasSuccessfulModelConfigTest(input.projectModelConfigTestResult);
+
+  return bothSourcesFailed
+    ? 'requires_official_api_key'
+    : input.overallStatus === 'available' || input.overallStatus === 'partial'
+      ? 'available'
+      : input.overallStatus === 'needs_config'
+        ? 'needs_config'
+        : 'unknown';
+}
+
+function createChatModelAccessSnapshotFromBootstrapResult(
+  result: BootstrapGateResult
+): ChatModelAccessSnapshot {
+  return {
+    runtimeInfo: result.modelAccess.runtimeInfo ?? {
+      authSource: result.modelAccess.selectedAuthSource,
+      selectedAuthSource: result.modelAccess.selectedAuthSource,
+      available: false,
+      claudeCliAvailable: false,
+      hasProjectModelConfig: false,
+      reason: '当前模型运行时信息暂不可用。',
+    },
+    localConfig: result.modelAccess.localConfig,
+    userClaudeSettingsTestResult: result.modelAccess.userClaudeSettingsTestResult,
+    projectModelConfigTestResult: result.modelAccess.projectModelConfigTestResult,
+    isProbePending: false,
+    emptyStateStatus: deriveEmptyStateModelAccessStatus({
+      overallStatus: result.modelAccess.viewState.overallStatus,
+      userClaudeSettingsTestResult: result.modelAccess.userClaudeSettingsTestResult,
+      projectModelConfigTestResult: result.modelAccess.projectModelConfigTestResult,
+    }),
+  };
 }
 
 export function resetChatModelAccessSnapshotCacheForTest() {
@@ -464,19 +529,11 @@ async function resolveChatModelAccessSnapshot(
       isProbing: false,
     });
 
-    const bothSourcesFailed =
-      userClaudeSettingsTestResult != null &&
-      projectModelConfigTestResult != null &&
-      !hasSuccessfulModelConfigTest(userClaudeSettingsTestResult) &&
-      !hasSuccessfulModelConfigTest(projectModelConfigTestResult);
-
-    const emptyStateStatus: EmptyStateModelAccessStatus = bothSourcesFailed
-      ? 'requires_official_api_key'
-      : viewState.overallStatus === 'available' || viewState.overallStatus === 'partial'
-        ? 'available'
-        : viewState.overallStatus === 'needs_config'
-          ? 'needs_config'
-          : 'unknown';
+    const emptyStateStatus = deriveEmptyStateModelAccessStatus({
+      overallStatus: viewState.overallStatus,
+      userClaudeSettingsTestResult,
+      projectModelConfigTestResult,
+    });
 
     const snapshot: ChatModelAccessSnapshot = {
       runtimeInfo: payload.runtime,
@@ -2000,6 +2057,7 @@ export function Chat() {
   const selectionOverlayRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const officialApiKeyInputRef = useRef<HTMLInputElement | null>(null);
+  const lastBackgroundSyncStatusRef = useRef(bootstrapGate.backgroundSync.status);
   const inputRef = useRef('');
   const attachmentsRef = useRef<SessionAttachment[]>([]);
   const browserContextRef = useRef<BrowserContext | undefined>(undefined);
@@ -2114,6 +2172,46 @@ export function Chat() {
       userClaudeSettingsTestResult,
     ]
   );
+  const displayModelAccessSnapshot = useMemo(() => {
+    if (hasLoadedModelAccess) {
+      return {
+        modelAccessLoaded: true,
+        overallStatus: modelAccessViewState.overallStatus,
+        summary: modelAccessViewState.summary,
+        runtimeInfo: modelAccessRuntimeInfo,
+        userClaudeSettingsStatus: modelAccessViewState.userClaudeSettings,
+        projectModelConfigStatus: modelAccessViewState.projectModelConfig,
+      };
+    }
+
+    if (bootstrapGate.status === 'ready' && bootstrapGate.result) {
+      return {
+        modelAccessLoaded: true,
+        overallStatus: bootstrapGate.result.modelAccess.viewState.overallStatus,
+        summary: bootstrapGate.result.modelAccess.viewState.summary,
+        runtimeInfo: bootstrapGate.result.modelAccess.runtimeInfo,
+        userClaudeSettingsStatus: bootstrapGate.result.modelAccess.viewState.userClaudeSettings,
+        projectModelConfigStatus: bootstrapGate.result.modelAccess.viewState.projectModelConfig,
+      };
+    }
+
+    return {
+      modelAccessLoaded: false,
+      overallStatus: modelAccessViewState.overallStatus,
+      summary: modelAccessViewState.summary,
+      runtimeInfo: modelAccessRuntimeInfo,
+      userClaudeSettingsStatus: modelAccessViewState.userClaudeSettings,
+      projectModelConfigStatus: modelAccessViewState.projectModelConfig,
+    };
+  }, [
+    bootstrapGate,
+    hasLoadedModelAccess,
+    modelAccessRuntimeInfo,
+    modelAccessViewState.overallStatus,
+    modelAccessViewState.projectModelConfig,
+    modelAccessViewState.summary,
+    modelAccessViewState.userClaudeSettings,
+  ]);
   useEffect(() => {
     activeProjectPathRef.current = activeProjectPath;
   }, [activeProjectPath]);
@@ -2152,8 +2250,32 @@ export function Chat() {
   }, [agentClient]);
 
   useEffect(() => {
-    void refreshModelAccess();
-  }, [refreshModelAccess]);
+    const previousStatus = lastBackgroundSyncStatusRef.current;
+    const nextStatus = bootstrapGate.backgroundSync.status;
+    lastBackgroundSyncStatusRef.current = nextStatus;
+
+    if (previousStatus === nextStatus) {
+      return;
+    }
+
+    if (nextStatus === 'failed') {
+      toast.error(bootstrapGate.backgroundSync.detail);
+    }
+  }, [bootstrapGate.backgroundSync]);
+
+  useEffect(() => {
+    if (!bootstrapGate.result) {
+      return;
+    }
+
+    const snapshot = createChatModelAccessSnapshotFromBootstrapResult(bootstrapGate.result);
+    setModelAccessRuntimeInfo(snapshot.runtimeInfo);
+    setModelAccessLocalConfig(snapshot.localConfig);
+    setUserClaudeSettingsTestResult(snapshot.userClaudeSettingsTestResult);
+    setProjectModelConfigTestResult(snapshot.projectModelConfigTestResult);
+    setIsModelAccessProbePending(snapshot.isProbePending);
+    setEmptyStateModelAccessStatus(snapshot.emptyStateStatus);
+  }, [bootstrapGate.result]);
 
   useEffect(() => {
     return subscribeModelAccessChanged(() => {
@@ -2207,7 +2329,6 @@ export function Chat() {
         selectedAuthSource: 'project_model_config',
       });
       clearChatModelAccessSnapshotCache();
-      await refreshModelAccess({ force: true });
       const nextGateResult = await bootstrapGate.retry();
       setOfficialApiKeyInput('');
       if (officialApiKeyInputRef.current) {
@@ -2229,7 +2350,6 @@ export function Chat() {
     bootstrapGate,
     modelAccessLocalConfig,
     officialApiKeyInput,
-    refreshModelAccess,
   ]);
   const isModelInteractionDisabled =
     modelAccessViewState.overallStatus === 'needs_config' ||
@@ -3207,6 +3327,7 @@ export function Chat() {
     }
 
     let cancelled = false;
+    const defaultWorkspacePath = resolveDefaultWorkspacePath(backendWorkdir);
 
     void readAgentV2ProjectSelection()
       .then(async (selection) => {
@@ -3220,15 +3341,15 @@ export function Chat() {
         }
 
         const hasDefaultWorkspace = projects.some(
-          (project) => project.projectPath === backendWorkdir
+          (project) => project.projectPath === defaultWorkspacePath
         );
         if (!hasDefaultWorkspace) {
           return;
         }
 
-        await publishAgentV2ProjectSelection({ projectPath: backendWorkdir });
-        activeProjectPathRef.current = backendWorkdir;
-        setActiveProjectPath(backendWorkdir);
+        await publishAgentV2ProjectSelection({ projectPath: defaultWorkspacePath });
+        activeProjectPathRef.current = defaultWorkspacePath;
+        setActiveProjectPath(defaultWorkspacePath);
       })
       .catch((error) => {
         console.debug('[chat] failed to bootstrap default workspace selection:', error);
@@ -3896,14 +4017,14 @@ export function Chat() {
           kind: 'success',
           message: getPageEditSuccessMessage(null),
         });
-        await pageEditStateQuery.refetch();
+        setIsQuickPageEditActionPending(false);
+        void pageEditStateQuery.refetch();
       } catch (error) {
         setPageEditStateOverride(previousState);
         setQuickActionFeedback({
           kind: 'error',
           message: error instanceof Error ? error.message : '退出编辑失败',
         });
-      } finally {
         setIsQuickPageEditActionPending(false);
       }
       return;
@@ -3917,13 +4038,13 @@ export function Chat() {
         kind: 'success',
         message: getPageEditActivationSuccessMessage(nextState as PageEditState),
       });
-      await pageEditStateQuery.refetch();
+      setIsQuickPageEditActionPending(false);
+      void pageEditStateQuery.refetch();
     } catch (error) {
       setQuickActionFeedback({
         kind: 'error',
         message: error instanceof Error ? error.message : '进入编辑失败',
       });
-    } finally {
       setIsQuickPageEditActionPending(false);
     }
   };
@@ -4149,6 +4270,31 @@ export function Chat() {
           setQuickActionFeedback(null);
         }}
       />
+      {bootstrapGate.status === 'ready' && bootstrapGate.backgroundSync.status !== 'completed' ? (
+        <div className="px-3 pb-2">
+          <div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
+            <div className="flex min-w-0 items-center gap-2">
+              <Badge
+                variant={bootstrapGate.backgroundSync.status === 'failed' ? 'destructive' : 'secondary'}
+                size="mini"
+                className="shrink-0"
+              >
+                {bootstrapGate.backgroundSync.status === 'failed' ? '同步失败' : '技能同步中'}
+              </Badge>
+              <span className="truncate">
+                {bootstrapGate.backgroundSync.status === 'failed'
+                  ? bootstrapGate.backgroundSync.detail
+                  : '新技能会在同步完成后自动可用，无需重启侧边栏。'}
+              </span>
+            </div>
+            {bootstrapGate.backgroundSync.status === 'failed' ? (
+              <Button size="sm" variant="ghost" onClick={() => void bootstrapGate.retrySync()}>
+                重新同步
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div ref={selectionOverlayRef} className="relative min-h-0 flex-1">
         <div
@@ -4166,8 +4312,8 @@ export function Chat() {
                     {bootstrapGate.status !== 'ready'
                       ? bootstrapGate.title
                       : resolveEmptyStateHeading({
-                          modelAccessLoaded: hasLoadedModelAccess,
-                          overallStatus: modelAccessViewState.overallStatus,
+                          modelAccessLoaded: displayModelAccessSnapshot.modelAccessLoaded,
+                          overallStatus: displayModelAccessSnapshot.overallStatus,
                         })}
                   </div>
                   {bootstrapGate.status !== 'ready' ? (
@@ -4197,12 +4343,13 @@ export function Chat() {
                   ) : (
                     <div className="mt-1 text-[11px] leading-5 text-muted-foreground">
                       {resolveEmptyStateSummary({
-                        modelAccessLoaded: hasLoadedModelAccess,
-                        summary: modelAccessViewState.summary,
-                        runtimeInfo: modelAccessRuntimeInfo,
-                        userClaudeSettingsStatus: modelAccessViewState.userClaudeSettings,
-                        projectModelConfigStatus: modelAccessViewState.projectModelConfig,
-                        overallStatus: modelAccessViewState.overallStatus,
+                        modelAccessLoaded: displayModelAccessSnapshot.modelAccessLoaded,
+                        summary: displayModelAccessSnapshot.summary,
+                        runtimeInfo: displayModelAccessSnapshot.runtimeInfo,
+                        userClaudeSettingsStatus: displayModelAccessSnapshot.userClaudeSettingsStatus,
+                        projectModelConfigStatus:
+                          displayModelAccessSnapshot.projectModelConfigStatus,
+                        overallStatus: displayModelAccessSnapshot.overallStatus,
                       })}
                     </div>
                   )}
@@ -4285,8 +4432,13 @@ export function Chat() {
 
       <div data-chat-v2-composer-dock="true" className="relative z-30">
         {stream.error ? (
-          <div className="mx-3 mb-2 rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">
-            {stream.error}
+          <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">
+            <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{stream.error}</span>
+            {shouldSuggestModelConfigFromError(stream.error) ? (
+              <Button size="sm" variant="ghost" onClick={openModelManagement}>
+                去配置模型
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {isRestoringSessionRun ? (

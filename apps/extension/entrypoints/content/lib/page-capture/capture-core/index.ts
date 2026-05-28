@@ -24,6 +24,57 @@ function insertMergedStylesheetLink(doc: Document): void {
   doc.head.append(styleLink);
 }
 
+function hasSplitScrollTableWrappers(doc: Document): boolean {
+  return Boolean(
+    doc.querySelector('.vxe-table--body-wrapper.body--wrapper') ||
+      doc.querySelector('.el-table__body-wrapper')
+  );
+}
+
+function insertScrollSyncRuntime(doc: Document): void {
+  if (!hasSplitScrollTableWrappers(doc)) {
+    return;
+  }
+
+  const script = doc.createElement('script');
+  script.setAttribute('data-webmcp-runtime', 'scroll-sync');
+  script.textContent = `(() => {
+  const applyMarginSync = (headerTable, scrollLeft) => {
+    if (!(headerTable instanceof HTMLElement)) return;
+    headerTable.style.marginLeft = scrollLeft ? \`-\${scrollLeft}px\` : '0px';
+  };
+
+  const bindScrollSync = (root, bodySelector, headerSelector) => {
+    const bodyWrapper = root.querySelector(bodySelector);
+    const headerWrapper = root.querySelector(headerSelector);
+    if (!(bodyWrapper instanceof HTMLElement) || !(headerWrapper instanceof HTMLElement)) return;
+
+    const headerTable = headerWrapper.querySelector(':scope > table');
+    const sync = () => {
+      applyMarginSync(headerTable, bodyWrapper.scrollLeft || 0);
+    };
+
+    sync();
+    bodyWrapper.addEventListener('scroll', sync, { passive: true });
+    window.addEventListener('resize', sync, { passive: true });
+  };
+
+  for (const root of Array.from(document.querySelectorAll('.vxe-table--render-wrapper'))) {
+    if (root instanceof HTMLElement) {
+      bindScrollSync(root, '.vxe-table--body-wrapper.body--wrapper', '.vxe-table--header-wrapper.body--wrapper');
+    }
+  }
+
+  for (const root of Array.from(document.querySelectorAll('.el-table'))) {
+    if (root instanceof HTMLElement) {
+      bindScrollSync(root, '.el-table__body-wrapper', '.el-table__header-wrapper');
+    }
+  }
+})();`;
+
+  doc.body.append(script);
+}
+
 export async function capturePageDocument(
   doc: Document,
   options: {
@@ -53,6 +104,7 @@ export async function capturePageDocument(
   replaceResourceElementsWithPlaceholders(capturedDoc, doc);
 
   insertMergedStylesheetLink(capturedDoc);
+  insertScrollSyncRuntime(capturedDoc);
   for (const element of Array.from(capturedDoc.querySelectorAll(`[${SOURCE_INDEX_ATTRIBUTE}]`))) {
     element.removeAttribute(SOURCE_INDEX_ATTRIBUTE);
   }

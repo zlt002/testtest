@@ -2,6 +2,7 @@ import $ from '../../vendor-deps/blingblingjs.js';
 import { LabelStyles, label_css, supportsAdoptedStyleSheets } from '../styles.store.js';
 import {
   getCurrentPageMode,
+  isLocalSnapshotMode,
 } from '../../../../runtime/page-mode.js';
 
 const pageEditDebugEnabled = () => {
@@ -199,13 +200,20 @@ export class Label extends HTMLElement {
   }
 
   renderActionButtons(pageMode) {
-    const actions = [
-      { action: 'send-selection', label: '发送' },
-      { action: 'select-parent', label: '父级' },
-      { action: 'capture-selection', label: '采集' },
-      { action: 'analyze-selection', label: '分析' },
-      { action: 'annotate-selection', label: '备注' },
-    ];
+    const actions = isLocalSnapshotMode(pageMode)
+      ? [
+          { action: 'send-selection', label: '发送' },
+          { action: 'select-parent', label: '父级' },
+          { action: 'capture-selection', label: '采集' },
+          { action: 'annotate-selection', label: '备注' },
+        ]
+      : [
+          { action: 'send-selection', label: '发送' },
+          { action: 'select-parent', label: '父级' },
+          { action: 'capture-selection', label: '采集' },
+          { action: 'analyze-selection', label: '分析' },
+          { action: 'annotate-selection', label: '备注' },
+        ];
 
     return actions
       .map(

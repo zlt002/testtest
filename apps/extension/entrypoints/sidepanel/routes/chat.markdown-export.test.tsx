@@ -43,6 +43,122 @@ const mockSessionsState = {
   })),
 };
 
+const mockBootstrapGateResult = {
+  status: 'ready',
+  sync: {
+    ok: true,
+    status: 'completed',
+    mode: 'remote',
+  },
+  modelAccess: {
+    selectedAuthSource: 'user_claude_settings',
+    runtimeInfo: {
+      authSource: 'user_claude_settings',
+      selectedAuthSource: 'user_claude_settings',
+      available: true,
+      claudeCliAvailable: true,
+      hasProjectModelConfig: true,
+      reason: '测试可用',
+    },
+    localConfig: {
+      configMode: 'official',
+      modelProvider: 'anthropic',
+      providerVariant: 'standard',
+      anthropicModelName: 'qwen3.6-plus',
+      anthropicApiKey: 'sk-official',
+      anthropicBaseUrl: 'https://example.com/v1',
+    },
+    userClaudeSettings: null,
+    userClaudeSettingsText: '{}\n',
+    userClaudeSettingsTestResult: {
+      ok: true,
+      message: '测试成功',
+      runtimeAuthSummary: '认证摘要',
+      runtime: {
+        authSource: 'user_claude_settings',
+        selectedAuthSource: 'user_claude_settings',
+        available: true,
+        claudeCliAvailable: true,
+        hasProjectModelConfig: true,
+        reason: '测试成功',
+      },
+    },
+    projectModelConfigTestResult: {
+      ok: true,
+      message: '测试成功',
+      runtimeAuthSummary: '认证摘要',
+      runtime: {
+        authSource: 'project_model_config',
+        selectedAuthSource: 'user_claude_settings',
+        available: true,
+        claudeCliAvailable: true,
+        hasProjectModelConfig: true,
+        reason: '测试成功',
+      },
+    },
+    viewState: {
+      overallStatus: 'available',
+      summary: '已检测到可用模型配置。',
+      userClaudeSettings: 'success',
+      projectModelConfig: 'success',
+    },
+  },
+};
+
+function resetMockBootstrapGateResult() {
+  mockBootstrapGateResult.modelAccess.selectedAuthSource = 'user_claude_settings';
+  mockBootstrapGateResult.modelAccess.runtimeInfo = {
+    authSource: 'user_claude_settings',
+    selectedAuthSource: 'user_claude_settings',
+    available: true,
+    claudeCliAvailable: true,
+    hasProjectModelConfig: true,
+    reason: '测试可用',
+  };
+  mockBootstrapGateResult.modelAccess.localConfig = {
+    configMode: 'official',
+    modelProvider: 'anthropic',
+    providerVariant: 'standard',
+    anthropicModelName: 'qwen3.6-plus',
+    anthropicApiKey: 'sk-official',
+    anthropicBaseUrl: 'https://example.com/v1',
+  };
+  mockBootstrapGateResult.modelAccess.userClaudeSettings = null;
+  mockBootstrapGateResult.modelAccess.userClaudeSettingsText = '{}\n';
+  mockBootstrapGateResult.modelAccess.userClaudeSettingsTestResult = {
+    ok: true,
+    message: '测试成功',
+    runtimeAuthSummary: '认证摘要',
+    runtime: {
+      authSource: 'user_claude_settings',
+      selectedAuthSource: 'user_claude_settings',
+      available: true,
+      claudeCliAvailable: true,
+      hasProjectModelConfig: true,
+      reason: '测试成功',
+    },
+  };
+  mockBootstrapGateResult.modelAccess.projectModelConfigTestResult = {
+    ok: true,
+    message: '测试成功',
+    runtimeAuthSummary: '认证摘要',
+    runtime: {
+      authSource: 'project_model_config',
+      selectedAuthSource: 'user_claude_settings',
+      available: true,
+      claudeCliAvailable: true,
+      hasProjectModelConfig: true,
+      reason: '测试成功',
+    },
+  };
+  mockBootstrapGateResult.modelAccess.viewState = {
+    overallStatus: 'available',
+    summary: '已检测到可用模型配置。',
+    userClaudeSettings: 'success',
+    projectModelConfig: 'success',
+  };
+}
+
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => ({}),
 }));
@@ -180,9 +296,12 @@ vi.mock('../lib/sidepanel-menu', () => ({
 vi.mock('../lib/bootstrap-gate', () => ({
   useBootstrapGateState: () => ({
     status: 'ready',
-    title: '',
-    description: '',
+    result: mockBootstrapGateResult,
+    backgroundSync: {
+      status: 'completed',
+    },
     retry: vi.fn(async () => undefined),
+    retrySync: vi.fn(async () => undefined),
   }),
 }));
 
@@ -375,6 +494,7 @@ function runCard(overrides: Partial<RunCard> = {}): RunCard {
 describe('Chat markdown export', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetMockBootstrapGateResult();
     installBrowserMocks();
     mockStreamState.status = 'idle';
     mockStreamState.error = null;
@@ -480,5 +600,24 @@ describe('Chat markdown export', () => {
       );
     });
     expect(toastMocks.mockToastSuccess).toHaveBeenCalledWith('Markdown 已复制');
+  });
+
+  it('首屏 bootstrap 静态判定可用时，不应回退成检测中文案', async () => {
+    mockBootstrapGateResult.modelAccess.userClaudeSettingsTestResult = null;
+    mockBootstrapGateResult.modelAccess.projectModelConfigTestResult = null;
+    mockBootstrapGateResult.modelAccess.viewState = {
+      overallStatus: 'available',
+      summary: '已检测到模型配置，可直接开始对话。',
+      userClaudeSettings: 'success',
+      projectModelConfig: 'success',
+    };
+
+    const view = render(<Chat />);
+
+    await waitFor(() => {
+      expect(view.getByText('Claude Code 可开始使用')).toBeTruthy();
+    });
+    expect(view.queryByText('模型配置检测中')).toBeNull();
+    expect(view.getByText('已检测到用户级 Claude settings 配置，可直接开始对话。')).toBeTruthy();
   });
 });

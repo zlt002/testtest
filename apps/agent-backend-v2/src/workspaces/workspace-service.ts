@@ -40,6 +40,10 @@ function defaultConfigPath() {
   return join(homedir(), '.webmcp', 'workspaces.json');
 }
 
+export function resolveDefaultWorkspacePath(installDir: string) {
+  return resolve(installDir, 'workspace', 'project');
+}
+
 function workspaceName(projectPath: string, name?: string) {
   const trimmed = name?.trim();
   if (trimmed) {

@@ -100,6 +100,55 @@ export function normalizeUserClaudeSettingsJson(
   return snapshot?.rawJson ?? createDefaultUserClaudeSettingsJson();
 }
 
+function hasStoredUserClaudeSettingsConfig(
+  snapshot: AgentUserClaudeSettingsSnapshot | null | undefined
+): boolean {
+  if (!snapshot?.exists || !snapshot.rawJson) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(snapshot.rawJson) as {
+      env?: Record<string, unknown>;
+    };
+    const env = parsed.env ?? {};
+    const valueCandidates = [
+      env.OPENAI_API_KEY,
+      env.ANTHROPIC_API_KEY,
+      env.ANTHROPIC_AUTH_TOKEN,
+    ];
+    return valueCandidates.some((value) => typeof value === 'string' && value.trim().length > 0);
+  } catch {
+    return false;
+  }
+}
+
+function deriveBootstrapStaticViewState(input: {
+  runtimeInfo: AgentModelConfigRuntimeInfo | null;
+  localConfig: AgentModelConfig;
+  userClaudeSettings: AgentUserClaudeSettingsSnapshot | null;
+}): ModelAccessViewState {
+  const userClaudeSettings =
+    !input.runtimeInfo?.claudeCliAvailable
+      ? 'unavailable'
+      : hasStoredUserClaudeSettingsConfig(input.userClaudeSettings)
+        ? 'success'
+        : 'needs_config';
+  const projectModelConfig = hasStoredProjectModelConfig(input.localConfig)
+    ? 'success'
+    : 'needs_config';
+  const hasSuccess =
+    userClaudeSettings === 'success' || projectModelConfig === 'success';
+
+  return {
+    phase: 'static',
+    overallStatus: hasSuccess ? 'available' : 'needs_config',
+    summary: hasSuccess ? '已检测到模型配置，可直接开始对话。' : '当前需先补齐模型配置。',
+    userClaudeSettings,
+    projectModelConfig,
+  };
+}
+
 export function normalizeModelConfigForSubmit(localConfig: AgentModelConfig): AgentModelConfig {
   const normalizedConfig: AgentModelConfig = {
     ...localConfig,
@@ -281,14 +330,15 @@ export async function loadBootstrapModelAccess(
   options: ReadBootstrapModelAccessSnapshotOptions
 ): Promise<BootstrapModelAccessResult> {
   const snapshot = await readBootstrapModelAccessSnapshot(options);
-  const probeResult = await probeBootstrapModelAccess({
-    client: options.client,
-    localConfig: snapshot.localConfig,
-    runtimeInfo: snapshot.runtimeInfo,
-  });
 
   return {
     ...snapshot,
-    ...probeResult,
+    userClaudeSettingsTestResult: null,
+    projectModelConfigTestResult: null,
+    viewState: deriveBootstrapStaticViewState({
+      runtimeInfo: snapshot.runtimeInfo,
+      localConfig: snapshot.localConfig,
+      userClaudeSettings: snapshot.userClaudeSettings,
+    }),
   };
 }

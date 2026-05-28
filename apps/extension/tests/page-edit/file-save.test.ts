@@ -74,7 +74,7 @@ afterAll(() => {
 });
 
 describe('page-edit file save action', () => {
-  it('本地快照页面渲染底部工具栏壳层，非快照页面不渲染该壳层', async () => {
+  it('只有本地快照渲染底部工具栏壳层，真实网页不显示底栏', async () => {
     dom.reconfigure({ url: 'file:///Users/demo/index.html' });
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
@@ -88,6 +88,8 @@ describe('page-edit file save action', () => {
     dom.reconfigure({ url: 'https://example.com/orders' });
     const liveMarkup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
     expect(liveMarkup).not.toContain('data-bottom-toolbar=');
+    expect(liveMarkup).not.toContain('data-action="capture-page"');
+    expect(liveMarkup).not.toContain('data-action="toggle-annotation-markers"');
   });
 
   it('本地快照页面使用底部扁平工具栏替代旧左侧完整工具栏', async () => {
@@ -116,6 +118,9 @@ describe('page-edit file save action', () => {
     dom.reconfigure({ url: 'https://example.com/orders' });
     const liveMarkup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
     expect(liveMarkup).not.toContain('data-bottom-toolbar=');
+    expect(liveMarkup).not.toContain('data-bottom-toolbar-actions');
+    expect(liveMarkup).not.toContain('data-action="capture-page"');
+    expect(liveMarkup).not.toContain('data-action="toggle-annotation-markers"');
   });
 
   it('本地快照底部工具栏直接渲染上弹动作菜单', async () => {
@@ -134,8 +139,10 @@ describe('page-edit file save action', () => {
 
     expect(markup).toContain('data-bottom-menu');
     expect(markup).toContain('data-bottom-tool="move"');
-    expect(markup).toContain('data-bottom-action="up-1"');
-    expect(markup).toContain('data-bottom-action="width-plus-1"');
+    expect(markup).not.toContain('data-bottom-action="up-1"');
+    expect(markup).toContain('data-size-panel');
+    expect(markup).toContain('data-size-input="width"');
+    expect(markup).toContain('data-size-input="height"');
     expect(markup).toContain('data-spacing-panel="padding"');
     expect(markup).toContain('data-spacing-panel="margin"');
     expect(markup).toContain('data-spacing-input="vertical"');
@@ -306,6 +313,25 @@ describe('page-edit file save action', () => {
     }
   });
 
+  it('本地快照模式挂载后默认开启全局 label，但不自动激活 inspector', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+    const visbug = new VisBug();
+
+    document.body.appendChild(visbug);
+
+    expect(visbug.shouldShowSelectionActionsEverywhere()).toBe(true);
+    expect(visbug.activeTool).toBeNull();
+
+    visbug.remove();
+  });
+
   it('切换选择操作总开关时仍会更新偏好并刷新选中 UI', async () => {
     dom.reconfigure({ url: 'file:///Users/demo/index.html' });
     const localStorageMock = {
@@ -358,7 +384,7 @@ describe('page-edit file save action', () => {
 
     expect(markup).toContain('data-bottom-tool="move"');
     expect(markup).toContain('data-bottom-menu');
-    expect(markup).toContain('data-bottom-action="up-1"');
+    expect(markup).not.toContain('data-bottom-action="up-1"');
     expect(markup).not.toContain('data-bottom-subtool-list');
     expect(visbug.$shadow.querySelector('button[data-action="toggle-tool-section"]')).toBeNull();
   });

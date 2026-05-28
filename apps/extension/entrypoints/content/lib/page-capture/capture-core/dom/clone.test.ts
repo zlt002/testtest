@@ -72,4 +72,23 @@ describe('capture-core clone', () => {
     expect(clonedIconButton?.parentElement).toBe(clonedButton);
     expect(clonedToolbar?.nextElementSibling).toBeNull();
   });
+
+  it('captures horizontal scroll state for VXE table body wrappers', () => {
+    document.body.innerHTML = `
+      <div class="vxe-table--render-wrapper">
+        <div class="vxe-table--main-wrapper">
+          <div class="vxe-table--header-wrapper body--wrapper"></div>
+          <div class="vxe-table--body-wrapper body--wrapper"></div>
+        </div>
+      </div>
+    `;
+
+    const bodyWrapper = document.querySelector('.vxe-table--body-wrapper.body--wrapper') as HTMLElement;
+    bodyWrapper.scrollLeft = 420;
+
+    const clone = clonePageDocument(document);
+    const clonedBodyWrapper = clone.querySelector('.vxe-table--body-wrapper.body--wrapper') as HTMLElement | null;
+
+    expect(clonedBodyWrapper?.getAttribute('data-capture-scroll-left')).toBe('420');
+  });
 });

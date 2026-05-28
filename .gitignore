@@ -60,3 +60,4 @@ captures
 .worktrees
 .repowise/
 CON
+.tmp-codex-check/

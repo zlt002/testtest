@@ -1334,6 +1334,10 @@ export function AgentWorkspacesContent({
   }, [routeTargetKey]);
 
   useEffect(() => {
+    lastAutoLocatedTargetRef.current = null;
+  }, [routeTargetKey]);
+
+  useEffect(() => {
     if (!targetProjectPath || sessions.projects.length === 0) {
       return;
     }
@@ -1628,15 +1632,22 @@ export function AgentWorkspacesContent({
   useEffect(() => {
     if (activeProject) {
       const controller = new AbortController();
+      const initialTargetDirPath =
+        targetProjectPath && activeProject.projectPath === targetProjectPath
+          ? normalizeTargetDirectoryPath(targetEntryPath)
+          : null;
       setActiveSessionId(null);
       void sessions.refresh({
         projectPath: activeProject.projectPath,
         signal: controller.signal,
       });
-      void loadFiles(null, { project: activeProject, signal: controller.signal });
+      void loadFiles(initialTargetDirPath, {
+        project: activeProject,
+        signal: controller.signal,
+      });
       return () => controller.abort();
     }
-  }, [activeProject, loadFiles, sessions.refresh]);
+  }, [activeProject, loadFiles, sessions.refresh, targetEntryPath, targetProjectPath]);
 
   useEffect(() => {
     if (!activeProject || !targetProjectPath || activeProject.projectPath !== targetProjectPath) {
@@ -1648,12 +1659,12 @@ export function AgentWorkspacesContent({
     }
     setActiveDetailPane('files');
     const targetKey = `${targetProjectPath}::${targetDirPath}`;
-    if (lastAutoLocatedTargetRef.current === targetKey && activeDirPath === targetDirPath) {
+    if (lastAutoLocatedTargetRef.current === targetKey) {
       return;
     }
     lastAutoLocatedTargetRef.current = targetKey;
     void loadFiles(targetDirPath, { project: activeProject });
-  }, [activeDirPath, activeProject, loadFiles, targetEntryPath, targetProjectPath]);
+  }, [activeProject, loadFiles, routeTargetKey, targetEntryPath, targetProjectPath]);
 
   const applyCurrentSessionSelection = useCallback(
     (selection: AgentV2SessionSelection | null) => {

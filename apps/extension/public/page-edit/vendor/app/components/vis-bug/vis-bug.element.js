@@ -93,6 +93,34 @@ const debugLog = (label, payload = {}) => {
   console.log(`[page-edit][visbug] ${label}`, payload)
 }
 
+const FLEX_DIRECTION_ACTIONS = [
+  { id: 'direction-row', label: '横向排列', icon: Icons.flex_direction_row },
+  { id: 'direction-column', label: '纵向排列', icon: Icons.flex_direction_column },
+  { id: 'wrap-on', label: '自动换行', icon: Icons.flex_wrap_on },
+  { id: 'wrap-off', label: '单行不换行', icon: Icons.flex_wrap_off },
+]
+
+const FLEX_AXIS_GROUPS = [
+  {
+    title: '主轴',
+    actions: [
+      { id: 'justify-start', label: '主轴起点对齐', icon: Icons.flex_justify_start },
+      { id: 'justify-center', label: '主轴居中对齐', icon: Icons.flex_justify_center },
+      { id: 'justify-end', label: '主轴终点对齐', icon: Icons.flex_justify_end },
+      { id: 'justify-between', label: '主轴两端分布', icon: Icons.flex_justify_between },
+    ],
+  },
+  {
+    title: '交叉轴',
+    actions: [
+      { id: 'align-start', label: '交叉轴起点对齐', icon: Icons.flex_align_start },
+      { id: 'align-center', label: '交叉轴居中对齐', icon: Icons.flex_align_center },
+      { id: 'align-end', label: '交叉轴终点对齐', icon: Icons.flex_align_end },
+      { id: 'align-between', label: '交叉轴分布对齐', icon: Icons.flex_align_between },
+    ],
+  },
+]
+
 const runCleanupStep = (label, step) => {
   if (typeof step !== 'function') return
 
@@ -142,12 +170,10 @@ export default class VisBug extends HTMLElement {
 
     provideSelectorEngine(this.selectorEngine)
 
-    if (this.isLocalSnapshotWorkbench()) {
-      this.selectorEngine.onSelectedUpdate(() => {
-        this.syncBottomToolbarSelectionState()
-        this.refreshLocalSnapshotToolbar()
-      })
-    }
+    this.selectorEngine.onSelectedUpdate(() => {
+      this.syncBottomToolbarSelectionState()
+      this.refreshBottomToolbar()
+    })
 
     if (!this.isLocalSnapshotWorkbench())
       this.toolSelected('selection')
@@ -210,8 +236,6 @@ export default class VisBug extends HTMLElement {
   }
 
   bindBottomToolbarEvents() {
-    if (!this.isLocalSnapshotWorkbench()) return
-
     $('button[data-bottom-tool]', this.$shadow).on('click', e => {
       e.preventDefault()
       e.stopPropagation()
@@ -231,7 +255,7 @@ export default class VisBug extends HTMLElement {
       e.preventDefault()
       e.stopPropagation()
       this.colorPicker?.setActive?.(e.currentTarget.dataset.bottomColorTarget)
-      this.refreshLocalSnapshotToolbar()
+      this.refreshBottomToolbar()
     })
 
     this.$shadow
@@ -245,6 +269,27 @@ export default class VisBug extends HTMLElement {
         input.addEventListener('input', event => {
           event.stopPropagation()
           this.colorPicker?.setActive?.('background')
+        })
+      })
+
+    this.$shadow
+      .querySelectorAll('input[data-size-input]')
+      .forEach(input => {
+        input.addEventListener('keydown', event => {
+          if (event.key !== 'Enter') return
+
+          event.preventDefault()
+          this.handleSizeInputCommit(
+            event.currentTarget?.dataset?.sizeInput,
+            event.currentTarget?.value,
+          )
+        })
+
+        input.addEventListener('blur', event => {
+          this.handleSizeInputCommit(
+            event.currentTarget?.dataset?.sizeInput,
+            event.currentTarget?.value,
+          )
         })
       })
 
@@ -300,7 +345,6 @@ export default class VisBug extends HTMLElement {
   }
 
   bindGlobalBottomToolbarEvents() {
-    if (!this.isLocalSnapshotWorkbench()) return
     if (this._handleDocumentPointerDown) return
 
     this._handleDocumentPointerDown = event => {
@@ -316,7 +360,7 @@ export default class VisBug extends HTMLElement {
         ...(this._bottomToolbarState || {}),
         activeSubtool: null,
       }
-      this.refreshLocalSnapshotToolbar()
+      this.refreshBottomToolbar()
     }
 
     document.addEventListener('pointerdown', this._handleDocumentPointerDown, true)
@@ -339,14 +383,14 @@ export default class VisBug extends HTMLElement {
     })
   }
 
-  refreshLocalSnapshotToolbar() {
-    if (!this.isLocalSnapshotWorkbench()) return
-
+  refreshBottomToolbar() {
     this.$shadow.innerHTML = this.render()
     this.colorPicker = ColorPicker(this.$shadow, this.selectorEngine)
     this.bindToolbarActionButtons()
     this.bindBottomToolbarEvents()
+    this.bindGlobalBottomToolbarEvents()
     this.enableSnapshotToolbarDragging()
+    this.syncAnnotationSummary()
   }
 
   cleanup() {
@@ -410,10 +454,14 @@ export default class VisBug extends HTMLElement {
 
   readSelectionActionsPreference() {
     try {
-      return window.localStorage?.getItem(selectionActionsToggleStorageKey) === '1'
+      const storedValue = window.localStorage?.getItem(selectionActionsToggleStorageKey)
+      if (storedValue === '1') return true
+      if (storedValue === '0') return false
     } catch (_) {
-      return false
+      return this.isLocalSnapshotWorkbench()
     }
+
+    return this.isLocalSnapshotWorkbench()
   }
 
   shouldShowSelectionActionsEverywhere() {
@@ -502,28 +550,9 @@ export default class VisBug extends HTMLElement {
   }
 
   render() {
-    if (!this.isLocalSnapshotWorkbench()) {
-      return `
-      ${this.renderStyles()}
-      <ol data-live-toolbar>
-          <li class="toolbar-action">
-            <button type="button" data-action="capture-page" aria-label="采集当前页面">
-              ${Icons.camera}
-            </button>
-          </li>
-          <li class="toolbar-action">
-            <button type="button" data-action="toggle-annotation-markers" aria-label="切换标记显示" aria-pressed="false" data-enabled="false">
-              <span data-role="annotation-icon">${Icons.inspector}</span>
-              <span data-role="annotation-count">0</span>
-            </button>
-          </li>
-        </ol>
-      `
-    }
-
     return `
       ${this.renderStyles()}
-      ${this.renderBottomToolbar()}
+      ${this.isLocalSnapshotWorkbench() ? this.renderBottomToolbar() : ''}
     `
   }
 
@@ -560,15 +589,9 @@ export default class VisBug extends HTMLElement {
       case 'content':
         return [[{ id: 'activate', label: '编辑' }]]
       case 'move':
-        return [
-          [{ id: 'up-1', label: '上 1' }, { id: 'down-1', label: '下 1' }, { id: 'left-1', label: '左 1' }, { id: 'right-1', label: '右 1' }],
-          [{ id: 'up-10', label: '上 10' }, { id: 'down-10', label: '下 10' }, { id: 'left-10', label: '左 10' }, { id: 'right-10', label: '右 10' }],
-        ]
+        return []
       case 'resize':
-        return [
-          [{ id: 'width-plus-1', label: '宽 +1' }, { id: 'width-minus-1', label: '宽 -1' }, { id: 'height-plus-1', label: '高 +1' }, { id: 'height-minus-1', label: '高 -1' }],
-          [{ id: 'width-plus-10', label: '宽 +10' }, { id: 'width-minus-10', label: '宽 -10' }, { id: 'height-plus-10', label: '高 +10' }, { id: 'height-minus-10', label: '高 -10' }],
-        ]
+        return []
       case 'padding':
       case 'margin':
         return []
@@ -594,6 +617,8 @@ export default class VisBug extends HTMLElement {
   }
 
   renderBottomToolbar() {
+    if (!this.isLocalSnapshotWorkbench()) return ''
+
     if (this.getBottomToolbarState() === 'idle') {
       return `
         <section data-bottom-toolbar="idle">
@@ -619,11 +644,38 @@ export default class VisBug extends HTMLElement {
   }
 
   renderBottomToolbarActions() {
-    if (!this.isLocalSnapshotWorkbench()) return ''
+    const actionButtons = []
 
-    return `
-      <div data-bottom-toolbar-actions>
-        <span data-bottom-divider aria-hidden="true"></span>
+    if (!this.isLocalSnapshotWorkbench()) {
+      actionButtons.push(`
+        <button
+          type="button"
+          data-action="capture-page"
+          data-bottom-toolbar-action="capture"
+          aria-label="采集当前页面"
+          title="采集当前页面"
+        >
+          <span class="tool-icon">${Icons.camera}</span>
+        </button>
+      `)
+      actionButtons.push(`
+        <button
+          type="button"
+          data-action="toggle-annotation-markers"
+          data-bottom-toolbar-action="annotations"
+          aria-label="切换标记显示"
+          title="切换标记显示"
+          aria-pressed="false"
+          data-enabled="false"
+        >
+          <span data-role="annotation-icon">${Icons.inspector}</span>
+          <span data-role="annotation-count">0</span>
+        </button>
+      `)
+    }
+
+    if (this.isLocalSnapshotWorkbench()) {
+      actionButtons.push(`
         <button
           type="button"
           data-action="save-file"
@@ -633,6 +685,15 @@ export default class VisBug extends HTMLElement {
         >
           <span class="tool-icon">${Icons.save}</span>
         </button>
+      `)
+    }
+
+    if (!actionButtons.length) return ''
+
+    return `
+      <div data-bottom-toolbar-actions>
+        <span data-bottom-divider aria-hidden="true"></span>
+        ${actionButtons.join('')}
       </div>
     `
   }
@@ -648,6 +709,25 @@ export default class VisBug extends HTMLElement {
       ? this.colorPicker?.getActive?.() === 'background'
       : this._bottomToolbarState?.activeSubtool === tool.id
     const actionRows = this.getBottomToolbarToolActions(tool.id)
+    let panelMarkup = ''
+
+    if (isDisabled) {
+      panelMarkup = `<div data-bottom-tooltip role="tooltip">${disabledReason}</div>`
+    } else if (tool.id === 'typography') {
+      panelMarkup = this.renderTypographyPanel()
+    } else if (tool.id === 'resize') {
+      panelMarkup = this.renderSizePanel()
+    } else if (tool.id === 'padding' || tool.id === 'margin') {
+      panelMarkup = this.renderSpacingPanel(tool.id)
+    } else if (tool.id === 'flex') {
+      panelMarkup = this.renderFlexPanel()
+    } else if (tool.id !== 'background' && actionRows.length) {
+      panelMarkup = `
+        <div data-bottom-menu>
+          ${this.renderBottomToolbarActionRows(tool.id)}
+        </div>
+      `
+    }
 
     return `
       <div data-bottom-tool-item data-tool-id="${tool.id}" data-open="${isActive ? 'true' : 'false'}">
@@ -668,23 +748,7 @@ export default class VisBug extends HTMLElement {
               <span class="tool-icon">${tool.icon}</span>
             </button>
           `}
-        ${isDisabled
-          ? `
-            <div data-bottom-tooltip role="tooltip">${disabledReason}</div>
-          `
-          : `
-            ${tool.id === 'typography'
-              ? this.renderTypographyPanel()
-              : tool.id === 'padding' || tool.id === 'margin'
-                ? this.renderSpacingPanel(tool.id)
-              : tool.id === 'background'
-                ? ''
-                : `
-                <div data-bottom-menu>
-                  ${this.renderBottomToolbarActionRows(tool.id)}
-                </div>
-              `}
-          `}
+        ${panelMarkup}
       </div>
     `
   }
@@ -728,6 +792,105 @@ export default class VisBug extends HTMLElement {
         `).join('')}
       </div>
     `).join('')
+  }
+
+  getSelectedFlexPanelState() {
+    const [selectedElement] = this.selectorEngine?.selection?.() ?? []
+    if (!(selectedElement instanceof Element)) {
+      return {
+        direction: 'row',
+        wrap: 'nowrap',
+        justify: 'flex-start',
+        align: 'stretch',
+        alignContent: 'stretch',
+      }
+    }
+
+    const computedStyle = getComputedStyle(selectedElement)
+    return {
+      direction: computedStyle.flexDirection || 'row',
+      wrap: computedStyle.flexWrap || 'nowrap',
+      justify: computedStyle.justifyContent || 'flex-start',
+      align: computedStyle.alignItems || 'stretch',
+      alignContent: computedStyle.alignContent || 'stretch',
+    }
+  }
+
+  isFlexActionActive(actionId, state) {
+    switch (actionId) {
+      case 'direction-row':
+        return state.direction === 'row'
+      case 'direction-column':
+        return state.direction === 'column'
+      case 'wrap-on':
+        return state.wrap !== 'nowrap'
+      case 'wrap-off':
+        return state.wrap === 'nowrap'
+      case 'justify-start':
+        return state.justify === 'flex-start'
+      case 'justify-center':
+        return state.justify === 'center'
+      case 'justify-end':
+        return state.justify === 'flex-end'
+      case 'justify-between':
+        return state.justify === 'space-between'
+      case 'align-start':
+        return state.align === 'flex-start'
+      case 'align-center':
+        return state.align === 'center'
+      case 'align-end':
+        return state.align === 'flex-end'
+      case 'align-between':
+        return state.alignContent === 'space-between'
+      default:
+        return false
+    }
+  }
+
+  renderFlexPanel() {
+    const flexState = this.getSelectedFlexPanelState()
+
+    return `
+      <div data-bottom-menu data-flex-panel>
+        <div data-flex-direction-row>
+          ${FLEX_DIRECTION_ACTIONS.map(action => `
+            <button
+              type="button"
+              data-bottom-action="${action.id}"
+              data-tool-id="flex"
+              data-flex-action="true"
+              data-active="${this.isFlexActionActive(action.id, flexState) ? 'true' : 'false'}"
+              aria-label="${action.label}"
+              title="${action.label}"
+            >
+              <span class="tool-icon">${action.icon}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div data-flex-axis-groups>
+          ${FLEX_AXIS_GROUPS.map(group => `
+            <section data-flex-axis-group>
+              <span data-flex-axis-title>${group.title}</span>
+              <div data-flex-axis-row>
+                ${group.actions.map(action => `
+                  <button
+                    type="button"
+                    data-bottom-action="${action.id}"
+                    data-tool-id="flex"
+                    data-flex-action="true"
+                    data-active="${this.isFlexActionActive(action.id, flexState) ? 'true' : 'false'}"
+                    aria-label="${action.label}"
+                    title="${action.label}"
+                  >
+                    <span class="tool-icon">${action.icon}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </section>
+          `).join('')}
+        </div>
+      </div>
+    `
   }
 
   getSpacingPanelState(kind) {
@@ -813,6 +976,55 @@ export default class VisBug extends HTMLElement {
           type="text"
           data-spacing-kind="${kind}"
           data-spacing-input="${field}"
+          value="${value}"
+          aria-label="${label}"
+        >
+      </label>
+    `
+  }
+
+  getSizePanelState() {
+    const [selectedElement] = this.selectorEngine?.selection?.() ?? []
+    const defaultState = {
+      values: {
+        width: '',
+        height: '',
+      },
+    }
+
+    if (!(selectedElement instanceof Element))
+      return defaultState
+
+    const computedStyle = getComputedStyle(selectedElement)
+
+    return {
+      values: {
+        width: selectedElement.style.width || computedStyle.width || '',
+        height: selectedElement.style.height || computedStyle.height || '',
+      },
+    }
+  }
+
+  renderSizePanel() {
+    const { values } = this.getSizePanelState()
+
+    return `
+      <div data-bottom-menu data-size-panel>
+        <div data-size-grid>
+          ${this.renderSizeInput('width', '宽', values.width)}
+          ${this.renderSizeInput('height', '高', values.height)}
+        </div>
+      </div>
+    `
+  }
+
+  renderSizeInput(field, label, value = '') {
+    return `
+      <label data-size-field="${field}">
+        <span>${label}</span>
+        <input
+          type="text"
+          data-size-input="${field}"
           value="${value}"
           aria-label="${label}"
         >
@@ -967,6 +1179,15 @@ export default class VisBug extends HTMLElement {
     }
   }
 
+  normalizeSizeInputValue(field, rawValue, fallbackValue = '') {
+    if (!['width', 'height'].includes(field))
+      return String(fallbackValue ?? '')
+
+    const value = String(rawValue ?? '').trim()
+    if (!value) return String(fallbackValue ?? '')
+    return value
+  }
+
   normalizeSpacingInputValue(kind, field, rawValue, fallbackValue = '') {
     const value = String(rawValue ?? '').trim()
     const fallback = String(fallbackValue ?? '')
@@ -993,6 +1214,18 @@ export default class VisBug extends HTMLElement {
     }
 
     return typographyValues[field] || ''
+  }
+
+  getSizeInputFallbackValue(field, selectedElement) {
+    if (!(selectedElement instanceof Element)) return ''
+
+    const computedStyle = getComputedStyle(selectedElement)
+    const sizeValues = {
+      width: selectedElement.style.width || computedStyle.width || '',
+      height: selectedElement.style.height || computedStyle.height || '',
+    }
+
+    return sizeValues[field] || ''
   }
 
   getSpacingInputFallbackValue(kind, field, selectedElement) {
@@ -1027,7 +1260,7 @@ export default class VisBug extends HTMLElement {
 
     if (input) input.value = normalizedValue
     if (!selectedNodes.length || normalizedValue === fallbackValue) {
-      this.refreshLocalSnapshotToolbar()
+      this.refreshBottomToolbar()
       return
     }
 
@@ -1042,7 +1275,32 @@ export default class VisBug extends HTMLElement {
     if (!mutate) return
 
     this.applySelectedStyleMutation(`font:${field}`, mutate)
-    this.refreshLocalSnapshotToolbar()
+    this.refreshBottomToolbar()
+  }
+
+  handleSizeInputCommit(field, rawValue) {
+    if (!['width', 'height'].includes(field)) return
+
+    const selectedNodes = this.selectorEngine?.selection?.() ?? []
+    const [selectedElement] = selectedNodes
+    const fallbackValue = this.getSizeInputFallbackValue(field, selectedElement)
+    const normalizedValue = this.normalizeSizeInputValue(field, rawValue, fallbackValue)
+    const input = this.$shadow?.querySelector(`input[data-size-input="${field}"]`)
+
+    if (input) input.value = normalizedValue
+    if (!selectedNodes.length || normalizedValue === fallbackValue) {
+      this.refreshBottomToolbar()
+      return
+    }
+
+    this.applySelectedStyleMutation(`size:${field}`, () => {
+      selectedNodes.forEach(node => {
+        if (!(node instanceof HTMLElement || node instanceof SVGElement)) return
+        node.style[field] = normalizedValue
+      })
+    })
+
+    this.refreshBottomToolbar()
   }
 
   handleSpacingInputCommit(kind, field, rawValue) {
@@ -1058,7 +1316,7 @@ export default class VisBug extends HTMLElement {
 
     if (input) input.value = normalizedValue
     if (!selectedNodes.length || normalizedValue === fallbackValue) {
-      this.refreshLocalSnapshotToolbar()
+      this.refreshBottomToolbar()
       return
     }
 
@@ -1089,7 +1347,7 @@ export default class VisBug extends HTMLElement {
       })
     })
 
-    this.refreshLocalSnapshotToolbar()
+    this.refreshBottomToolbar()
   }
 
   toggleSpacingPanelMode(kind) {
@@ -1107,7 +1365,7 @@ export default class VisBug extends HTMLElement {
       ...(this._bottomToolbarState || {}),
       activeSubtool: kind,
     }
-    this.refreshLocalSnapshotToolbar()
+    this.refreshBottomToolbar()
   }
 
   activateBottomToolbarTool(toolId) {
@@ -1120,7 +1378,7 @@ export default class VisBug extends HTMLElement {
         ...(this._bottomToolbarState || {}),
         activeSubtool: null,
       }
-      this.refreshLocalSnapshotToolbar()
+      this.refreshBottomToolbar()
       return
     }
 
@@ -1132,7 +1390,7 @@ export default class VisBug extends HTMLElement {
 
     if (toolId !== 'background')
       this.activateTool(tool.feature)
-    this.refreshLocalSnapshotToolbar()
+    this.refreshBottomToolbar()
   }
 
   runBottomToolbarAction(toolId, actionId) {
@@ -1151,12 +1409,18 @@ export default class VisBug extends HTMLElement {
       this.activateTool(tool.feature)
 
     if (toolId === 'content') {
-      this.refreshLocalSnapshotToolbar()
+      this.refreshBottomToolbar()
       return
     }
 
     this.applyBottomToolbarMutation(toolId, actionId, selectedNodes)
-    this.refreshLocalSnapshotToolbar()
+    if (toolId === 'flex' || toolId === 'reorder') {
+      this._bottomToolbarState = {
+        ...(this._bottomToolbarState || {}),
+        activeSubtool: null,
+      }
+    }
+    this.refreshBottomToolbar()
   }
 
   applyBottomToolbarMutation(toolId, actionId, selectedNodes) {

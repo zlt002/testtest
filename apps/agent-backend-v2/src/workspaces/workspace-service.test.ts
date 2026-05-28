@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { createWorkspaceService } from './workspace-service.ts';
+import { createWorkspaceService, resolveDefaultWorkspacePath } from './workspace-service.ts';
+
+test('resolveDefaultWorkspacePath places the default workspace under workspace/project', () => {
+  assert.equal(
+    resolveDefaultWorkspacePath('/opt/accr-ui'),
+    join('/opt/accr-ui', 'workspace', 'project')
+  );
+});
 
 test('workspace service persists, renames, filters missing paths, and deletes manual workspaces', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-backend-v2-workspaces-'));
@@ -164,7 +171,7 @@ test('workspace service returns null when system picker is cancelled', async () 
 
 test('workspace service auto-registers the default workspace when it exists', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-backend-v2-default-workspace-'));
-  const defaultWorkspacePath = join(root, 'workspace');
+  const defaultWorkspacePath = join(root, 'workspace', 'project');
   const configPath = join(root, '.webmcp', 'workspaces.json');
   await mkdir(defaultWorkspacePath, { recursive: true });
 
@@ -181,7 +188,7 @@ test('workspace service auto-registers the default workspace when it exists', as
     [
       {
         projectPath: defaultWorkspacePath,
-        name: 'workspace',
+        name: 'project',
       },
     ]
   );
@@ -192,7 +199,7 @@ test('workspace service auto-registers the default workspace when it exists', as
 
 test('workspace service does not restore a hidden default workspace', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-backend-v2-hidden-default-workspace-'));
-  const defaultWorkspacePath = join(root, 'workspace');
+  const defaultWorkspacePath = join(root, 'workspace', 'project');
   const configPath = join(root, '.webmcp', 'workspaces.json');
   await mkdir(defaultWorkspacePath, { recursive: true });
   await mkdir(join(root, '.webmcp'), { recursive: true });

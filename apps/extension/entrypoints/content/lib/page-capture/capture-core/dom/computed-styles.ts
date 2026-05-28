@@ -191,6 +191,19 @@ function copyComputedProperties(
   }
 }
 
+function shouldPreserveVxeRuntimePositioning(element: Element): boolean {
+  const classList = element.classList;
+
+  if (
+    classList.contains('vxe-table--fixed-left-wrapper') ||
+    classList.contains('vxe-table--fixed-right-wrapper')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function applyMinimalComputedLayoutStyle(target: Element, source: Element): void {
   const view = source.ownerDocument.defaultView;
   if (!view) {
@@ -215,7 +228,10 @@ function applyMinimalComputedLayoutStyle(target: Element, source: Element): void
     copyComputedProperties(target, source, GRID_CONTAINER_PROPERTIES);
   }
 
-  if (position === 'sticky' || position === 'fixed' || position === 'absolute') {
+  if (
+    !shouldPreserveVxeRuntimePositioning(source) &&
+    (position === 'sticky' || position === 'fixed' || position === 'absolute')
+  ) {
     copyComputedProperties(target, source, POSITION_PROPERTIES);
   }
 

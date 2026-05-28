@@ -634,101 +634,154 @@ describe('normalizeCapturedLayout', () => {
     expect(bodyTable?.style.marginLeft).toBe('-420px');
   });
 
-  it('flattens VXE fixed-left and fixed-right wrappers back into the main table', async () => {
+  it('freezes VXE header and body tables together for the captured horizontal scroll position', async () => {
     const capturedDoc = createCapturedDocument({
       body: `
-        <div class="vxe-table--main-wrapper">
-          <div class="vxe-table--header-wrapper body--wrapper" style="overflow: hidden;">
-            <table class="vxe-table--header" style="width: 3640px;">
-              <colgroup>
-                <col name="col_60" style="width: 120px;">
-                <col name="col_61" style="width: 140px;">
-              </colgroup>
-              <thead>
-                <tr class="vxe-header--row">
-                  <th class="vxe-header--column col_60" colid="col_60">费用申请单号</th>
-                  <th class="vxe-header--column col_61" colid="col_61">物流单号</th>
-                </tr>
-                <tr class="vxe-header--row">
-                  <th class="vxe-header--column col_60" colid="col_60">费用申请单号</th>
-                  <th class="vxe-header--column col_61" colid="col_61">物流单号</th>
-                </tr>
-              </thead>
-            </table>
+        <div class="vxe-table--render-wrapper">
+          <div class="vxe-table--main-wrapper">
+            <div class="vxe-table--header-wrapper body--wrapper" style="overflow: hidden;">
+              <div class="vxe-body--x-space" style="width: 14681px;"></div>
+              <table class="vxe-table--header" style="width: 1487px; margin-left: 0px;">
+                <thead><tr><th>订单号</th><th>客户订单号</th></tr></thead>
+              </table>
+            </div>
+            <div
+              class="vxe-table--body-wrapper body--wrapper"
+              data-capture-scroll-left="420"
+              style="min-height: 110px; height: 694px; overflow: auto;"
+            >
+              <div class="vxe-body--x-space" style="width: 14681px;"></div>
+              <div class="vxe-body--y-space" style="height: 350px;"></div>
+              <table class="vxe-table--body" style="width: 1487px; margin-left: 0px; margin-top: 0px;">
+                <tbody><tr><td>IN12605281343488274</td><td>TCL2600528001</td></tr></tbody>
+              </table>
+            </div>
           </div>
-          <div class="vxe-table--body-wrapper body--wrapper" style="overflow: auto;">
-            <table class="vxe-table--body" style="width: 3640px;">
-              <colgroup>
-                <col name="col_60" style="width: 120px;">
-                <col name="col_61" style="width: 140px;">
-              </colgroup>
-              <tbody>
-                <tr class="vxe-body--row">
-                  <td class="vxe-body--column col_60" colid="col_60">CR202511100004</td>
-                  <td class="vxe-body--column col_61" colid="col_61">GLS2504982L1</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="vxe-table--fixed-right-wrapper">
+            <div class="vxe-table--body-wrapper fixed-right--wrapper">
+              <table class="vxe-table--body" style="width: 170px;"><tbody><tr><td>修改 复制</td></tr></tbody></table>
+            </div>
           </div>
-          <div class="vxe-table--header-wrapper fixed-left--wrapper" style="position: absolute; inset: 0px -3590px 0px 0px; overflow: hidden;">
-            <table class="vxe-table--header" style="width: 3640px;">
-              <colgroup>
-                <col name="col_59" style="width: 50px;">
-              </colgroup>
-              <thead>
-                <tr class="vxe-header--row">
-                  <th class="vxe-header--column col_58" colid="col_58"></th>
-                </tr>
-                <tr class="vxe-header--row">
-                  <th class="vxe-header--column col_59 col--fixed" colid="col_59">
-                    <div class="vxe-cell" style="width: 48px;"><label>勾选</label></div>
-                  </th>
-                </tr>
-              </thead>
-            </table>
+        </div>
+      `,
+    });
+
+    const { normalizeCapturedLayout } = await loadNormalizeCapturedLayout();
+    normalizeCapturedLayout(capturedDoc);
+
+    const bodyWrapper = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper') as HTMLElement | null;
+    const headerTable = capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper .vxe-table--header') as HTMLElement | null;
+    const bodyTable = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper .vxe-table--body') as HTMLElement | null;
+    const fixedRightTable = capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-right--wrapper .vxe-table--body') as HTMLElement | null;
+
+    expect(bodyWrapper?.getAttribute('data-capture-scroll-left')).toBeNull();
+    expect(bodyWrapper?.style.overflowX).toBe('hidden');
+    expect(headerTable?.style.marginLeft).toBe('calc(-420px)');
+    expect(bodyTable?.style.marginLeft).toBe('calc(-420px)');
+    expect(fixedRightTable?.style.marginLeft).toBe('');
+  });
+
+  it('preserves VXE fixed-left and fixed-right wrappers to match the live layout model', async () => {
+    const capturedDoc = createCapturedDocument({
+      body: `
+        <div class="vxe-table--render-wrapper">
+          <div class="vxe-table--main-wrapper">
+            <div class="vxe-table--header-wrapper body--wrapper" style="overflow: hidden;">
+              <table class="vxe-table--header" style="width: 3640px;">
+                <colgroup>
+                  <col name="col_60" style="width: 120px;">
+                  <col name="col_61" style="width: 140px;">
+                </colgroup>
+                <thead>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_58" colid="col_58"></th>
+                    <th class="vxe-header--column col_95" colid="col_95"></th>
+                  </tr>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_60" colid="col_60">费用申请单号</th>
+                    <th class="vxe-header--column col_61" colid="col_61">物流单号</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <div class="vxe-table--body-wrapper body--wrapper" style="overflow: auto;">
+              <table class="vxe-table--body" style="width: 3640px;">
+                <colgroup>
+                  <col name="col_60" style="width: 120px;">
+                  <col name="col_61" style="width: 140px;">
+                </colgroup>
+                <tbody>
+                  <tr class="vxe-body--row">
+                    <td class="vxe-body--column col_60" colid="col_60">CR202511100004</td>
+                    <td class="vxe-body--column col_61" colid="col_61">GLS2504982L1</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div class="vxe-table--body-wrapper fixed-left--wrapper" style="position: absolute; inset: 81px -40px 0px 0px; overflow: hidden auto;">
-            <table class="vxe-table--body" style="width: 3640px;">
-              <colgroup>
-                <col name="col_59" style="width: 50px;">
-              </colgroup>
-              <tbody>
-                <tr class="vxe-body--row">
-                  <td class="vxe-body--column col_59 col--fixed" colid="col_59"><div class="vxe-cell"><label>勾选</label></div></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="vxe-table--fixed-left-wrapper">
+            <div class="vxe-table--header-wrapper fixed-left--wrapper" style="position: absolute; inset: 0px -3590px 0px 0px; overflow: hidden;">
+              <table class="vxe-table--header" style="width: 3640px;">
+                <colgroup>
+                  <col name="col_59" style="width: 50px;">
+                </colgroup>
+                <thead>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_58" colid="col_58"></th>
+                  </tr>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_59 col--fixed" colid="col_59">
+                      <div class="vxe-cell" style="width: 48px;"><label>勾选</label></div>
+                    </th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <div class="vxe-table--body-wrapper fixed-left--wrapper" style="position: absolute; inset: 81px -40px 0px 0px; overflow: hidden auto;">
+              <table class="vxe-table--body" style="width: 3640px;">
+                <colgroup>
+                  <col name="col_59" style="width: 50px;">
+                </colgroup>
+                <tbody>
+                  <tr class="vxe-body--row">
+                    <td class="vxe-body--column col_59 col--fixed" colid="col_59"><div class="vxe-cell"><label>勾选</label></div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div class="vxe-table--header-wrapper fixed-right--wrapper" style="position: absolute; inset: 0px 0px 0px -3460px; overflow: hidden auto;">
-            <table class="vxe-table--header" style="width: 3640px;">
-              <colgroup>
-                <col name="col_96" style="width: 180px;">
-              </colgroup>
-              <thead>
-                <tr class="vxe-header--row">
-                  <th class="vxe-header--column col_95" colid="col_95"></th>
-                </tr>
-                <tr class="vxe-header--row">
-                  <th class="vxe-header--column col_96 col--fixed" colid="col_96">
-                    <div class="vxe-cell" style="width: 178px;">操作</div>
-                  </th>
-                </tr>
-              </thead>
-            </table>
-          </div>
-          <div class="vxe-table--body-wrapper fixed-right--wrapper" style="position: absolute; inset: 81px 0px 0px -3460px; overflow: hidden auto;">
-            <table class="vxe-table--body" style="width: 3640px;">
-              <colgroup>
-                <col name="col_96" style="width: 180px;">
-              </colgroup>
-              <tbody>
-                <tr class="vxe-body--row">
-                  <td class="vxe-body--column col_96 col--fixed" colid="col_96">
-                    <div class="vxe-cell"><button>复制新增</button><button>详情</button></div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="vxe-table--fixed-right-wrapper">
+            <div class="vxe-table--header-wrapper fixed-right--wrapper" style="position: absolute; inset: 0px 0px 0px -3460px; overflow: hidden auto;">
+              <table class="vxe-table--header" style="width: 3640px;">
+                <colgroup>
+                  <col name="col_96" style="width: 180px;">
+                </colgroup>
+                <thead>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_95" colid="col_95"></th>
+                  </tr>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_96 col--fixed" colid="col_96">
+                      <div class="vxe-cell" style="width: 178px;">操作</div>
+                    </th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <div class="vxe-table--body-wrapper fixed-right--wrapper" style="position: absolute; inset: 81px 0px 0px -3460px; overflow: hidden auto;">
+              <table class="vxe-table--body" style="width: 3640px;">
+                <colgroup>
+                  <col name="col_96" style="width: 180px;">
+                </colgroup>
+                <tbody>
+                  <tr class="vxe-body--row">
+                    <td class="vxe-body--column col_96 col--fixed" colid="col_96">
+                      <div class="vxe-cell"><button>复制新增</button><button>详情</button></div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       `,
@@ -743,24 +796,152 @@ describe('normalizeCapturedLayout', () => {
       (cell.textContent || '').trim()
     );
     const bodyTexts = Array.from(mainBodyRow.children).map((cell) => (cell.textContent || '').trim());
-    const leftHeader = capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper th[colid="col_59"]') as HTMLElement | null;
-    const rightHeader = capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper th[colid="col_96"]') as HTMLElement | null;
-    const leftCell = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper td[colid="col_59"]') as HTMLElement | null;
-    const rightCell = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper td[colid="col_96"]') as HTMLElement | null;
+    const leftHeader = capturedDoc.querySelector('.vxe-table--header-wrapper.fixed-left--wrapper th[colid="col_59"]') as HTMLElement | null;
+    const rightHeader = capturedDoc.querySelector('.vxe-table--header-wrapper.fixed-right--wrapper th[colid="col_96"]') as HTMLElement | null;
+    const leftCell = capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-left--wrapper td[colid="col_59"]') as HTMLElement | null;
+    const rightCell = capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-right--wrapper td[colid="col_96"]') as HTMLElement | null;
+    const mainHeaderTable = capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper table') as HTMLElement | null;
+    const mainBodyTable = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper table') as HTMLElement | null;
 
-    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.fixed-left--wrapper')).toBeNull();
-    expect(capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-left--wrapper')).toBeNull();
-    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.fixed-right--wrapper')).toBeNull();
-    expect(capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-right--wrapper')).toBeNull();
-    expect(secondHeaderRowCells).toEqual(['勾选', '费用申请单号', '物流单号', '操作']);
-    expect(bodyTexts).toEqual(['勾选', 'CR202511100004', 'GLS2504982L1', '复制新增详情']);
-    expect(leftHeader?.style.position).toBe('sticky');
-    expect(leftHeader?.style.left).toBe('0px');
-    expect(rightHeader?.style.position).toBe('sticky');
-    expect(rightHeader?.style.right).toBe('0px');
-    expect(leftCell?.style.position).toBe('sticky');
-    expect(leftCell?.style.left).toBe('0px');
-    expect(rightCell?.style.position).toBe('sticky');
-    expect(rightCell?.style.right).toBe('0px');
+    expect(capturedDoc.querySelector('.vxe-table--fixed-left-wrapper')).not.toBeNull();
+    expect(capturedDoc.querySelector('.vxe-table--fixed-right-wrapper')).not.toBeNull();
+    expect(secondHeaderRowCells).toEqual(['费用申请单号', '物流单号']);
+    expect(bodyTexts).toEqual(['CR202511100004', 'GLS2504982L1']);
+    expect(leftHeader?.textContent?.trim()).toBe('勾选');
+    expect(rightHeader?.textContent?.trim()).toBe('操作');
+    expect(leftCell?.textContent?.trim()).toBe('勾选');
+    expect(rightCell?.textContent?.trim()).toBe('复制新增详情');
+    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper colgroup col[name="col_59"]')).toBeNull();
+    expect(capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper colgroup col[name="col_96"]')).toBeNull();
+    expect(mainHeaderTable?.style.width).toBe('3640px');
+    expect(mainBodyTable?.style.width).toBe('3640px');
+  });
+
+  it('preserves VXE nested fixed wrappers so the captured page keeps the original fixed-column layout', async () => {
+    const capturedDoc = createCapturedDocument({
+      body: `
+        <div class="vxe-table--render-wrapper">
+          <div class="vxe-table--main-wrapper">
+            <div class="vxe-table--header-wrapper body--wrapper" style="overflow: hidden;">
+              <div class="vxe-body--x-space" style="width: 14681px;"></div>
+              <table class="vxe-table--header" style="width: 1387px; margin-left: 0px;">
+                <colgroup>
+                  <col name="col_2" style="width: 42px;">
+                  <col name="col_109" style="width: 285px;">
+                  <col name="col_110" style="width: 200px;">
+                  <col name="col_3" style="width: 170px;">
+                </colgroup>
+                <thead>
+                  <tr class="vxe-header--row">
+                    <th class="vxe-header--column col_109" colid="col_109">订单号</th>
+                    <th class="vxe-header--column col_110" colid="col_110">客户订单号</th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+            <div class="vxe-table--body-wrapper body--wrapper" style="min-height: 110px; height: 694px; overflow: auto;">
+              <div class="vxe-body--x-space" style="width: 14681px;"></div>
+              <div class="vxe-body--y-space" style="height: 350px;"></div>
+              <table class="vxe-table--body" style="width: 1387px; margin-left: 0px; margin-top: 0px;">
+                <colgroup>
+                  <col name="col_2" style="width: 42px;">
+                  <col name="col_109" style="width: 285px;">
+                  <col name="col_110" style="width: 200px;">
+                  <col name="col_3" style="width: 170px;">
+                </colgroup>
+                <tbody>
+                  <tr class="vxe-body--row" rowid="row_211">
+                    <td class="vxe-body--column col_109" colid="col_109"><div class="vxe-cell" style="width: 283px;">IN12605281145158169</div></td>
+                    <td class="vxe-body--column col_110" colid="col_110"><div class="vxe-cell" style="width: 198px;">CN010300049337505</div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="vxe-table--fixed-wrapper">
+            <div class="vxe-table--fixed-left-wrapper">
+              <div class="vxe-table--header-wrapper fixed-left--wrapper" style="position: absolute; inset: 0px 0px 683px;">
+                <table class="vxe-table--header" style="width: 42px;">
+                  <colgroup>
+                    <col name="col_2" style="width: 42px;">
+                  </colgroup>
+                  <thead>
+                    <tr class="vxe-header--row">
+                      <th class="vxe-header--column col_2 col--fixed" colid="col_2">
+                        <div class="vxe-cell" style="width: 40px;">勾选</div>
+                      </th>
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+              <div class="vxe-table--body-wrapper fixed-left--wrapper" style="height: 683px; inset: 34px -40px 0px 0px; position: absolute; overflow: hidden auto;">
+                <div class="vxe-body--y-space" style="height: 350px;"></div>
+                <table class="vxe-table--body" style="margin-top: 0px; width: 42px;">
+                  <colgroup>
+                    <col name="col_2" style="width: 42px;">
+                  </colgroup>
+                  <tbody>
+                    <tr class="vxe-body--row" rowid="row_211">
+                      <td class="vxe-body--column col_2 col--fixed" colid="col_2"><div class="vxe-cell" style="width: 40px;">勾选</div></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="vxe-table--fixed-right-wrapper scrolling--middle" style="height: 717px; width: 170px; position: absolute; inset: 0px 0px 11px 1190px; overflow: hidden;">
+              <div class="vxe-table--header-wrapper fixed-right--wrapper" style="position: absolute; inset: 0px 0px 683px; overflow: hidden auto;">
+                <table class="vxe-table--header" style="width: 170px;">
+                  <colgroup>
+                    <col name="col_3" style="width: 170px;">
+                  </colgroup>
+                  <thead>
+                    <tr class="vxe-header--row">
+                      <th class="vxe-header--column col_3 col--fixed" colid="col_3">
+                        <div class="vxe-cell" style="width: 168px;">操作</div>
+                      </th>
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+              <div class="vxe-table--body-wrapper fixed-right--wrapper" style="height: 683px; inset: 34px 0px 0px; position: absolute; overflow: hidden auto;">
+                <div class="vxe-body--y-space" style="height: 350px;"></div>
+                <table class="vxe-table--body" style="margin-top: 0px; width: 170px;">
+                  <colgroup>
+                    <col name="col_3" style="width: 170px;">
+                  </colgroup>
+                  <tbody>
+                    <tr class="vxe-body--row" rowid="row_211">
+                      <td class="vxe-body--column col_3 col--fixed" colid="col_3">
+                        <div class="vxe-cell" style="width: 168px;">复制</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+
+    const { normalizeCapturedLayout } = await loadNormalizeCapturedLayout();
+    normalizeCapturedLayout(capturedDoc);
+
+    const mainHeaderRow = capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper tr');
+    const mainBodyRow = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper tr');
+    const headerTexts = Array.from(mainHeaderRow?.children || []).map((cell) => (cell.textContent || '').trim());
+    const bodyTexts = Array.from(mainBodyRow?.children || []).map((cell) => (cell.textContent || '').trim());
+    const leftCell = capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-left--wrapper td[colid="col_2"]') as HTMLElement | null;
+    const rightCell = capturedDoc.querySelector('.vxe-table--body-wrapper.fixed-right--wrapper td[colid="col_3"]') as HTMLElement | null;
+    const mainHeaderTable = capturedDoc.querySelector('.vxe-table--header-wrapper.body--wrapper table') as HTMLElement | null;
+    const mainBodyTable = capturedDoc.querySelector('.vxe-table--body-wrapper.body--wrapper table') as HTMLElement | null;
+
+    expect(capturedDoc.querySelector('.vxe-table--fixed-wrapper')).not.toBeNull();
+    expect(headerTexts).toEqual(['订单号', '客户订单号']);
+    expect(bodyTexts).toEqual(['IN12605281145158169', 'CN010300049337505']);
+    expect(mainHeaderTable?.style.width).toBe('1387px');
+    expect(mainBodyTable?.style.width).toBe('1387px');
+    expect(leftCell?.textContent?.trim()).toBe('勾选');
+    expect(rightCell?.textContent?.trim()).toBe('复制');
   });
 });

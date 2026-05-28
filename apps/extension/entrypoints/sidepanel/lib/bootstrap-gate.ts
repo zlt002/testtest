@@ -26,6 +26,16 @@ export type BootstrapSyncResult = {
   error?: string;
 };
 
+export type BootstrapBackgroundSyncState =
+  | {
+      status: 'idle' | 'running' | 'completed';
+      detail?: string;
+    }
+  | {
+      status: 'failed';
+      detail: string;
+    };
+
 export type BootstrapGateResult =
   | {
       status: 'ready';
@@ -49,44 +59,64 @@ export type BootstrapGateViewState =
       status: 'running';
       title: string;
       description: string;
+      result: null;
+      backgroundSync: BootstrapBackgroundSyncState;
       retry: () => Promise<BootstrapGateResult | void>;
+      retrySync: () => Promise<BootstrapSyncResult | void>;
     }
   | {
       status: 'ready';
+      result: BootstrapGateResult;
+      backgroundSync: BootstrapBackgroundSyncState;
       retry: () => Promise<BootstrapGateResult | void>;
+      retrySync: () => Promise<BootstrapSyncResult | void>;
     }
   | {
       status: 'sync_failed';
       title: string;
       description: string;
       detail?: string;
+      result: BootstrapGateResult;
+      backgroundSync: BootstrapBackgroundSyncState;
       retry: () => Promise<BootstrapGateResult | void>;
+      retrySync: () => Promise<BootstrapSyncResult | void>;
     }
   | {
       status: 'blocked';
       title: string;
       description: string;
       detail?: string;
+      result: BootstrapGateResult;
+      backgroundSync: BootstrapBackgroundSyncState;
       retry: () => Promise<BootstrapGateResult | void>;
+      retrySync: () => Promise<BootstrapSyncResult | void>;
     };
 
 function toViewState(
   result: BootstrapGateResult | null,
-  retry: () => Promise<BootstrapGateResult | void>
+  backgroundSync: BootstrapBackgroundSyncState,
+  retry: () => Promise<BootstrapGateResult | void>,
+  retrySync: () => Promise<BootstrapSyncResult | void>
 ): BootstrapGateViewState {
   if (!result) {
     return {
       status: 'running',
       title: '正在检查使用环境',
-      description: '正在同步技能并检查模型配置，请稍候。',
+      description: '正在检查模型配置，请稍候。技能会在后台继续同步。',
+      result: null,
+      backgroundSync,
       retry,
+      retrySync,
     };
   }
 
   if (result.status === 'ready') {
     return {
       status: 'ready',
+      result,
+      backgroundSync,
       retry,
+      retrySync,
     };
   }
 
@@ -96,19 +126,29 @@ function toViewState(
       title: '技能同步失败',
       description: '无法完成远端技能同步，请重新检查。',
       detail: result.sync.error ?? '远端同步失败',
+      result,
+      backgroundSync,
       retry,
+      retrySync,
     };
   }
 
   return {
     status: 'blocked',
     title: '模型不可用',
-    description: '技能已同步，但当前模型不可用，需要配置官方 Key。',
-    detail:
-      result.modelAccess.viewState.summary === '当前模型暂不可用。'
-        ? undefined
-        : result.modelAccess.viewState.summary,
+    description: '技能已同步，需要配置官方 Key。',
+    result,
+    backgroundSync,
     retry,
+    retrySync,
+  };
+}
+
+function createPendingSyncResult(): BootstrapSyncResult {
+  return {
+    ok: true,
+    status: 'pending',
+    mode: 'remote',
   };
 }
 
@@ -183,7 +223,11 @@ export async function syncRemoteAccr(): Promise<BootstrapSyncResult> {
 
 export function useBootstrapGateState(): BootstrapGateViewState {
   const [result, setResult] = useState<BootstrapGateResult | null>(null);
+  const [backgroundSync, setBackgroundSync] = useState<BootstrapBackgroundSyncState>({
+    status: 'idle',
+  });
   const runIdRef = useRef(0);
+  const syncRunIdRef = useRef(0);
   const mountedRef = useRef(true);
   const client = useMemo(
     () =>
@@ -201,22 +245,60 @@ export function useBootstrapGateState(): BootstrapGateViewState {
     };
   }, []);
 
+  async function retrySync() {
+    const syncRunId = ++syncRunIdRef.current;
+    setBackgroundSync({
+      status: 'running',
+      detail: '正在后台同步技能，完成后会自动刷新可用命令。',
+    });
+
+    const syncResult = await syncRemoteAccr();
+
+    if (!mountedRef.current || syncRunId !== syncRunIdRef.current) {
+      return;
+    }
+
+    setBackgroundSync(
+      syncResult.ok
+        ? {
+            status: 'completed',
+          }
+        : {
+            status: 'failed',
+            detail: syncResult.error ?? '远端技能同步失败',
+          }
+    );
+    return syncResult;
+  }
+
   async function retry() {
     const runId = ++runIdRef.current;
     setResult(null);
+    void retrySync();
 
-    const nextResult = await runBootstrapGate({
-      syncRemote: syncRemoteAccr,
-      loadModelAccess: () =>
-        loadBootstrapModelAccess({
-          client,
-          fallbackLocalConfig: FALLBACK_MODEL_CONFIG,
-        }),
+    const modelAccess = await loadBootstrapModelAccess({
+      client,
+      fallbackLocalConfig: FALLBACK_MODEL_CONFIG,
     });
 
     if (!mountedRef.current || runId !== runIdRef.current) {
       return;
     }
+
+    const nextResult: BootstrapGateResult =
+      modelAccess.viewState.overallStatus === 'needs_config' ||
+      modelAccess.viewState.overallStatus === 'unavailable'
+        ? {
+            status: 'blocked',
+            blockedReason: 'model_config',
+            sync: createPendingSyncResult(),
+            modelAccess,
+          }
+        : {
+            status: 'ready',
+            sync: createPendingSyncResult(),
+            modelAccess,
+          };
 
     setResult(nextResult);
     return nextResult;
@@ -226,5 +308,5 @@ export function useBootstrapGateState(): BootstrapGateViewState {
     void retry();
   }, []);
 
-  return toViewState(result, retry);
+  return toViewState(result, backgroundSync, retry, retrySync);
 }
