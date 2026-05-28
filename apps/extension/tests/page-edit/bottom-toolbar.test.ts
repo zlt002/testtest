@@ -251,6 +251,32 @@ describe('page-edit bottom toolbar shell', () => {
     expect(actionIds).toContain('alpha-minus');
   });
 
+  it('renders typography as an editor-style panel instead of legacy action rows', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    document.body.innerHTML = '<p id="copy">Typography target</p>';
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('copy')];
+      },
+    };
+
+    const markup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
+
+    expect(markup).toContain('data-typography-panel');
+    expect(markup).toContain('data-typography-input="font-size"');
+    expect(markup).toContain('data-typography-input="font-weight"');
+    expect(markup).toContain('data-typography-input="line-height"');
+    expect(markup).toContain('data-typography-input="letter-spacing"');
+    expect(markup).toContain('data-typography-action="align-left"');
+    expect(markup).toContain('data-typography-action="font-bold"');
+    expect(markup).toContain('data-typography-color-trigger');
+    expect(markup).not.toContain('data-bottom-action="font-plus-1"');
+  });
+
   it('exposes the 9 PM-facing toolbar tools in a fixed order', async () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'

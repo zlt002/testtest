@@ -123,10 +123,11 @@ describe('page-edit file save action', () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
     );
+    document.body.innerHTML = '<p id="copy">Typography target</p>';
     const visbug = new VisBug();
     visbug.selectorEngine = {
       selection() {
-        return [document.body];
+        return [document.getElementById('copy')];
       },
     };
     const markup = visbug.render().replace(/<style[\s\S]*?<\/style>/, '');
@@ -137,6 +138,15 @@ describe('page-edit file save action', () => {
     expect(markup).toContain('data-bottom-action="width-plus-1"');
     expect(markup).toContain('data-bottom-action="all-plus-1"');
     expect(markup).toContain('data-bottom-color-target="background"');
+    expect(markup).toContain('data-typography-panel');
+    expect(markup).toContain('data-typography-input="font-size"');
+    expect(markup).toContain('data-typography-input="font-weight"');
+    expect(markup).toContain('data-typography-input="line-height"');
+    expect(markup).toContain('data-typography-input="letter-spacing"');
+    expect(markup).toContain('data-typography-action="align-left"');
+    expect(markup).toContain('data-typography-action="font-bold"');
+    expect(markup).toContain('data-typography-color-trigger');
+    expect(markup).not.toContain('data-bottom-action="font-plus-1"');
   });
 
   it('本地快照工具栏使用单层底部面板展示全部工具和动作菜单', async () => {

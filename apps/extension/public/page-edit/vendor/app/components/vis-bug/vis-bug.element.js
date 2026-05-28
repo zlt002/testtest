@@ -545,26 +545,33 @@ export default class VisBug extends HTMLElement {
             <div data-bottom-tooltip role="tooltip">${disabledReason}</div>
           `
           : `
-            <div data-bottom-menu>
-              ${tool.id === 'typography' || tool.id === 'surface-colors'
-                ? this.renderBottomToolbarColorTargets(tool.id)
-                : ''}
-              ${actionRows.map(actionRow => `
-                <div data-bottom-menu-row>
-                  ${actionRow.map(action => `
-                    <button
-                      type="button"
-                      data-bottom-action="${action.id}"
-                      data-tool-id="${tool.id}"
-                      title="${action.label}"
-                    >${action.label}</button>
-                  `).join('')}
-                </div>
-              `).join('')}
-            </div>
+            ${tool.id === 'typography'
+              ? this.renderTypographyPanel()
+              : tool.id === 'surface-colors'
+                ? this.renderSurfaceColorPanel()
+                : `
+                  <div data-bottom-menu>
+                    ${this.renderBottomToolbarActionRows(tool.id)}
+                  </div>
+                `}
           `}
       </div>
     `
+  }
+
+  renderBottomToolbarActionRows(toolId) {
+    return this.getBottomToolbarToolActions(toolId).map(actionRow => `
+      <div data-bottom-menu-row>
+        ${actionRow.map(action => `
+          <button
+            type="button"
+            data-bottom-action="${action.id}"
+            data-tool-id="${toolId}"
+            title="${action.label}"
+          >${action.label}</button>
+        `).join('')}
+      </div>
+    `).join('')
   }
 
   renderBottomToolbarColorTargets(toolId = 'surface-colors') {
@@ -588,6 +595,57 @@ export default class VisBug extends HTMLElement {
           >${target.label}</button>
         `).join('')}
       </div>
+    `
+  }
+
+  renderSurfaceColorPanel() {
+    return `
+      <div data-bottom-menu>
+        ${this.renderBottomToolbarColorTargets('surface-colors')}
+        ${this.renderBottomToolbarActionRows('surface-colors')}
+      </div>
+    `
+  }
+
+  renderTypographyPanel() {
+    return `
+      <div data-bottom-menu data-typography-panel>
+        <div data-bottom-menu-row data-typography-inputs>
+          ${this.renderTypographyInput('font-size', '字号', '16px')}
+          ${this.renderTypographyInput('font-weight', '字重', '400')}
+          ${this.renderTypographyInput('line-height', '行高', '1.5')}
+          ${this.renderTypographyInput('letter-spacing', '字距', '0em')}
+        </div>
+        <div data-bottom-menu-row data-typography-actions>
+          ${this.renderTypographyAction('align-left', '左对齐')}
+          ${this.renderTypographyAction('font-bold', '加粗')}
+          <button type="button" data-typography-color-trigger title="文字颜色">颜色</button>
+        </div>
+      </div>
+    `
+  }
+
+  renderTypographyInput(inputId, label, value = '') {
+    return `
+      <label data-typography-field="${inputId}">
+        <span>${label}</span>
+        <input
+          type="text"
+          data-typography-input="${inputId}"
+          value="${value}"
+          aria-label="${label}"
+        >
+      </label>
+    `
+  }
+
+  renderTypographyAction(actionId, label) {
+    return `
+      <button
+        type="button"
+        data-typography-action="${actionId}"
+        title="${label}"
+      >${label}</button>
     `
   }
 
