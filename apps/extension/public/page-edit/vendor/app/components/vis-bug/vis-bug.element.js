@@ -651,6 +651,7 @@ export default class VisBug extends HTMLElement {
     }
   }
 
+>>>>>>> 8863317 (feat: read typography panel state from selection)
   renderTypographyPanel() {
     const { values } = this.getTypographyPanelState()
 
