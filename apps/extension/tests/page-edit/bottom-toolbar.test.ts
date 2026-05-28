@@ -309,7 +309,6 @@ describe('page-edit bottom toolbar shell', () => {
     expect(fontSpy).toHaveBeenCalledOnce();
     expect(target.style.fontWeight).toBe('700');
   });
-
   it('exposes the 9 PM-facing toolbar tools in a fixed order', async () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
