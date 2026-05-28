@@ -114,6 +114,10 @@ export default class VisBug extends HTMLElement {
     this._bottomToolbarState = {
       activeSubtool: null,
     }
+    this._typographyPanelDraft = {
+      values: {},
+      advancedOpen: false,
+    }
   }
 
   connectedCallback() {
@@ -607,14 +611,82 @@ export default class VisBug extends HTMLElement {
     `
   }
 
+  getTypographyPanelState() {
+    const [selectedElement] = this.selectorEngine?.selection?.() ?? []
+    const defaultState = {
+      values: {
+        fontSize: '',
+        fontWeight: '',
+        lineHeight: '',
+        letterSpacing: '',
+        textAlign: '',
+        bold: false,
+        italic: false,
+        underline: false,
+        foreground: '',
+      },
+      advancedOpen: this._typographyPanelDraft?.advancedOpen ?? false,
+    }
+
+    if (!(selectedElement instanceof Element))
+      return {
+        ...defaultState,
+        values: {
+          ...defaultState.values,
+          ...(this._typographyPanelDraft?.values ?? {}),
+        },
+      }
+
+    const computedStyle = getComputedStyle(selectedElement)
+    const fontWeight = computedStyle.fontWeight || ''
+    const parsedFontWeight = Number.parseFloat(fontWeight)
+    const lineHeight = computedStyle.lineHeight || ''
+    const letterSpacing = computedStyle.letterSpacing || ''
+    const textDecorationLine = computedStyle.textDecorationLine || computedStyle.textDecoration || ''
+    const resolvedValues = {
+      fontSize: this.formatTypographyLengthValue(computedStyle.fontSize),
+      fontWeight: Number.isNaN(parsedFontWeight)
+        ? fontWeight
+        : `${parsedFontWeight}`,
+      lineHeight: this.formatTypographyLengthValue(lineHeight),
+      letterSpacing: letterSpacing === 'normal'
+        ? '0'
+        : this.formatTypographyLengthValue(letterSpacing),
+      textAlign: computedStyle.textAlign || '',
+      bold: fontWeight === 'bold' || (!Number.isNaN(parsedFontWeight) && parsedFontWeight >= 600),
+      italic: (computedStyle.fontStyle || '').includes('italic'),
+      underline: textDecorationLine.includes('underline'),
+      foreground: computedStyle.color || '',
+    }
+
+    return {
+      values: {
+        ...resolvedValues,
+        ...(this._typographyPanelDraft?.values ?? {}),
+      },
+      advancedOpen: this._typographyPanelDraft?.advancedOpen ?? false,
+    }
+  }
+
+  formatTypographyLengthValue(value) {
+    if (!value) return ''
+
+    const parsedValue = Number.parseFloat(value)
+    if (Number.isNaN(parsedValue)) return value
+
+    return `${parsedValue}`
+  }
+
   renderTypographyPanel() {
+    const { values } = this.getTypographyPanelState()
+
     return `
       <div data-bottom-menu data-typography-panel>
         <div data-bottom-menu-row data-typography-inputs>
-          ${this.renderTypographyInput('font-size', '字号', '16px')}
-          ${this.renderTypographyInput('font-weight', '字重', '400')}
-          ${this.renderTypographyInput('line-height', '行高', '1.5')}
-          ${this.renderTypographyInput('letter-spacing', '字距', '0em')}
+          ${this.renderTypographyInput('font-size', '字号', values.fontSize)}
+          ${this.renderTypographyInput('font-weight', '字重', values.fontWeight)}
+          ${this.renderTypographyInput('line-height', '行高', values.lineHeight)}
+          ${this.renderTypographyInput('letter-spacing', '字距', values.letterSpacing)}
         </div>
         <div data-bottom-menu-row data-typography-actions>
           ${this.renderTypographyAction('align-left', '左对齐')}
