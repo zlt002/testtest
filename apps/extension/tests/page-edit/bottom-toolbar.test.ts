@@ -271,10 +271,43 @@ describe('page-edit bottom toolbar shell', () => {
     expect(markup).toContain('data-typography-input="font-weight"');
     expect(markup).toContain('data-typography-input="line-height"');
     expect(markup).toContain('data-typography-input="letter-spacing"');
+    expect(markup).toMatch(/data-typography-input="font-size"[\s\S]*?readonly/);
+    expect(markup).toMatch(/data-typography-input="font-weight"[\s\S]*?readonly/);
     expect(markup).toContain('data-typography-action="align-left"');
+    expect(markup).toContain('data-bottom-action="align-left"');
     expect(markup).toContain('data-typography-action="font-bold"');
+    expect(markup).toContain('data-bottom-action="font-bold"');
     expect(markup).toContain('data-typography-color-trigger');
+    expect(markup).toContain('data-bottom-color-target="foreground"');
     expect(markup).not.toContain('data-bottom-action="font-plus-1"');
+  });
+
+  it('routes typography shortcut actions back through the existing bottom action path', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    document.body.innerHTML = '<p id="copy">Typography target</p>';
+    const target = document.getElementById('copy');
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [target];
+      },
+      recordStyleMutation({ mutate }) {
+        mutate();
+      },
+      refreshSelectionUi: vi.fn(),
+    };
+    const fontSpy = vi.spyOn(visbug, 'font').mockImplementation(() => {
+      // @ts-expect-error test double
+      visbug.deactivate_feature = vi.fn();
+    });
+
+    visbug.runBottomToolbarAction('typography', 'font-bold');
+
+    expect(fontSpy).toHaveBeenCalledOnce();
+    expect(target.style.fontWeight).toBe('700');
   });
 
   it('exposes the 9 PM-facing toolbar tools in a fixed order', async () => {

@@ -143,9 +143,14 @@ describe('page-edit file save action', () => {
     expect(markup).toContain('data-typography-input="font-weight"');
     expect(markup).toContain('data-typography-input="line-height"');
     expect(markup).toContain('data-typography-input="letter-spacing"');
+    expect(markup).toMatch(/data-typography-input="font-size"[\s\S]*?readonly/);
+    expect(markup).toMatch(/data-typography-input="font-weight"[\s\S]*?readonly/);
     expect(markup).toContain('data-typography-action="align-left"');
+    expect(markup).toContain('data-bottom-action="align-left"');
     expect(markup).toContain('data-typography-action="font-bold"');
+    expect(markup).toContain('data-bottom-action="font-bold"');
     expect(markup).toContain('data-typography-color-trigger');
+    expect(markup).toContain('data-bottom-color-target="foreground"');
     expect(markup).not.toContain('data-bottom-action="font-plus-1"');
   });
 

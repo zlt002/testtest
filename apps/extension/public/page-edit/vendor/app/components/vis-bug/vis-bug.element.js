@@ -619,7 +619,12 @@ export default class VisBug extends HTMLElement {
         <div data-bottom-menu-row data-typography-actions>
           ${this.renderTypographyAction('align-left', '左对齐')}
           ${this.renderTypographyAction('font-bold', '加粗')}
-          <button type="button" data-typography-color-trigger title="文字颜色">颜色</button>
+          <button
+            type="button"
+            data-typography-color-trigger
+            data-bottom-color-target="foreground"
+            title="文字颜色"
+          >颜色</button>
         </div>
       </div>
     `
@@ -634,6 +639,7 @@ export default class VisBug extends HTMLElement {
           data-typography-input="${inputId}"
           value="${value}"
           aria-label="${label}"
+          readonly
         >
       </label>
     `
@@ -644,6 +650,8 @@ export default class VisBug extends HTMLElement {
       <button
         type="button"
         data-typography-action="${actionId}"
+        data-bottom-action="${actionId}"
+        data-tool-id="typography"
         title="${label}"
       >${label}</button>
     `
@@ -886,6 +894,13 @@ export default class VisBug extends HTMLElement {
       'font-minus-10': () => changeFontSize(elements, 'shift+down'),
       'weight-plus': () => changeFontWeight(elements, 'up'),
       'weight-minus': () => changeFontWeight(elements, 'down'),
+      'font-bold': () => elements.forEach(element => {
+        const computedWeight = Number.parseInt(getComputedStyle(element).fontWeight, 10)
+        const currentWeight = Number.isNaN(computedWeight)
+          ? Number.parseInt(element.style.fontWeight, 10) || 400
+          : computedWeight
+        element.style.fontWeight = currentWeight >= 600 ? '400' : '700'
+      }),
       'leading-plus': () => changeLeading(elements, 'shift+up'),
       'leading-minus': () => changeLeading(elements, 'shift+down'),
       'align-left': () => elements.forEach(element => { element.style.textAlign = 'left' }),
