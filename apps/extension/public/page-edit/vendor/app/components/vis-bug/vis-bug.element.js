@@ -629,52 +629,26 @@ export default class VisBug extends HTMLElement {
     }
 
     if (!(selectedElement instanceof Element))
-      return {
-        ...defaultState,
-        values: {
-          ...defaultState.values,
-          ...(this._typographyPanelDraft?.values ?? {}),
-        },
-      }
+      return defaultState
 
     const computedStyle = getComputedStyle(selectedElement)
     const fontWeight = computedStyle.fontWeight || ''
     const parsedFontWeight = Number.parseFloat(fontWeight)
-    const lineHeight = computedStyle.lineHeight || ''
-    const letterSpacing = computedStyle.letterSpacing || ''
     const textDecorationLine = computedStyle.textDecorationLine || computedStyle.textDecoration || ''
-    const resolvedValues = {
-      fontSize: this.formatTypographyLengthValue(computedStyle.fontSize),
-      fontWeight: Number.isNaN(parsedFontWeight)
-        ? fontWeight
-        : `${parsedFontWeight}`,
-      lineHeight: this.formatTypographyLengthValue(lineHeight),
-      letterSpacing: letterSpacing === 'normal'
-        ? '0'
-        : this.formatTypographyLengthValue(letterSpacing),
-      textAlign: computedStyle.textAlign || '',
-      bold: fontWeight === 'bold' || (!Number.isNaN(parsedFontWeight) && parsedFontWeight >= 600),
-      italic: (computedStyle.fontStyle || '').includes('italic'),
-      underline: textDecorationLine.includes('underline'),
-      foreground: computedStyle.color || '',
-    }
-
     return {
       values: {
-        ...resolvedValues,
-        ...(this._typographyPanelDraft?.values ?? {}),
+        fontSize: computedStyle.fontSize || '',
+        fontWeight,
+        lineHeight: computedStyle.lineHeight || '',
+        letterSpacing: computedStyle.letterSpacing || '',
+        textAlign: computedStyle.textAlign || '',
+        bold: fontWeight === 'bold' || (!Number.isNaN(parsedFontWeight) && parsedFontWeight >= 600),
+        italic: (computedStyle.fontStyle || '').includes('italic'),
+        underline: textDecorationLine.includes('underline'),
+        foreground: computedStyle.color || '',
       },
       advancedOpen: this._typographyPanelDraft?.advancedOpen ?? false,
     }
-  }
-
-  formatTypographyLengthValue(value) {
-    if (!value) return ''
-
-    const parsedValue = Number.parseFloat(value)
-    if (Number.isNaN(parsedValue)) return value
-
-    return `${parsedValue}`
   }
 
   renderTypographyPanel() {

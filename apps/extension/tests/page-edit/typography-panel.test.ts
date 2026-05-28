@@ -125,10 +125,10 @@ describe('typography panel state', () => {
 
     expect(visbug.getTypographyPanelState()).toEqual({
       values: {
-        fontSize: '18',
+        fontSize: '18px',
         fontWeight: '700',
-        lineHeight: '24',
-        letterSpacing: '0',
+        lineHeight: '24px',
+        letterSpacing: 'normal',
         textAlign: 'center',
         bold: true,
         italic: true,
@@ -165,18 +165,19 @@ describe('typography panel state', () => {
     };
 
     const markup = visbug.renderTypographyPanel();
+    const panelDocument = new JSDOM(markup).window.document;
+    const fontSizeInput = panelDocument.querySelector('[data-typography-input="font-size"]');
+    const fontWeightInput = panelDocument.querySelector('[data-typography-input="font-weight"]');
+    const lineHeightInput = panelDocument.querySelector('[data-typography-input="line-height"]');
+    const letterSpacingInput = panelDocument.querySelector('[data-typography-input="letter-spacing"]');
 
-    expect(markup).toContain('data-typography-input="font-size"');
-    expect(markup).toContain('value="22"');
-    expect(markup).toContain('data-typography-input="font-weight"');
-    expect(markup).toContain('value="500"');
-    expect(markup).toContain('data-typography-input="line-height"');
-    expect(markup).toContain('value="28"');
-    expect(markup).toContain('data-typography-input="letter-spacing"');
-    expect(markup).toContain('value="1.5"');
-    expect(markup).not.toContain('value="16px"');
-    expect(markup).not.toContain('value="400"');
-    expect(markup).not.toContain('value="1.5" aria-label="字距"');
-    expect(markup).not.toContain('value="0em"');
+    expect(fontSizeInput).not.toBeNull();
+    expect(fontWeightInput).not.toBeNull();
+    expect(lineHeightInput).not.toBeNull();
+    expect(letterSpacingInput).not.toBeNull();
+    expect(fontSizeInput?.getAttribute('value')).toBe('22px');
+    expect(fontWeightInput?.getAttribute('value')).toBe('500');
+    expect(lineHeightInput?.getAttribute('value')).toBe('28px');
+    expect(letterSpacingInput?.getAttribute('value')).toBe('1.5px');
   });
 });
