@@ -4,6 +4,8 @@ import { JSDOM } from 'jsdom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import handleCss from '../../public/page-edit/vendor/app/components/selection/handles.element.css.js';
+import boxModelCss from '../../public/page-edit/vendor/app/components/selection/box-model.element.css.js';
+import distanceCss from '../../public/page-edit/vendor/app/components/selection/distance.element.css.js';
 import gripCss from '../../public/page-edit/vendor/app/components/selection/grip.element.css.js';
 import labelCss from '../../public/page-edit/vendor/app/components/selection/label.element.css.js';
 import marqueeCss from '../../public/page-edit/vendor/app/components/selection/marquee.element.css.js';
@@ -83,6 +85,8 @@ afterAll(() => {
 describe('selection overlay positioning', () => {
   it('keeps overlay styles fixed so they do not expand page scroll bounds', () => {
     expect(handleCss).toContain('position: fixed;');
+    expect(boxModelCss).toContain('position: fixed;');
+    expect(distanceCss).toContain('position: fixed;');
     expect(gripCss).toContain('translate(calc(50% - 10%), 6px)');
     expect(labelCss).toContain('position: fixed;');
     expect(marqueeCss).toContain('position: fixed;');
@@ -175,6 +179,46 @@ describe('selection overlay positioning', () => {
     expect(grip.style.getPropertyValue('--left')).toBe('6px');
     expect(label.style.getPropertyValue('--top')).toBe('12px');
     expect(label.style.getPropertyValue('--left')).toBe('5px');
+  });
+
+  it('positions box-model and distance overlays with viewport coordinates only', async () => {
+    const { BoxModel } = await import('../../public/page-edit/vendor/app/components/selection/box-model.element.js');
+    const { Distance } = await import('../../public/page-edit/vendor/app/components/selection/distance.element.js');
+
+    const source = document.querySelector('[data-label-id="node-1"]') as HTMLElement;
+    source.getBoundingClientRect = () =>
+      ({
+        x: 12,
+        y: 24,
+        top: 24,
+        left: 12,
+        right: 212,
+        bottom: 104,
+        width: 200,
+        height: 80,
+      }) as DOMRect;
+
+    const boxModel = new BoxModel();
+    document.body.appendChild(boxModel);
+    boxModel.position = {
+      mode: 'padding',
+      bounds: source.getBoundingClientRect(),
+      sides: { top: 20, right: 10, bottom: 20, left: 10 },
+      color: 'purple',
+    };
+    expect(document.querySelectorAll('visbug-distance')).toHaveLength(0);
+
+    const distance = new Distance();
+    document.body.appendChild(distance);
+    distance.position = {
+      line_model: { x: 44, y: 18, d: 20, q: 'top', v: true, color: 'purple' },
+      node_label_id: 'node-1',
+    };
+
+    expect(boxModel.style.getPropertyValue('--top')).toBe('24px');
+    expect(boxModel.style.getPropertyValue('--left')).toBe('12px');
+    expect(distance.style.getPropertyValue('--top')).toBe('18px');
+    expect(distance.style.getPropertyValue('--left')).toBe('44px');
   });
 
   it('keeps drag bounds label close to the container edge', async () => {

@@ -196,8 +196,23 @@ function normalizeMicroAppContainers(doc: Document): void {
   }
 }
 
+const DISPOSABLE_OVERLAY_SELECTORS = [
+  '.feedback_tabs_main',
+  '#INTELLIGENCE',
+  '[data-html2canvas-ignore="true"]',
+] as const;
+
+export function removeDisposableOverlays(doc: Document): void {
+  for (const selector of DISPOSABLE_OVERLAY_SELECTORS) {
+    for (const element of Array.from(doc.querySelectorAll(selector))) {
+      element.remove();
+    }
+  }
+}
+
 export function cleanupCapturedDocument(doc: Document, originalDoc?: Document): void {
   normalizeMicroAppContainers(doc);
+  removeDisposableOverlays(doc);
 
   for (const { element, originalElement } of getBodyElementPairs(doc, originalDoc)) {
     if (isElementHidden(element, originalElement)) {

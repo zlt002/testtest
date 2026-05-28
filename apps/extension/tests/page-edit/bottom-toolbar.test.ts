@@ -17,6 +17,7 @@ beforeAll(() => {
     customElements: globalThis.customElements,
     HTMLElement: globalThis.HTMLElement,
     Element: globalThis.Element,
+    SVGElement: globalThis.SVGElement,
     NodeList: globalThis.NodeList,
     MutationObserver: globalThis.MutationObserver,
     DOMException: globalThis.DOMException,
@@ -33,6 +34,7 @@ beforeAll(() => {
     customElements: dom.window.customElements,
     HTMLElement: dom.window.HTMLElement,
     Element: dom.window.Element,
+    SVGElement: dom.window.SVGElement,
     NodeList: dom.window.NodeList,
     MutationObserver: dom.window.MutationObserver,
     DOMException: dom.window.DOMException,
@@ -104,6 +106,8 @@ describe('page-edit bottom toolbar shell', () => {
 
     expect(shellMarkup).toContain('data-bottom-toolbar="idle"');
     expect(shellMarkup).toContain('data-bottom-toolbar-hint');
+    expect(shellMarkup).toContain('data-bottom-toolbar-actions');
+    expect(shellMarkup).toContain('data-action="save-file"');
     expect(shellMarkup).not.toContain('data-toolbar-panel');
     expect(shellMarkup).not.toContain('data-tool-list');
     expect(shellMarkup).not.toContain('data-tool-group=');
@@ -138,14 +142,19 @@ describe('page-edit bottom toolbar shell', () => {
     expect(shellMarkup).toContain('data-bottom-tool="resize"');
     expect(shellMarkup).toContain('data-bottom-tool="padding"');
     expect(shellMarkup).toContain('data-bottom-tool="typography"');
-    expect(shellMarkup).toContain('data-bottom-tool="surface-colors"');
+    expect(shellMarkup).toContain('data-bottom-tool="background"');
     expect(shellMarkup).toContain('data-bottom-tool="reorder"');
+    expect(shellMarkup).toContain('data-bottom-toolbar-actions');
+    expect(shellMarkup).toContain('data-action="save-file"');
     expect(shellMarkup).not.toContain('data-bottom-tool="inspect"');
     expect(shellMarkup).toContain('data-bottom-divider');
     expect(shellMarkup).toContain('data-bottom-menu');
     expect(shellMarkup).toContain('data-bottom-action="up-1"');
     expect(shellMarkup).toContain('data-bottom-action="width-plus-1"');
-    expect(shellMarkup).toContain('data-bottom-action="all-plus-1"');
+    expect(shellMarkup).toContain('data-spacing-panel="padding"');
+    expect(shellMarkup).toContain('data-spacing-panel="margin"');
+    expect(shellMarkup).toContain('data-spacing-input="vertical"');
+    expect(shellMarkup).toContain('data-spacing-input="horizontal"');
     expect(shellMarkup).not.toContain('data-tool-group=');
     expect(shellMarkup).not.toContain('data-subtool=');
   });
@@ -178,6 +187,11 @@ describe('page-edit bottom toolbar shell', () => {
   });
 
   it('maps flat bottom tools to the current page-edit features', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'live' }),
+    );
+
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
     );
@@ -193,12 +207,11 @@ describe('page-edit bottom toolbar shell', () => {
       'margin',
       'flex',
       'typography',
-      'surface-colors',
+      'background',
       'reorder',
     ]);
     expect(tools.find(tool => tool.id === 'move')?.feature).toBe('position');
     expect(tools.find(tool => tool.id === 'resize')?.feature).toBe('position');
-    expect(tools.find(tool => tool.id === 'surface-colors')?.feature).toBe('hueshift');
     expect(tools.find(tool => tool.id === 'reorder')?.feature).toBe('move');
     expect(visbug.getBottomToolbarToolActions('move')[0]?.map(action => action.id)).toEqual([
       'up-1',
@@ -206,28 +219,7 @@ describe('page-edit bottom toolbar shell', () => {
       'left-1',
       'right-1',
     ]);
-    expect(visbug.getBottomToolbarToolActions('surface-colors').length).toBeGreaterThan(0);
-  });
-
-  it('splits typography and surface color targets into separate bottom toolbar groups', async () => {
-    const { default: VisBug } = await import(
-      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
-    );
-
-    const visbug = new VisBug();
-
-    const typographyTargets = visbug.renderBottomToolbarColorTargets('typography');
-    expect(typographyTargets).toContain('data-bottom-color-target="foreground"');
-    expect(typographyTargets).toContain('>文字<');
-    expect(typographyTargets).not.toContain('data-bottom-color-target="background"');
-    expect(typographyTargets).not.toContain('data-bottom-color-target="border"');
-
-    const surfaceTargets = visbug.renderBottomToolbarColorTargets('surface-colors');
-    expect(surfaceTargets).toContain('data-bottom-color-target="background"');
-    expect(surfaceTargets).toContain('data-bottom-color-target="border"');
-    expect(surfaceTargets).toContain('>背景<');
-    expect(surfaceTargets).toContain('>边框<');
-    expect(surfaceTargets).not.toContain('data-bottom-color-target="foreground"');
+    expect(visbug.render()).not.toContain('data-action="save-file"');
   });
 
   it('keeps typography color adjustments on the typography tool', async () => {
@@ -241,17 +233,22 @@ describe('page-edit bottom toolbar shell', () => {
       .flat()
       .map(action => action.id);
 
-    expect(actionIds).toContain('hue-plus');
-    expect(actionIds).toContain('hue-minus');
-    expect(actionIds).toContain('light-plus');
-    expect(actionIds).toContain('light-minus');
-    expect(actionIds).toContain('sat-plus');
-    expect(actionIds).toContain('sat-minus');
-    expect(actionIds).toContain('alpha-plus');
-    expect(actionIds).toContain('alpha-minus');
+    expect(actionIds).not.toContain('hue-plus');
+    expect(actionIds).not.toContain('hue-minus');
+    expect(actionIds).not.toContain('light-plus');
+    expect(actionIds).not.toContain('light-minus');
+    expect(actionIds).not.toContain('sat-plus');
+    expect(actionIds).not.toContain('sat-minus');
+    expect(actionIds).not.toContain('alpha-plus');
+    expect(actionIds).not.toContain('alpha-minus');
   });
 
   it('renders typography as an editor-style panel instead of legacy action rows', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
     );
@@ -271,11 +268,16 @@ describe('page-edit bottom toolbar shell', () => {
     expect(markup).toContain('data-typography-input="font-weight"');
     expect(markup).toContain('data-typography-input="line-height"');
     expect(markup).toContain('data-typography-input="letter-spacing"');
-    expect(markup).toMatch(/data-typography-input="font-size"[\s\S]*?readonly/);
-    expect(markup).toMatch(/data-typography-input="font-weight"[\s\S]*?readonly/);
+    expect(markup).not.toMatch(/data-typography-input="font-size"[\s\S]*?readonly/);
+    expect(markup).not.toMatch(/data-typography-input="font-weight"[\s\S]*?readonly/);
     expect(markup).toContain('data-typography-action="align-left"');
+    expect(markup).toContain('data-typography-action="align-center"');
+    expect(markup).toContain('data-typography-action="align-right"');
+    expect(markup).toContain('data-typography-action="align-justify"');
     expect(markup).toContain('data-bottom-action="align-left"');
     expect(markup).toContain('data-typography-action="font-bold"');
+    expect(markup).toContain('data-typography-action="font-italic"');
+    expect(markup).toContain('data-typography-action="font-underline"');
     expect(markup).toContain('data-bottom-action="font-bold"');
     expect(markup).toContain('data-typography-color-trigger');
     expect(markup).toContain('data-bottom-color-target="foreground"');
@@ -325,7 +327,7 @@ describe('page-edit bottom toolbar shell', () => {
       'margin',
       'flex',
       'typography',
-      'surface-colors',
+      'background',
       'reorder',
     ]);
   });
@@ -372,6 +374,7 @@ describe('page-edit bottom toolbar shell', () => {
 
     expect(positionSpy).toHaveBeenCalledOnce();
     expect(visbug.activeTool).toBe('position');
+    expect(visbug._bottomToolbarState.activeSubtool).toBe('move');
   });
 
   it('ignores disabled toolbar clicks for tools that are unavailable on the current element', async () => {
@@ -422,6 +425,7 @@ describe('page-edit bottom toolbar shell', () => {
         return [document.getElementById('target')];
       },
       refreshSelectionUi: vi.fn(),
+      disconnect: vi.fn(),
     };
     vi.spyOn(visbug, 'position').mockImplementation(() => {
       // @ts-expect-error test double
@@ -436,6 +440,78 @@ describe('page-edit bottom toolbar shell', () => {
 
     expect(visbug.activeTool).toBe('position');
     expect(sizeButton?.getAttribute('data-active')).toBe('true');
+    expect(sizeButton?.getAttribute('aria-expanded')).toBe('true');
     expect(positionButton?.getAttribute('data-active')).toBe('false');
+    expect(positionButton?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('toggles the current bottom panel on repeated clicks', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    document.body.innerHTML = '<div id="target">Hello</div>';
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('target')];
+      },
+      refreshSelectionUi: vi.fn(),
+    };
+    vi.spyOn(visbug, 'font').mockImplementation(() => {
+      // @ts-expect-error test double
+      visbug.deactivate_feature = vi.fn();
+    });
+
+    visbug.activateBottomToolbarTool('typography');
+    expect(visbug._bottomToolbarState.activeSubtool).toBe('typography');
+
+    visbug.activateBottomToolbarTool('typography');
+    expect(visbug._bottomToolbarState.activeSubtool).toBe(null);
+  });
+
+  it('closes an opened bottom panel when clicking outside the toolbar host', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    document.body.innerHTML = '<div id="target">Hello</div>';
+
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    const visbug = new VisBug();
+    vi.spyOn(visbug, 'font').mockImplementation(() => {
+      // @ts-expect-error test double
+      visbug.deactivate_feature = vi.fn();
+    });
+
+    document.body.appendChild(visbug);
+    visbug.connectedCallback();
+    visbug.selectorEngine = {
+      selection() {
+        return [document.getElementById('target')];
+      },
+      refreshSelectionUi: vi.fn(),
+    };
+    visbug.activateBottomToolbarTool('typography');
+
+    expect(visbug._bottomToolbarState.activeSubtool).toBe('typography');
+
+    document.body.dispatchEvent(
+      new dom.window.Event('pointerdown', { bubbles: true, composed: true }),
+    );
+
+    expect(visbug._bottomToolbarState.activeSubtool).toBe(null);
+
+    visbug.disconnectedCallback();
   });
 });

@@ -56,7 +56,7 @@ describe('inlineComputedLayoutStyles', () => {
     expect(capturedCard.style.gridTemplateColumns).toBe('1fr 1fr');
   });
 
-  it('copies key box-model layout properties without inlining unrelated typography styles', () => {
+  it('copies non-dimensional box-model layout properties without freezing runtime sizes', () => {
     document.head.innerHTML = `
       <style>
         .runtime-panel {
@@ -78,12 +78,45 @@ describe('inlineComputedLayoutStyles', () => {
     inlineComputedLayoutStyles(capturedDoc, document);
 
     const capturedPanel = capturedDoc.querySelector('section') as HTMLElement;
-    expect(capturedPanel.style.width).toBe('320px');
-    expect(capturedPanel.style.minHeight).toBe('180px');
+    expect(capturedPanel.style.width).toBe('');
+    expect(capturedPanel.style.minHeight).toBe('');
     expect(capturedPanel.style.padding).toBe('12px 20px');
     expect(capturedPanel.style.boxSizing).toBe('border-box');
     expect(capturedPanel.style.fontSize).toBe('');
     expect(capturedPanel.style.lineHeight).toBe('');
+  });
+
+  it('captures non-transparent runtime background colors from computed styles', () => {
+    document.head.innerHTML = `
+      <style>
+        .runtime-header-cell {
+          background-color: rgb(248, 248, 249);
+          color: rgb(96, 98, 102);
+        }
+      </style>
+    `;
+    document.body.innerHTML = `
+      <table>
+        <thead>
+          <tr><th class="runtime-header-cell">header</th></tr>
+        </thead>
+      </table>
+    `;
+
+    const capturedDoc = document.implementation.createHTMLDocument('capture');
+    capturedDoc.body.innerHTML = `
+      <table>
+        <thead>
+          <tr><th ${SOURCE_INDEX_ATTRIBUTE}="3">header</th></tr>
+        </thead>
+      </table>
+    `;
+
+    inlineComputedLayoutStyles(capturedDoc, document);
+
+    const capturedHeader = capturedDoc.querySelector('th') as HTMLElement;
+    expect(capturedHeader.style.backgroundColor).toBe('rgb(248, 248, 249)');
+    expect(capturedHeader.style.color).toBe('');
   });
 
   it('copies transform-related layout properties and white-space when needed', () => {
@@ -142,12 +175,12 @@ describe('inlineComputedLayoutStyles', () => {
     expect(capturedDrawer.style.padding).toBe('4px');
     expect(capturedDrawer.style.transform).toBe('rotate(5deg)');
     expect(capturedDrawer.style.whiteSpace).toBe('pre-wrap');
-    expect(capturedDrawer.style.minHeight).toBe('180px');
-    expect(capturedDrawer.style.boxSizing).toBe('border-box');
     expect(capturedDrawer.style.transformOrigin).toBe('right top');
+    expect(capturedDrawer.style.minHeight).toBe('');
+    expect(capturedDrawer.style.boxSizing).toBe('border-box');
   });
 
-  it('does not inline fixed width for plain flow content without an explicit layout context', () => {
+  it('does not inline computed width or min-height for plain flow content', () => {
     document.head.innerHTML = `
       <style>
         .runtime-copy {
@@ -167,7 +200,7 @@ describe('inlineComputedLayoutStyles', () => {
 
     const capturedCopy = capturedDoc.querySelector('div') as HTMLElement;
     expect(capturedCopy.style.width).toBe('');
-    expect(capturedCopy.style.minHeight).toBe('180px');
+    expect(capturedCopy.style.minHeight).toBe('');
     expect(capturedCopy.style.padding).toBe('12px 20px');
     expect(capturedCopy.style.boxSizing).toBe('border-box');
   });
@@ -198,8 +231,30 @@ describe('inlineComputedLayoutStyles', () => {
     const capturedPanel = capturedDoc.querySelector('section') as HTMLElement;
     expect(capturedPanel.style.padding).toBe('');
     expect(capturedPanel.style.paddingLeft).toBe('4px');
-    expect(capturedPanel.style.width).toBe('320px');
-    expect(capturedPanel.style.minHeight).toBe('180px');
+    expect(capturedPanel.style.width).toBe('');
+    expect(capturedPanel.style.minHeight).toBe('');
+    expect(capturedPanel.style.boxSizing).toBe('border-box');
+  });
+
+  it('does not inline transform-origin when the source element has no transform', () => {
+    document.head.innerHTML = `
+      <style>
+        .runtime-panel {
+          transform-origin: right top;
+          box-sizing: border-box;
+        }
+      </style>
+    `;
+    document.body.innerHTML = '<section class="runtime-panel">panel</section>';
+
+    const capturedDoc = document.implementation.createHTMLDocument('capture');
+    capturedDoc.body.innerHTML = `<section ${SOURCE_INDEX_ATTRIBUTE}="0">panel</section>`;
+
+    inlineComputedLayoutStyles(capturedDoc, document);
+
+    const capturedPanel = capturedDoc.querySelector('section') as HTMLElement;
+    expect(capturedPanel.style.transform).toBe('');
+    expect(capturedPanel.style.transformOrigin).toBe('');
     expect(capturedPanel.style.boxSizing).toBe('border-box');
   });
 });

@@ -89,7 +89,7 @@ describe('capture-core fixture', () => {
     expect(artifact.assets).toEqual([]);
   });
 
-  it('captures back-office table fixtures without preserving duplicate fixed columns or floating overlays', async () => {
+  it('captures back-office table fixtures while flattening realistic Element UI fixed columns', async () => {
     document.documentElement.innerHTML = `
       <head>
         <title>CRM Customer Manage</title>
@@ -104,35 +104,71 @@ describe('capture-core fixture', () => {
           <section class="business-pane">
             <div class="table-scroll">
               <div class="el-table el-table--scrollable-x">
+                <div class="el-table__header-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th class="el-table_2_column_5 is-hidden el-table__cell"></th>
+                        <th class="el-table_2_column_6 is-hidden el-table__cell"></th>
+                        <th class="el-table_2_column_7 is-hidden el-table__cell"></th>
+                        <th class="el-table_2_column_8 el-table__cell">客户系</th>
+                        <th class="el-table_2_column_91 is-hidden el-table__cell"></th>
+                      </tr>
+                    </thead>
+                  </table>
+                </div>
                 <div class="el-table__body-wrapper is-scrolling-middle">
                   <table>
                     <tbody>
                       <tr>
-                        <td>客户编码</td>
-                        <td>A2605260010</td>
-                        <td>青岛盛和货运代理有限公司</td>
-                        <td><a>编辑</a></td>
+                        <td class="el-table_2_column_5 is-hidden el-table__cell"></td>
+                        <td class="el-table_2_column_6 is-hidden el-table__cell"></td>
+                        <td class="el-table_2_column_7 is-hidden el-table__cell"></td>
+                        <td class="el-table_2_column_8 el-table__cell">客户系</td>
+                        <td class="el-table_2_column_91 is-hidden el-table__cell"></td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
                 <div class="el-table__fixed">
+                  <div class="el-table__fixed-header-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th class="el-table_2_column_5 el-table__cell"><div class="cell" style="width: 50px;">选择</div></th>
+                          <th class="el-table_2_column_6 el-table__cell"><div class="cell" style="width: 120px;">客户编码</div></th>
+                          <th class="el-table_2_column_7 el-table__cell"><div class="cell" style="width: 180px;">客户名称</div></th>
+                        </tr>
+                      </thead>
+                    </table>
+                  </div>
                   <div class="el-table__fixed-body-wrapper">
                     <table>
                       <tbody>
                         <tr>
-                          <td><label>选择列副本</label></td>
+                          <td class="el-table_2_column_5 el-table__cell"><div class="cell" style="width: 50px;"><label>选择列副本</label></div></td>
+                          <td class="el-table_2_column_6 el-table__cell"><div class="cell" style="width: 120px;">A2605260010</div></td>
+                          <td class="el-table_2_column_7 el-table__cell"><div class="cell" style="width: 180px;">青岛盛和货运代理有限公司</div></td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
                 </div>
                 <div class="el-table__fixed-right">
+                  <div class="el-table__fixed-header-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th class="el-table_2_column_91 el-table__cell"><div class="cell" style="width: 90px;">操作</div></th>
+                        </tr>
+                      </thead>
+                    </table>
+                  </div>
                   <div class="el-table__fixed-body-wrapper">
                     <table>
                       <tbody>
                         <tr>
-                          <td><a>编辑</a></td>
+                          <td class="el-table_2_column_91 el-table__cell"><div class="cell" style="width: 90px;"><a>编辑</a></div></td>
                         </tr>
                       </tbody>
                     </table>
@@ -161,5 +197,7 @@ describe('capture-core fixture', () => {
     expect(artifact.html).not.toContain('截图工具浮层');
     expect(artifact.html).not.toContain('el-table__fixed');
     expect(artifact.html).not.toContain('el-table__fixed-right');
+    expect(artifact.html).toContain('position: sticky; left: 0px;');
+    expect(artifact.html).toContain('position: sticky; right: 0px;');
   });
 });

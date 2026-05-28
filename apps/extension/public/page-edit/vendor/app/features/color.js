@@ -9,7 +9,7 @@ export function ColorPicker(pallete, selectorEngine) {
   const foregroundRoot    = foregroundPicker[0] ?? null
   const backgroundRoot    = backgroundPicker[0] ?? null
   const borderRoot        = borderPicker[0] ?? null
-  const hasPaletteUi      = !!(foregroundRoot && backgroundRoot && borderRoot)
+  const hasPaletteUi      = !!(foregroundRoot || backgroundRoot || borderRoot)
   const fgInput           = foregroundRoot ? $('input', foregroundRoot) : []
   const bgInput           = backgroundRoot ? $('input', backgroundRoot) : []
   const boInput           = borderRoot ? $('input', borderRoot) : []
@@ -29,7 +29,7 @@ export function ColorPicker(pallete, selectorEngine) {
   }
 
   if (!hasPaletteUi) {
-    selectorEngine.onSelectedUpdate(() => {})
+    selectorEngine?.onSelectedUpdate?.(() => {})
 
     return {
       getActive: () => undefined,
@@ -39,44 +39,50 @@ export function ColorPicker(pallete, selectorEngine) {
     }
   }
 
-  fgInput.on('input', ({target:{value}}) => {
-    selectorEngine.recordStyleMutation({
-      elements: state.elements,
-      label: 'color-foreground',
-      mutate: () => state.elements.map(el =>
-        el.style['color'] = value),
+  if (foregroundRoot) {
+    fgInput.on('input', ({target:{value}}) => {
+      selectorEngine.recordStyleMutation({
+        elements: state.elements,
+        label: 'color-foreground',
+        mutate: () => state.elements.map(el =>
+          el.style['color'] = value),
+      })
+
+      foregroundPicker[0]?.style.setProperty(`--contextual_color`, value)
     })
+  }
 
-    foregroundPicker[0].style.setProperty(`--contextual_color`, value)
-  })
+  if (backgroundRoot) {
+    bgInput.on('input', ({target:{value}}) => {
+      selectorEngine.recordStyleMutation({
+        elements: state.elements,
+        label: 'color-background',
+        mutate: () => state.elements.map(el =>
+          el.style[el instanceof SVGElement
+            ? 'fill'
+            : 'backgroundColor'
+          ] = value),
+      })
 
-  bgInput.on('input', ({target:{value}}) => {
-    selectorEngine.recordStyleMutation({
-      elements: state.elements,
-      label: 'color-background',
-      mutate: () => state.elements.map(el =>
-        el.style[el instanceof SVGElement
-          ? 'fill'
-          : 'backgroundColor'
-        ] = value),
+      backgroundPicker[0]?.style.setProperty(`--contextual_color`, value)
     })
+  }
 
-    backgroundPicker[0].style.setProperty(`--contextual_color`, value)
-  })
+  if (borderRoot) {
+    boInput.on('input', ({target:{value}}) => {
+      selectorEngine.recordStyleMutation({
+        elements: state.elements,
+        label: 'color-border',
+        mutate: () => state.elements.map(el =>
+          el.style[el instanceof SVGElement
+            ? 'stroke'
+            : 'borderColor'
+          ] = value),
+      })
 
-  boInput.on('input', ({target:{value}}) => {
-    selectorEngine.recordStyleMutation({
-      elements: state.elements,
-      label: 'color-border',
-      mutate: () => state.elements.map(el =>
-        el.style[el instanceof SVGElement
-          ? 'stroke'
-          : 'borderColor'
-        ] = value),
+      borderPicker[0]?.style.setProperty(`--contextual_color`, value)
     })
-
-    borderPicker[0].style.setProperty(`--contextual_color`, value)
-  })
+  }
 
   const extractColors = elements => {
     state.elements = elements
@@ -126,21 +132,21 @@ export function ColorPicker(pallete, selectorEngine) {
       const bg_icon = isMeaningfulBackground  ? healthyContrastColor(BG) : ''
       const bo_icon = isMeaningfulBorder      ? healthyContrastColor(BO) : ''
 
-      setPickerValue(fgInput[0], new_fg)
-      setPickerValue(bgInput[0], new_bg)
-      setPickerValue(boInput[0], new_bo)
+      if (fgInput[0]) setPickerValue(fgInput[0], new_fg)
+      if (bgInput[0]) setPickerValue(bgInput[0], new_bg)
+      if (boInput[0]) setPickerValue(boInput[0], new_bo)
 
-      foregroundPicker.attr('style', `
+      if (foregroundRoot) foregroundPicker.attr('style', `
         --contextual_color: ${new_fg};
         --icon_color: ${fg_icon};
       `)
 
-      backgroundPicker.attr('style', `
+      if (backgroundRoot) backgroundPicker.attr('style', `
         --contextual_color: ${new_bg};
         --icon_color: ${bg_icon};
       `)
 
-      borderPicker.attr('style', `
+      if (borderRoot) borderPicker.attr('style', `
         --contextual_color: ${new_bo};
         --icon_color: ${bo_icon};
       `)
@@ -148,19 +154,19 @@ export function ColorPicker(pallete, selectorEngine) {
     else {
       // show all 3 if they've selected more than 1 node
       // todo: this is giving up, and can be solved
-      foregroundPicker.attr('style', `
+      if (foregroundRoot) foregroundPicker.attr('style', `
         box-shadow: ${state.active_color == 'foreground' ? shadows.active : shadows.inactive};
         --contextual_color: transparent;
         --icon_color: hsla(0,0%,0%,80%);
       `)
 
-      backgroundPicker.attr('style', `
+      if (backgroundRoot) backgroundPicker.attr('style', `
         box-shadow: ${state.active_color == 'background' ? shadows.active : shadows.inactive};
         --contextual_color: transparent;
         --icon_color: hsla(0,0%,0%,80%);
       `)
 
-      borderPicker.attr('style', `
+      if (borderRoot) borderPicker.attr('style', `
         box-shadow: ${state.active_color == 'border' ? shadows.active : shadows.inactive};
         --contextual_color: transparent;
         --icon_color: hsla(0,0%,0%,80%);
@@ -176,18 +182,21 @@ export function ColorPicker(pallete, selectorEngine) {
     state.active_color = key
 
     if (key === 'foreground')
-      foregroundPicker[0].style.boxShadow = shadows.active
+      foregroundPicker[0]?.style && (foregroundPicker[0].style.boxShadow = shadows.active)
     if (key === 'background')
-      backgroundPicker[0].style.boxShadow = shadows.active
+      backgroundPicker[0]?.style && (backgroundPicker[0].style.boxShadow = shadows.active)
     if (key === 'border')
-      borderPicker[0].style.boxShadow = shadows.active
+      borderPicker[0]?.style && (borderPicker[0].style.boxShadow = shadows.active)
   }
 
   const removeActive = () =>
     [foregroundPicker, backgroundPicker, borderPicker].forEach(([picker]) =>
-      picker.style.boxShadow = shadows.inactive)
+      picker?.style && (picker.style.boxShadow = shadows.inactive))
 
-  selectorEngine.onSelectedUpdate(extractColors)
+  if (typeof selectorEngine.onSelectedUpdate === 'function')
+    selectorEngine.onSelectedUpdate(extractColors)
+  else
+    extractColors(selectorEngine.selection?.() ?? [])
 
   return {
     getActive,

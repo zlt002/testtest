@@ -362,7 +362,6 @@ function installBrowserMocks() {
     },
   });
 }
-
 describe('Chat active run restore', () => {
   beforeEach(() => {
     vi.clearAllMocks();

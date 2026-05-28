@@ -41,12 +41,8 @@ const POSITION_PROPERTIES = [
 
 const OVERFLOW_PROPERTIES = ['overflow-x', 'overflow-y'] as const;
 
-const BOX_MODEL_PROPERTIES = [
-  'width',
-  'min-height',
-  'padding',
-  'box-sizing',
-] as const;
+const BOX_MODEL_PROPERTIES = ['padding', 'box-sizing'] as const;
+const BACKDROP_PROPERTIES = ['background-color'] as const;
 
 const TRANSFORM_PROPERTIES = ['transform', 'transform-origin'] as const;
 
@@ -58,6 +54,7 @@ type ComputedProperty =
   | (typeof POSITION_PROPERTIES)[number]
   | (typeof OVERFLOW_PROPERTIES)[number]
   | (typeof BOX_MODEL_PROPERTIES)[number]
+  | (typeof BACKDROP_PROPERTIES)[number]
   | (typeof TRANSFORM_PROPERTIES)[number]
   | (typeof TEXT_LAYOUT_PROPERTIES)[number];
 
@@ -130,14 +127,16 @@ function shouldKeepProperty(property: ComputedProperty, value: string): boolean 
     case 'overflow-x':
     case 'overflow-y':
       return normalized !== 'visible';
-    case 'width':
-      return normalized !== 'auto';
-    case 'min-height':
-      return normalized !== '0px' && normalized !== '0';
     case 'padding':
       return normalized !== '0px' && normalized !== '0px 0px' && normalized !== '0px 0px 0px 0px';
     case 'box-sizing':
       return normalized !== 'content-box';
+    case 'background-color':
+      return (
+        normalized !== 'transparent' &&
+        normalized !== 'rgba(0, 0, 0, 0)' &&
+        normalized !== 'rgba(0,0,0,0)'
+      );
     case 'transform':
       return normalized !== 'none';
     case 'transform-origin':
@@ -205,7 +204,8 @@ function applyMinimalComputedLayoutStyle(target: Element, source: Element): void
   const overflowY = computedStyle.getPropertyValue('overflow-y').trim().toLowerCase() || 'visible';
   const transform = computedStyle.getPropertyValue('transform').trim().toLowerCase() || 'none';
 
-  copyComputedProperties(target, source, BOX_MODEL_PROPERTIES.filter((property) => property !== 'width'));
+  copyComputedProperties(target, source, BOX_MODEL_PROPERTIES);
+  copyComputedProperties(target, source, BACKDROP_PROPERTIES);
 
   if (FLEX_DISPLAY_VALUES.has(display)) {
     copyComputedProperties(target, source, FLEX_CONTAINER_PROPERTIES);
@@ -223,22 +223,10 @@ function applyMinimalComputedLayoutStyle(target: Element, source: Element): void
     copyComputedProperties(target, source, OVERFLOW_PROPERTIES);
   }
 
-  copyComputedProperties(target, source, TRANSFORM_PROPERTIES);
-  copyComputedProperties(target, source, TEXT_LAYOUT_PROPERTIES);
-
-  const hasExplicitWidthLayoutContext =
-    FLEX_DISPLAY_VALUES.has(display) ||
-    GRID_DISPLAY_VALUES.has(display) ||
-    position === 'sticky' ||
-    position === 'fixed' ||
-    position === 'absolute' ||
-    overflowX !== 'visible' ||
-    overflowY !== 'visible' ||
-    transform !== 'none';
-
-  if (hasExplicitWidthLayoutContext) {
-    copyComputedProperties(target, source, ['width']);
+  if (transform !== 'none') {
+    copyComputedProperties(target, source, TRANSFORM_PROPERTIES);
   }
+  copyComputedProperties(target, source, TEXT_LAYOUT_PROPERTIES);
 }
 
 export function inlineComputedLayoutStyles(capturedDoc: Document, originalDoc: Document): void {

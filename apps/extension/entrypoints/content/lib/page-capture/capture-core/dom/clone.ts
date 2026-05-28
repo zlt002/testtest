@@ -117,6 +117,15 @@ function cloneOpenShadowStyleNodes(source: Document, clone: Document): void {
   }
 }
 
+function cloneBodyChildNodes(source: Document, clone: Document): void {
+  const fragment = clone.createDocumentFragment();
+  for (const child of Array.from(source.body.childNodes)) {
+    fragment.append(clone.importNode(child, true));
+  }
+
+  clone.body.replaceChildren(fragment);
+}
+
 export function clonePageDocument(
   source: Document,
   options: ClonePageDocumentOptions = {}
@@ -141,7 +150,7 @@ export function clonePageDocument(
   clone.head.innerHTML = source.head.innerHTML;
   const markers = markSourceElements(source);
   try {
-    clone.body.innerHTML = source.body.innerHTML;
+    cloneBodyChildNodes(source, clone);
     cloneOpenShadowStyleNodes(source, clone);
   } finally {
     restoreSourceElementMarkers(markers);

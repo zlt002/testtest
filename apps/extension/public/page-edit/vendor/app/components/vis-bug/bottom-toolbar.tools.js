@@ -8,7 +8,7 @@ export const bottomToolbarTools = [
   { id: 'margin', label: '外边距', interactionType: 'direct', feature: 'margin', icon: Icons.margin },
   { id: 'flex', label: '弹性布局', interactionType: 'panel', feature: 'align', icon: Icons.align },
   { id: 'typography', label: '文本格式', interactionType: 'panel', feature: 'font', icon: Icons.font },
-  { id: 'surface-colors', label: '背景/边框颜色', interactionType: 'panel', feature: 'hueshift', icon: Icons.hueshift },
+  { id: 'background', label: '背景设置', interactionType: 'panel', feature: 'background', icon: Icons.color_background },
   { id: 'reorder', label: '顺序调整', interactionType: 'direct', feature: 'move', icon: Icons.move },
 ]
 

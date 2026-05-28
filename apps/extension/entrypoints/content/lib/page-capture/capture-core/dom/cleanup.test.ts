@@ -242,4 +242,32 @@ describe('capture-core cleanup', () => {
       true
     );
   });
+
+  it('removes known overlay widgets during cleanup while preserving the main business content', () => {
+    document.documentElement.innerHTML = `
+      <body>
+        <main class="customer-manage-page">
+          <section class="page-toolbar">客户管理列表</section>
+          <div class="feedback_tabs_main">我要建议</div>
+          <div id="INTELLIGENCE">帮助中心</div>
+          <div data-html2canvas-ignore="true">浮层引导</div>
+          <table>
+            <tbody>
+              <tr><td>佛山市泓声食品有限公司</td></tr>
+            </tbody>
+          </table>
+        </main>
+      </body>
+    `;
+
+    cleanupCapturedDocument(document);
+
+    expect(document.querySelector('.feedback_tabs_main')).toBeNull();
+    expect(document.getElementById('INTELLIGENCE')).toBeNull();
+    expect(document.querySelector('[data-html2canvas-ignore="true"]')).toBeNull();
+    expect(document.querySelector('.customer-manage-page')?.textContent).toContain('客户管理列表');
+    expect(document.querySelector('.customer-manage-page')?.textContent).toContain(
+      '佛山市泓声食品有限公司'
+    );
+  });
 });

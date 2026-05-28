@@ -107,7 +107,7 @@ describe('page-edit file save action', () => {
     expect(markup).toContain('data-bottom-tools');
     expect(markup).toContain('data-bottom-tool="content"');
     expect(markup).toContain('data-bottom-tool="move"');
-    expect(markup).toContain('data-bottom-tool="surface-colors"');
+    expect(markup).toContain('data-bottom-tool="background"');
     expect(markup).toContain('data-bottom-tool="reorder"');
     expect(markup).toContain('data-bottom-divider');
     expect(markup).not.toContain('data-toolbar-panel');
@@ -136,21 +136,33 @@ describe('page-edit file save action', () => {
     expect(markup).toContain('data-bottom-tool="move"');
     expect(markup).toContain('data-bottom-action="up-1"');
     expect(markup).toContain('data-bottom-action="width-plus-1"');
-    expect(markup).toContain('data-bottom-action="all-plus-1"');
-    expect(markup).toContain('data-bottom-color-target="background"');
+    expect(markup).toContain('data-spacing-panel="padding"');
+    expect(markup).toContain('data-spacing-panel="margin"');
+    expect(markup).toContain('data-spacing-input="vertical"');
+    expect(markup).toContain('data-spacing-input="horizontal"');
+    expect(markup).toContain('data-bottom-tool="background"');
+    expect(markup).toContain('data-background-inline-tool');
+    expect(markup).toContain('id="background"');
     expect(markup).toContain('data-typography-panel');
     expect(markup).toContain('data-typography-input="font-size"');
     expect(markup).toContain('data-typography-input="font-weight"');
     expect(markup).toContain('data-typography-input="line-height"');
     expect(markup).toContain('data-typography-input="letter-spacing"');
-    expect(markup).toMatch(/data-typography-input="font-size"[\s\S]*?readonly/);
-    expect(markup).toMatch(/data-typography-input="font-weight"[\s\S]*?readonly/);
+    expect(markup).not.toMatch(/data-typography-input="font-size"[\s\S]*?readonly/);
+    expect(markup).not.toMatch(/data-typography-input="font-weight"[\s\S]*?readonly/);
     expect(markup).toContain('data-typography-action="align-left"');
+    expect(markup).toContain('data-typography-action="align-center"');
+    expect(markup).toContain('data-typography-action="align-right"');
+    expect(markup).toContain('data-typography-action="align-justify"');
     expect(markup).toContain('data-bottom-action="align-left"');
     expect(markup).toContain('data-typography-action="font-bold"');
+    expect(markup).toContain('data-typography-action="font-italic"');
+    expect(markup).toContain('data-typography-action="font-underline"');
     expect(markup).toContain('data-bottom-action="font-bold"');
     expect(markup).toContain('data-typography-color-trigger');
     expect(markup).toContain('data-bottom-color-target="foreground"');
+    expect(markup).not.toContain('data-background-panel');
+    expect(markup).not.toContain('data-bottom-color-target="border"');
     expect(markup).not.toContain('data-bottom-action="font-plus-1"');
   });
 
@@ -235,6 +247,29 @@ describe('page-edit file save action', () => {
 
     expect(confirmSpy).toHaveBeenCalledOnce();
     expect(postMessageSpy).not.toHaveBeenCalled();
+  });
+
+  it('点击底部保存按钮时复用现有保存逻辑', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+    const visbug = new VisBug();
+    const saveSpy = vi.spyOn(visbug, 'saveCurrentFile').mockImplementation(() => undefined);
+
+    document.body.appendChild(visbug);
+
+    visbug.$shadow
+      .querySelector('button[data-action="save-file"]')
+      ?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(saveSpy).toHaveBeenCalledOnce();
+
+    visbug.remove();
   });
 
   it('inspector 模式会同时激活 position 拖动能力', async () => {

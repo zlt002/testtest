@@ -126,6 +126,30 @@ export const color_border = `
   </svg>
 `
 
+export const align_left = `
+  <svg viewBox="0 0 24 24">
+    <path d="M4 6h12v2H4zm0 5h16v2H4zm0 5h12v2H4z"/>
+  </svg>
+`
+
+export const align_center = `
+  <svg viewBox="0 0 24 24">
+    <path d="M6 6h12v2H6zm-2 5h16v2H4zm2 5h12v2H6z"/>
+  </svg>
+`
+
+export const align_right = `
+  <svg viewBox="0 0 24 24">
+    <path d="M8 6h12v2H8zM4 11h16v2H4zm4 5h12v2H8z"/>
+  </svg>
+`
+
+export const align_justify = `
+  <svg viewBox="0 0 24 24">
+    <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
+  </svg>
+`
+
 export const position = `
   <svg viewBox="0 0 24 24">
     <path d="M15.54 5.54L13.77 7.3 12 5.54 10.23 7.3 8.46 5.54 12 2zm2.92 10l-1.76-1.77L18.46 12l-1.76-1.77 1.76-1.77L22 12zm-10 2.92l1.77-1.76L12 18.46l1.77-1.76 1.77 1.76L12 22zm-2.92-10l1.76 1.77L5.54 12l1.76 1.77-1.76 1.77L2 12z"/>

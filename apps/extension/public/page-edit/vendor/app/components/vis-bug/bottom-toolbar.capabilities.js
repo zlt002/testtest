@@ -65,7 +65,7 @@ export function canEditTypography(node) {
   return disabled('当前元素当前没有可调整的文本格式')
 }
 
-export function canEditSurfaceColors(node) {
+export function canEditBackground(node) {
   if (!isElementNode(node)) return disabled('当前没有选中元素')
   return enabled()
 }
@@ -86,7 +86,7 @@ export function getBottomToolbarAvailability(node) {
     margin: canAdjustMargin(node),
     flex: canEditFlex(node),
     typography: canEditTypography(node),
-    'surface-colors': canEditSurfaceColors(node),
+    background: canEditBackground(node),
     reorder: canReorder(node),
   }
 }

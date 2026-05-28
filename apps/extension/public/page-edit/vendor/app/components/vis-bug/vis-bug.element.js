@@ -31,6 +31,10 @@ import {
   changeFontWeight,
   changeLeading,
   changeKerning,
+  setFontSize,
+  setFontWeight,
+  setLineHeight,
+  setLetterSpacing,
 } from '../../features/font.js'
 import {
   changeDirection,
@@ -114,9 +118,14 @@ export default class VisBug extends HTMLElement {
     this._bottomToolbarState = {
       activeSubtool: null,
     }
+    this._handleDocumentPointerDown = null
     this._typographyPanelDraft = {
       values: {},
       advancedOpen: false,
+    }
+    this._spacingPanelDraft = {
+      padding: { mode: null },
+      margin: { mode: null },
     }
   }
 
@@ -150,7 +159,7 @@ export default class VisBug extends HTMLElement {
     runCleanupStep('annotation_unsubscribe', () => this._annotationStateUnsubscribe?.())
     this._annotationStateUnsubscribe = null
     runCleanupStep('annotation_ui', () => clearSelectionAnnotationUi())
-    runCleanupStep('selector_disconnect', () => this.selectorEngine?.disconnect())
+    runCleanupStep('selector_disconnect', () => this.selectorEngine?.disconnect?.())
     runCleanupStep('hotkeys', () =>
       hotkeys.unbind(
         Object.keys(this.toolbar_model).reduce((events, key) =>
@@ -161,8 +170,20 @@ export default class VisBug extends HTMLElement {
   setup() {
     this.$shadow.innerHTML = this.render()
     this._colormode = modemap['hsla']
+    this.bindToolbarActionButtons()
     this.bindBottomToolbarEvents()
+    this.bindGlobalBottomToolbarEvents()
 
+    this.enableSnapshotToolbarDragging()
+
+    hotkeys(`${metaKey}+/,${metaKey}+.`, e =>
+      this.$shadow.host.style.display =
+        this.$shadow.host.style.display === 'none'
+      ? 'block'
+          : 'none')
+  }
+
+  bindToolbarActionButtons() {
     $('button[data-action="save-file"]', this.$shadow).on('click', e => {
       e.preventDefault()
       e.stopPropagation()
@@ -186,14 +207,6 @@ export default class VisBug extends HTMLElement {
       e.stopPropagation()
       this.toggleAnnotationMarkers()
     })
-
-    this.enableSnapshotToolbarDragging()
-
-    hotkeys(`${metaKey}+/,${metaKey}+.`, e =>
-      this.$shadow.host.style.display =
-        this.$shadow.host.style.display === 'none'
-          ? 'block'
-          : 'none')
   }
 
   bindBottomToolbarEvents() {
@@ -220,6 +233,93 @@ export default class VisBug extends HTMLElement {
       this.colorPicker?.setActive?.(e.currentTarget.dataset.bottomColorTarget)
       this.refreshLocalSnapshotToolbar()
     })
+
+    this.$shadow
+      .querySelectorAll('#background input[type="color"]')
+      .forEach(input => {
+        input.addEventListener('click', event => {
+          event.stopPropagation()
+          this.colorPicker?.setActive?.('background')
+        })
+
+        input.addEventListener('input', event => {
+          event.stopPropagation()
+          this.colorPicker?.setActive?.('background')
+        })
+      })
+
+    this.$shadow
+      .querySelectorAll('input[data-typography-input]')
+      .forEach(input => {
+        input.addEventListener('keydown', event => {
+          if (event.key !== 'Enter') return
+
+          event.preventDefault()
+          this.handleTypographyInputCommit(
+            event.currentTarget?.dataset?.typographyInput,
+            event.currentTarget?.value,
+          )
+        })
+
+        input.addEventListener('blur', event => {
+          this.handleTypographyInputCommit(
+            event.currentTarget?.dataset?.typographyInput,
+            event.currentTarget?.value,
+          )
+        })
+      })
+
+    this.$shadow
+      .querySelectorAll('input[data-spacing-input]')
+      .forEach(input => {
+        input.addEventListener('keydown', event => {
+          if (event.key !== 'Enter') return
+
+          event.preventDefault()
+          this.handleSpacingInputCommit(
+            input.dataset.spacingKind,
+            input.dataset.spacingInput,
+            input.value,
+          )
+        })
+
+        input.addEventListener('blur', () => {
+          this.handleSpacingInputCommit(
+            input.dataset.spacingKind,
+            input.dataset.spacingInput,
+            input.value,
+          )
+        })
+      })
+
+    $('button[data-spacing-toggle]', this.$shadow).on('click', e => {
+      e.preventDefault()
+      e.stopPropagation()
+      this.toggleSpacingPanelMode(e.currentTarget.dataset.spacingToggle)
+    })
+  }
+
+  bindGlobalBottomToolbarEvents() {
+    if (!this.isLocalSnapshotWorkbench()) return
+    if (this._handleDocumentPointerDown) return
+
+    this._handleDocumentPointerDown = event => {
+      if (!this._bottomToolbarState?.activeSubtool) return
+
+      const eventPath = typeof event.composedPath === 'function'
+        ? event.composedPath()
+        : []
+
+      if (eventPath.includes(this)) return
+
+      this._bottomToolbarState = {
+        ...(this._bottomToolbarState || {}),
+        activeSubtool: null,
+      }
+      this.refreshLocalSnapshotToolbar()
+    }
+
+    document.addEventListener('pointerdown', this._handleDocumentPointerDown, true)
   }
 
   enableSnapshotToolbarDragging() {
@@ -243,11 +343,18 @@ export default class VisBug extends HTMLElement {
     if (!this.isLocalSnapshotWorkbench()) return
 
     this.$shadow.innerHTML = this.render()
+    this.colorPicker = ColorPicker(this.$shadow, this.selectorEngine)
+    this.bindToolbarActionButtons()
     this.bindBottomToolbarEvents()
     this.enableSnapshotToolbarDragging()
   }
 
   cleanup() {
+    if (this._handleDocumentPointerDown) {
+      document.removeEventListener('pointerdown', this._handleDocumentPointerDown, true)
+      this._handleDocumentPointerDown = null
+    }
+
     const bye = [
       ...document.getElementsByTagName('visbug-hover'),
       ...document.getElementsByTagName('visbug-handles'),
@@ -464,11 +571,7 @@ export default class VisBug extends HTMLElement {
         ]
       case 'padding':
       case 'margin':
-        return [
-          [{ id: 'up-plus-1', label: '上 +1' }, { id: 'up-minus-1', label: '上 -1' }, { id: 'right-plus-1', label: '右 +1' }, { id: 'right-minus-1', label: '右 -1' }],
-          [{ id: 'down-plus-1', label: '下 +1' }, { id: 'down-minus-1', label: '下 -1' }, { id: 'left-plus-1', label: '左 +1' }, { id: 'left-minus-1', label: '左 -1' }],
-          [{ id: 'all-plus-1', label: '四边 +1' }, { id: 'all-minus-1', label: '四边 -1' }, { id: 'all-plus-10', label: '四边 +10' }, { id: 'all-minus-10', label: '四边 -10' }],
-        ]
+        return []
       case 'flex':
         return [
           [{ id: 'direction-row', label: '横向' }, { id: 'direction-column', label: '纵向' }, { id: 'wrap-on', label: '换行' }, { id: 'wrap-off', label: '不换行' }],
@@ -480,14 +583,9 @@ export default class VisBug extends HTMLElement {
           [{ id: 'font-plus-1', label: '字号 +1' }, { id: 'font-minus-1', label: '字号 -1' }, { id: 'font-plus-10', label: '字号 +10' }, { id: 'font-minus-10', label: '字号 -10' }],
           [{ id: 'weight-plus', label: '字重 +100' }, { id: 'weight-minus', label: '字重 -100' }, { id: 'leading-plus', label: '行高 +1' }, { id: 'leading-minus', label: '行高 -1' }],
           [{ id: 'align-left', label: '左对齐' }, { id: 'align-center', label: '居中' }, { id: 'align-right', label: '右对齐' }, { id: 'kerning-plus', label: '字距 +0.1' }, { id: 'kerning-minus', label: '字距 -0.1' }],
-          [{ id: 'hue-plus', label: '色相 +1' }, { id: 'hue-minus', label: '色相 -1' }, { id: 'light-plus', label: '亮度 +1%' }, { id: 'light-minus', label: '亮度 -1%' }],
-          [{ id: 'sat-plus', label: '饱和 +1%' }, { id: 'sat-minus', label: '饱和 -1%' }, { id: 'alpha-plus', label: '透明 +1%' }, { id: 'alpha-minus', label: '透明 -1%' }],
         ]
-      case 'surface-colors':
-        return [
-          [{ id: 'hue-plus', label: '色相 +1' }, { id: 'hue-minus', label: '色相 -1' }, { id: 'light-plus', label: '亮度 +1%' }, { id: 'light-minus', label: '亮度 -1%' }],
-          [{ id: 'sat-plus', label: '饱和 +1%' }, { id: 'sat-minus', label: '饱和 -1%' }, { id: 'alpha-plus', label: '透明 +1%' }, { id: 'alpha-minus', label: '透明 -1%' }],
-        ]
+      case 'background':
+        return []
       case 'reorder':
         return [[{ id: 'move-left', label: '前移' }, { id: 'move-right', label: '后移' }]]
       default:
@@ -500,6 +598,7 @@ export default class VisBug extends HTMLElement {
       return `
         <section data-bottom-toolbar="idle">
           <div data-bottom-toolbar-hint>点击页面元素开始编辑</div>
+          ${this.renderBottomToolbarActions()}
         </section>
       `
     }
@@ -514,7 +613,27 @@ export default class VisBug extends HTMLElement {
             ${this.renderBottomToolbarTool(tool)}
           `).join('')}
         </nav>
+        ${this.renderBottomToolbarActions()}
       </section>
+    `
+  }
+
+  renderBottomToolbarActions() {
+    if (!this.isLocalSnapshotWorkbench()) return ''
+
+    return `
+      <div data-bottom-toolbar-actions>
+        <span data-bottom-divider aria-hidden="true"></span>
+        <button
+          type="button"
+          data-action="save-file"
+          data-bottom-toolbar-action="save"
+          aria-label="保存当前文件"
+          title="保存当前文件"
+        >
+          <span class="tool-icon">${Icons.save}</span>
+        </button>
+      </div>
     `
   }
 
@@ -525,25 +644,30 @@ export default class VisBug extends HTMLElement {
     }
     const isDisabled = availability.available === false
     const disabledReason = availability.reason || tool.label
-    const isActive = this._bottomToolbarState?.activeSubtool
-      ? this._bottomToolbarState.activeSubtool === tool.id
-      : this.activeTool === tool.feature
+    const isActive = tool.id === 'background'
+      ? this.colorPicker?.getActive?.() === 'background'
+      : this._bottomToolbarState?.activeSubtool === tool.id
     const actionRows = this.getBottomToolbarToolActions(tool.id)
 
     return `
-      <div data-bottom-tool-item data-tool-id="${tool.id}">
-        <button
-          type="button"
-          data-bottom-tool="${tool.id}"
-          data-tool="${tool.feature}"
-          data-active="${isActive ? 'true' : 'false'}"
-          data-disabled="${isDisabled ? 'true' : 'false'}"
-          aria-disabled="${isDisabled ? 'true' : 'false'}"
-          aria-label="${tool.label}"
-          title="${isDisabled ? disabledReason : tool.label}"
-        >
-          <span class="tool-icon">${tool.icon}</span>
-        </button>
+      <div data-bottom-tool-item data-tool-id="${tool.id}" data-open="${isActive ? 'true' : 'false'}">
+        ${tool.id === 'background' && !isDisabled
+          ? this.renderInlineBackgroundTool(tool, isActive)
+          : `
+            <button
+              type="button"
+              data-bottom-tool="${tool.id}"
+              data-tool="${tool.feature}"
+              data-active="${isActive ? 'true' : 'false'}"
+              data-disabled="${isDisabled ? 'true' : 'false'}"
+              aria-disabled="${isDisabled ? 'true' : 'false'}"
+              aria-expanded="${isActive ? 'true' : 'false'}"
+              aria-label="${tool.label}"
+              title="${isDisabled ? disabledReason : tool.label}"
+            >
+              <span class="tool-icon">${tool.icon}</span>
+            </button>
+          `}
         ${isDisabled
           ? `
             <div data-bottom-tooltip role="tooltip">${disabledReason}</div>
@@ -551,14 +675,42 @@ export default class VisBug extends HTMLElement {
           : `
             ${tool.id === 'typography'
               ? this.renderTypographyPanel()
-              : tool.id === 'surface-colors'
-                ? this.renderSurfaceColorPanel()
+              : tool.id === 'padding' || tool.id === 'margin'
+                ? this.renderSpacingPanel(tool.id)
+              : tool.id === 'background'
+                ? ''
                 : `
-                  <div data-bottom-menu>
-                    ${this.renderBottomToolbarActionRows(tool.id)}
-                  </div>
-                `}
+                <div data-bottom-menu>
+                  ${this.renderBottomToolbarActionRows(tool.id)}
+                </div>
+              `}
           `}
+      </div>
+    `
+  }
+
+  renderInlineBackgroundTool(tool, isActive = false) {
+    return `
+      <div
+        id="background"
+        data-background-inline-tool
+        style="--background-tool-color:${this.colorPicker?.background?.color ? 'var(--contextual_color, transparent)' : 'transparent'}"
+      >
+        <button
+          type="button"
+          data-bottom-tool="${tool.id}"
+          data-tool="${tool.feature}"
+          data-active="${isActive ? 'true' : 'false'}"
+          data-disabled="false"
+          aria-disabled="false"
+          aria-expanded="false"
+          aria-label="${tool.label}"
+          title="${tool.label}"
+        >
+          <span class="tool-icon">${tool.icon}</span>
+          <span data-background-tool-swatch></span>
+        </button>
+        <input type="color" aria-label="背景颜色">
       </div>
     `
   }
@@ -578,36 +730,93 @@ export default class VisBug extends HTMLElement {
     `).join('')
   }
 
-  renderBottomToolbarColorTargets(toolId = 'surface-colors') {
-    const activeTarget = this.colorPicker?.getActive?.()
-      || (toolId === 'typography' ? 'foreground' : 'background')
-    const targets = toolId === 'typography'
-      ? [{ id: 'foreground', label: '文字' }]
-      : [
-          { id: 'background', label: '背景' },
-          { id: 'border', label: '边框' },
-        ]
+  getSpacingPanelState(kind) {
+    const [selectedElement] = this.selectorEngine?.selection?.() ?? []
+    const defaultValues = {
+      top: '',
+      right: '',
+      bottom: '',
+      left: '',
+      vertical: '',
+      horizontal: '',
+    }
+    const draft = this._spacingPanelDraft?.[kind] ?? { mode: null }
+
+    if (!(selectedElement instanceof Element)) {
+      return {
+        values: defaultValues,
+        mode: draft.mode || 'linked',
+      }
+    }
+
+    const computedStyle = getComputedStyle(selectedElement)
+    const top = computedStyle[`${kind}Top`] || ''
+    const right = computedStyle[`${kind}Right`] || ''
+    const bottom = computedStyle[`${kind}Bottom`] || ''
+    const left = computedStyle[`${kind}Left`] || ''
+    const symmetricVertical = top === bottom
+    const symmetricHorizontal = right === left
+
+    return {
+      values: {
+        top,
+        right,
+        bottom,
+        left,
+        vertical: symmetricVertical ? top : '',
+        horizontal: symmetricHorizontal ? right : '',
+      },
+      mode: draft.mode || (symmetricVertical && symmetricHorizontal ? 'linked' : 'split'),
+    }
+  }
+
+  renderSpacingPanel(kind) {
+    const state = this.getSpacingPanelState(kind)
+    const title = kind === 'padding' ? '内边距' : '外边距'
+    const isSplit = state.mode === 'split'
 
     return `
-      <div data-bottom-menu-row data-color-targets>
-        ${targets.map(target => `
+      <div data-bottom-menu data-spacing-panel="${kind}">
+        <div data-spacing-header>
+          <strong data-spacing-title>${title}</strong>
           <button
             type="button"
-            data-bottom-color-target="${target.id}"
-            data-active="${activeTarget === target.id ? 'true' : 'false'}"
-            title="${target.label}"
-          >${target.label}</button>
-        `).join('')}
+            data-spacing-toggle="${kind}"
+            data-mode="${state.mode}"
+            title="${isSplit ? '切换为上下/左右' : '切换为单边'}"
+          >${isSplit ? '四边' : '上下/左右'}</button>
+        </div>
+        ${isSplit
+          ? `
+            <div data-spacing-grid="split">
+              ${this.renderSpacingInput(kind, 'top', '上', state.values.top)}
+              ${this.renderSpacingInput(kind, 'right', '右', state.values.right)}
+              ${this.renderSpacingInput(kind, 'bottom', '下', state.values.bottom)}
+              ${this.renderSpacingInput(kind, 'left', '左', state.values.left)}
+            </div>
+          `
+          : `
+            <div data-spacing-grid="linked">
+              ${this.renderSpacingInput(kind, 'vertical', '上下', state.values.vertical)}
+              ${this.renderSpacingInput(kind, 'horizontal', '左右', state.values.horizontal)}
+            </div>
+          `}
       </div>
     `
   }
 
-  renderSurfaceColorPanel() {
+  renderSpacingInput(kind, field, label, value = '') {
     return `
-      <div data-bottom-menu>
-        ${this.renderBottomToolbarColorTargets('surface-colors')}
-        ${this.renderBottomToolbarActionRows('surface-colors')}
-      </div>
+      <label data-spacing-field="${field}">
+        <span>${label}</span>
+        <input
+          type="text"
+          data-spacing-kind="${kind}"
+          data-spacing-input="${field}"
+          value="${value}"
+          aria-label="${label}"
+        >
+      </label>
     `
   }
 
@@ -652,6 +861,8 @@ export default class VisBug extends HTMLElement {
   }
   renderTypographyPanel() {
     const { values } = this.getTypographyPanelState()
+    const textAlign = values.textAlign || 'left'
+    const activeColor = values.foreground || 'transparent'
 
     return `
       <div data-bottom-menu data-typography-panel>
@@ -661,15 +872,37 @@ export default class VisBug extends HTMLElement {
           ${this.renderTypographyInput('line-height', '行高', values.lineHeight)}
           ${this.renderTypographyInput('letter-spacing', '字距', values.letterSpacing)}
         </div>
-        <div data-bottom-menu-row data-typography-actions>
-          ${this.renderTypographyAction('align-left', '左对齐')}
-          ${this.renderTypographyAction('font-bold', '加粗')}
-          <button
-            type="button"
-            data-typography-color-trigger
-            data-bottom-color-target="foreground"
-            title="文字颜色"
-          >颜色</button>
+        <div data-bottom-menu-row data-typography-action-groups>
+          <div data-typography-group data-typography-group="align" aria-label="文本对齐">
+            ${this.renderTypographyAction('align-left', '左对齐', Icons.align_left, textAlign === 'left' || textAlign === 'start')}
+            ${this.renderTypographyAction('align-center', '居中对齐', Icons.align_center, textAlign === 'center')}
+            ${this.renderTypographyAction('align-right', '右对齐', Icons.align_right, textAlign === 'right' || textAlign === 'end')}
+            ${this.renderTypographyAction('align-justify', '两端对齐', Icons.align_justify, textAlign === 'justify')}
+          </div>
+          <div data-typography-group data-typography-group="style" aria-label="字形强调">
+            ${this.renderTypographyAction('font-bold', '加粗', '<span data-typography-glyph data-variant="bold">B</span>', values.bold)}
+            ${this.renderTypographyAction('font-italic', '斜体', '<span data-typography-glyph data-variant="italic">I</span>', values.italic)}
+            ${this.renderTypographyAction('font-underline', '下划线', '<span data-typography-glyph data-variant="underline">U</span>', values.underline)}
+          </div>
+          <div class="toolbar-color-entry" data-typography-color-entry>
+            <button
+              type="button"
+              data-typography-color-trigger
+              data-bottom-color-target="foreground"
+              data-active="${this.colorPicker?.getActive?.() === 'foreground' ? 'true' : 'false'}"
+              style="--typography-color:${activeColor}"
+              title="文字颜色"
+            >
+              <span data-typography-color-icon>${Icons.color_text}</span>
+              <span data-typography-color-swatch></span>
+            </button>
+            <ol colors class="toolbar-colors" data-typography-color-palette>
+              <li class="color" id="foreground" aria-label="文字颜色" aria-description="修改文字颜色">
+                <input type="color">
+                ${Icons.color_text}
+              </li>
+            </ol>
+          </div>
         </div>
       </div>
     `
@@ -684,22 +917,197 @@ export default class VisBug extends HTMLElement {
           data-typography-input="${inputId}"
           value="${value}"
           aria-label="${label}"
-          readonly
         >
       </label>
     `
   }
 
-  renderTypographyAction(actionId, label) {
+  renderTypographyAction(actionId, label, content, isActive = false) {
     return `
       <button
         type="button"
         data-typography-action="${actionId}"
         data-bottom-action="${actionId}"
         data-tool-id="typography"
+        data-active="${isActive ? 'true' : 'false'}"
         title="${label}"
-      >${label}</button>
+      >${content}</button>
     `
+  }
+
+  normalizeTypographyInputValue(field, rawValue, fallbackValue = '') {
+    const value = String(rawValue ?? '').trim()
+    const fallback = String(fallbackValue ?? '')
+    const parsedValue = Number.parseFloat(value)
+
+    switch (field) {
+      case 'font-size':
+        if (!Number.isNaN(parsedValue) && parsedValue >= 6)
+          return `${parsedValue}px`
+        return fallback
+      case 'font-weight':
+        if (
+          !Number.isNaN(parsedValue) &&
+          parsedValue >= 100 &&
+          parsedValue <= 900 &&
+          parsedValue % 100 === 0
+        )
+          return String(parsedValue)
+        return fallback
+      case 'line-height':
+        if (!Number.isNaN(parsedValue) && parsedValue > 0)
+          return `${parsedValue}px`
+        return fallback
+      case 'letter-spacing':
+        if (!Number.isNaN(parsedValue) && parsedValue >= -2)
+          return `${parsedValue}px`
+        return fallback
+      default:
+        return fallback
+    }
+  }
+
+  normalizeSpacingInputValue(kind, field, rawValue, fallbackValue = '') {
+    const value = String(rawValue ?? '').trim()
+    const fallback = String(fallbackValue ?? '')
+    const parsedValue = Number.parseFloat(value)
+
+    if (Number.isNaN(parsedValue))
+      return fallback
+
+    if (kind === 'padding' && parsedValue < 0)
+      return fallback
+
+    return `${parsedValue}px`
+  }
+
+  getTypographyInputFallbackValue(field, selectedElement) {
+    if (!(selectedElement instanceof Element)) return ''
+
+    const computedStyle = getComputedStyle(selectedElement)
+    const typographyValues = {
+      'font-size': computedStyle.fontSize || '',
+      'font-weight': computedStyle.fontWeight || '',
+      'line-height': computedStyle.lineHeight || '',
+      'letter-spacing': computedStyle.letterSpacing || '',
+    }
+
+    return typographyValues[field] || ''
+  }
+
+  getSpacingInputFallbackValue(kind, field, selectedElement) {
+    if (!(selectedElement instanceof Element)) return ''
+
+    const computedStyle = getComputedStyle(selectedElement)
+    const top = computedStyle[`${kind}Top`] || ''
+    const right = computedStyle[`${kind}Right`] || ''
+    const bottom = computedStyle[`${kind}Bottom`] || ''
+    const left = computedStyle[`${kind}Left`] || ''
+
+    const spacingValues = {
+      top,
+      right,
+      bottom,
+      left,
+      vertical: top === bottom ? top : '',
+      horizontal: right === left ? right : '',
+    }
+
+    return spacingValues[field] || ''
+  }
+
+  handleTypographyInputCommit(field, rawValue) {
+    if (typeof field !== 'string' || !field) return
+
+    const selectedNodes = this.selectorEngine?.selection?.() ?? []
+    const [selectedElement] = selectedNodes
+    const fallbackValue = this.getTypographyInputFallbackValue(field, selectedElement)
+    const normalizedValue = this.normalizeTypographyInputValue(field, rawValue, fallbackValue)
+    const input = this.$shadow?.querySelector(`input[data-typography-input="${field}"]`)
+
+    if (input) input.value = normalizedValue
+    if (!selectedNodes.length || normalizedValue === fallbackValue) {
+      this.refreshLocalSnapshotToolbar()
+      return
+    }
+
+    const typographySetters = {
+      'font-size': () => setFontSize(selectedNodes, normalizedValue),
+      'font-weight': () => setFontWeight(selectedNodes, normalizedValue),
+      'line-height': () => setLineHeight(selectedNodes, normalizedValue),
+      'letter-spacing': () => setLetterSpacing(selectedNodes, normalizedValue),
+    }
+
+    const mutate = typographySetters[field]
+    if (!mutate) return
+
+    this.applySelectedStyleMutation(`font:${field}`, mutate)
+    this.refreshLocalSnapshotToolbar()
+  }
+
+  handleSpacingInputCommit(kind, field, rawValue) {
+    if (!['padding', 'margin'].includes(kind) || typeof field !== 'string' || !field) return
+
+    const selectedNodes = this.selectorEngine?.selection?.() ?? []
+    const [selectedElement] = selectedNodes
+    const fallbackValue = this.getSpacingInputFallbackValue(kind, field, selectedElement)
+    const normalizedValue = this.normalizeSpacingInputValue(kind, field, rawValue, fallbackValue)
+    const input = this.$shadow?.querySelector(
+      `input[data-spacing-kind="${kind}"][data-spacing-input="${field}"]`,
+    )
+
+    if (input) input.value = normalizedValue
+    if (!selectedNodes.length || normalizedValue === fallbackValue) {
+      this.refreshLocalSnapshotToolbar()
+      return
+    }
+
+    const styleKeys = {
+      top: `${kind}Top`,
+      right: `${kind}Right`,
+      bottom: `${kind}Bottom`,
+      left: `${kind}Left`,
+    }
+
+    this.applySelectedStyleMutation(`${kind}:${field}`, () => {
+      selectedNodes.forEach(node => {
+        if (!(node instanceof HTMLElement || node instanceof SVGElement)) return
+
+        if (field === 'vertical') {
+          node.style[styleKeys.top] = normalizedValue
+          node.style[styleKeys.bottom] = normalizedValue
+          return
+        }
+
+        if (field === 'horizontal') {
+          node.style[styleKeys.right] = normalizedValue
+          node.style[styleKeys.left] = normalizedValue
+          return
+        }
+
+        node.style[styleKeys[field]] = normalizedValue
+      })
+    })
+
+    this.refreshLocalSnapshotToolbar()
+  }
+
+  toggleSpacingPanelMode(kind) {
+    if (!['padding', 'margin'].includes(kind)) return
+
+    const currentMode = this.getSpacingPanelState(kind).mode
+    this._spacingPanelDraft = {
+      ...(this._spacingPanelDraft || {}),
+      [kind]: {
+        ...(this._spacingPanelDraft?.[kind] || {}),
+        mode: currentMode === 'split' ? 'linked' : 'split',
+      },
+    }
+    this._bottomToolbarState = {
+      ...(this._bottomToolbarState || {}),
+      activeSubtool: kind,
+    }
+    this.refreshLocalSnapshotToolbar()
   }
 
   activateBottomToolbarTool(toolId) {
@@ -707,13 +1115,23 @@ export default class VisBug extends HTMLElement {
     const availability = this.getSelectedBottomToolbarAvailability()?.[toolId]
     if (!tool || availability?.available === false) return
 
+    if (this._bottomToolbarState?.activeSubtool === tool.id) {
+      this._bottomToolbarState = {
+        ...(this._bottomToolbarState || {}),
+        activeSubtool: null,
+      }
+      this.refreshLocalSnapshotToolbar()
+      return
+    }
+
     this.syncBottomToolbarColorTarget(toolId)
     this._bottomToolbarState = {
       ...(this._bottomToolbarState || {}),
       activeSubtool: tool.id,
     }
 
-    this.activateTool(tool.feature)
+    if (toolId !== 'background')
+      this.activateTool(tool.feature)
     this.refreshLocalSnapshotToolbar()
   }
 
@@ -729,7 +1147,8 @@ export default class VisBug extends HTMLElement {
       activeSubtool: tool.id,
     }
 
-    this.activateTool(tool.feature)
+    if (toolId !== 'background')
+      this.activateTool(tool.feature)
 
     if (toolId === 'content') {
       this.refreshLocalSnapshotToolbar()
@@ -759,9 +1178,6 @@ export default class VisBug extends HTMLElement {
           this.adjustFlexLayout(selectedNodes, actionId))
       case 'typography':
         return this.applyTypographyMutation(selectedNodes, actionId)
-      case 'surface-colors':
-        return this.applySelectedStyleMutation(`color:${actionId}`, () =>
-          this.adjustSelectedColors(selectedNodes, actionId))
       case 'reorder':
         return this.moveSelectedElements(selectedNodes, actionId)
     }
@@ -946,11 +1362,24 @@ export default class VisBug extends HTMLElement {
           : computedWeight
         element.style.fontWeight = currentWeight >= 600 ? '400' : '700'
       }),
+      'font-italic': () => elements.forEach(element => {
+        const currentStyle = getComputedStyle(element).fontStyle || element.style.fontStyle
+        element.style.fontStyle = currentStyle === 'italic' ? 'normal' : 'italic'
+      }),
+      'font-underline': () => elements.forEach(element => {
+        const currentDecoration = getComputedStyle(element).textDecorationLine
+          || element.style.textDecorationLine
+          || element.style.textDecoration
+        element.style.textDecoration = currentDecoration.includes('underline')
+          ? 'none'
+          : 'underline'
+      }),
       'leading-plus': () => changeLeading(elements, 'shift+up'),
       'leading-minus': () => changeLeading(elements, 'shift+down'),
       'align-left': () => elements.forEach(element => { element.style.textAlign = 'left' }),
       'align-center': () => elements.forEach(element => { element.style.textAlign = 'center' }),
       'align-right': () => elements.forEach(element => { element.style.textAlign = 'right' }),
+      'align-justify': () => elements.forEach(element => { element.style.textAlign = 'justify' }),
       'kerning-plus': () => changeKerning(elements, 'right'),
       'kerning-minus': () => changeKerning(elements, 'left'),
     }
@@ -978,14 +1407,15 @@ export default class VisBug extends HTMLElement {
 
   syncBottomToolbarColorTarget(toolId) {
     if (toolId === 'typography') {
-      this.colorPicker?.setActive?.('foreground')
+      const activeTarget = this.colorPicker?.getActive?.()
+      if (activeTarget !== 'foreground')
+        this.colorPicker?.setActive?.('foreground')
       return
     }
 
-    if (toolId !== 'surface-colors') return
-
+    if (toolId !== 'background') return
     const activeTarget = this.colorPicker?.getActive?.()
-    if (activeTarget !== 'background' && activeTarget !== 'border')
+    if (activeTarget !== 'background')
       this.colorPicker?.setActive?.('background')
   }
 

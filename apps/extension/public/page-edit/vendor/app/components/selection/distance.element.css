@@ -77,7 +77,7 @@
 
 :host > figure {
   margin: 0;
-  position: absolute;
+  position: fixed;
   height: var(--distance-h);
   width: var(--distance-w);
   top: var(--top);

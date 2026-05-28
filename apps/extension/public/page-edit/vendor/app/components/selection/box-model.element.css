@@ -1,6 +1,6 @@
 :host [mask] {
   pointer-events: none;
-  position: absolute;
+  position: fixed;
   z-index: var(--layer-5);
   width: var(--width);
   height: var(--height);

@@ -32,6 +32,7 @@ import {
 } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
 import { AgentComposer } from '@/entrypoints/sidepanel/components/agent-composer/AgentComposer';
 import { AssistantBubble } from '@/entrypoints/sidepanel/components/chat/AssistantBubble';
 import { SystemUpdateEntry } from '@/entrypoints/sidepanel/components/settings/SystemUpdateEntry';
@@ -136,6 +137,12 @@ import {
   reloadHtmlBrowserPreview,
 } from '../lib/file-preview-browser';
 import { triggerWorkspacePageCapture } from '../lib/page-capture';
+import {
+  buildAssistantResponseMarkdown,
+  buildAssistantResponseMarkdownFileName,
+  buildConversationMarkdown,
+  buildConversationMarkdownFileName,
+} from '../lib/chat-markdown-export';
 import {
   getPageEditActivationSuccessMessage,
   getPageEditSuccessMessage,
@@ -1400,14 +1407,40 @@ function FileReferencesPreview({
 const AssistantRunCard = memo(function AssistantRunCard({
   card,
   projectPath,
+  onCopyMarkdown,
+  onExportMarkdown,
 }: {
   card: RunCard;
   projectPath?: string;
+  onCopyMarkdown: (card: RunCard) => void | Promise<void>;
+  onExportMarkdown: (card: RunCard) => void | Promise<void>;
 }) {
   const [isProcessSheetOpen, setIsProcessSheetOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     setIsProcessSheetOpen(false);
+    setIsExportMenuOpen(false);
   }, [card.id]);
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (exportMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsExportMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isExportMenuOpen]);
   const fallbackMessage: DisplayMessage = {
     id: `${card.id}-fallback`,
     sessionId: card.sessionId,
@@ -1423,15 +1456,52 @@ const AssistantRunCard = memo(function AssistantRunCard({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{card.headline}</span>
-            {card.processItemCount > 0 ? (
-              <button
-                type="button"
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setIsProcessSheetOpen(true)}
-              >
-                {card.processItemCount} 条过程
-              </button>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {card.processItemCount > 0 ? (
+                <button
+                  type="button"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsProcessSheetOpen(true)}
+                >
+                  {card.processItemCount} 条过程
+                </button>
+              ) : null}
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  className="rounded-sm p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label={`助手回答操作 ${card.id}`}
+                  aria-expanded={isExportMenuOpen}
+                  onClick={() => setIsExportMenuOpen((value) => !value)}
+                >
+                  <MoreVerticalIcon className="h-4 w-4" />
+                </button>
+                {isExportMenuOpen ? (
+                  <div className="absolute right-0 top-7 z-20 w-40 overflow-hidden rounded-md border bg-popover p-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-center rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        void onCopyMarkdown(card);
+                      }}
+                    >
+                      复制 Markdown
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        void onExportMarkdown(card);
+                      }}
+                    >
+                      导出 Markdown
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
           <RunProcessPreview card={card} />
           <RunProcessSheet
@@ -1477,6 +1547,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isFullConversationVisible,
   onShowFullConversation,
   onCollapseConversation,
+  onCopyAssistantMarkdown,
+  onExportAssistantMarkdown,
 }: {
   items: ConversationRunItem[];
   projectPath?: string;
@@ -1484,6 +1556,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isFullConversationVisible: boolean;
   onShowFullConversation: () => void;
   onCollapseConversation: () => void;
+  onCopyAssistantMarkdown: (card: RunCard) => void | Promise<void>;
+  onExportAssistantMarkdown: (card: RunCard) => void | Promise<void>;
 }) {
   return (
     <div className="space-y-3">
@@ -1516,7 +1590,12 @@ const ConversationTimeline = memo(function ConversationTimeline({
           </div>
         ) : (
           <div key={item.card.id} data-chat-conversation-item="true">
-            <AssistantRunCard card={item.card} projectPath={projectPath} />
+            <AssistantRunCard
+              card={item.card}
+              projectPath={projectPath}
+              onCopyMarkdown={onCopyAssistantMarkdown}
+              onExportMarkdown={onExportAssistantMarkdown}
+            />
           </div>
         )
       )}
@@ -1824,6 +1903,44 @@ function createAttachmentPreviewUrl(file: File) {
     return undefined;
   }
   return URL.createObjectURL(file);
+}
+
+function downloadTextFile(content: string, fileName: string, mimeType = 'text/markdown;charset=utf-8') {
+  if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') {
+    throw new Error('当前环境不支持文件下载');
+  }
+
+  const blob = new Blob([content], { type: mimeType });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = fileName;
+  link.style.display = 'none';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
+function deriveConversationExportTitle(
+  currentSessionTitle: string | undefined,
+  items: ConversationRunItem[]
+) {
+  if (currentSessionTitle?.trim()) {
+    return currentSessionTitle.trim();
+  }
+
+  for (const item of items) {
+    if (item.type !== 'user') {
+      continue;
+    }
+    const nextTitle = deriveSessionTitleFromMessage(item.message.text || '');
+    if (nextTitle) {
+      return nextTitle;
+    }
+  }
+
+  return '未命名会话';
 }
 
 export function Chat() {
@@ -2505,6 +2622,10 @@ export function Chat() {
   const visibleConversationItems = isFullConversationVisible
     ? stream.conversationItems
     : collapsedConversation.visibleItems;
+  const conversationExportTitle = useMemo(
+    () => deriveConversationExportTitle(currentSessionTitle, stream.conversationItems),
+    [currentSessionTitle, stream.conversationItems]
+  );
   const hiddenConversationItemCount = isFullConversationVisible
     ? 0
     : collapsedConversation.hiddenCount;
@@ -2529,6 +2650,61 @@ export function Chat() {
       ? latestCaptureFeedback.feedback
       : null;
   const displayedQuickActionFeedback = captureFeedbackBanner ?? quickActionFeedback;
+  const handleExportConversationMarkdown = useCallback(() => {
+    if (stream.conversationItems.length === 0) {
+      toast.error('当前会话暂无可导出的内容');
+      return;
+    }
+
+    try {
+      const exportedAt = new Date().toISOString();
+      const markdown = buildConversationMarkdown({
+        sessionId: stream.sessionId || conversationId,
+        sessionTitle: conversationExportTitle,
+        exportedAt,
+        items: stream.conversationItems,
+      });
+      downloadTextFile(
+        markdown,
+        buildConversationMarkdownFileName({
+          sessionTitle: conversationExportTitle,
+          exportedAt,
+        })
+      );
+      toast.success('会话 Markdown 已开始导出');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '导出 Markdown 失败');
+    }
+  }, [conversationExportTitle, conversationId, stream.conversationItems, stream.sessionId]);
+  const handleCopyAssistantMarkdown = useCallback(async (card: RunCard) => {
+    if (!navigator.clipboard?.writeText) {
+      toast.error('当前环境不支持复制到剪贴板');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildAssistantResponseMarkdown(card));
+      toast.success('Markdown 已复制');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '复制 Markdown 失败');
+    }
+  }, []);
+  const handleExportAssistantMarkdown = useCallback((card: RunCard) => {
+    try {
+      const timestamp =
+        card.responseMessages[0]?.timestamp ||
+        card.updatedAt ||
+        card.startedAt ||
+        new Date().toISOString();
+      downloadTextFile(
+        buildAssistantResponseMarkdown(card),
+        buildAssistantResponseMarkdownFileName({ timestamp })
+      );
+      toast.success('回答 Markdown 已开始导出');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '导出 Markdown 失败');
+    }
+  }, []);
   const latestVisibleConversationItemKey = useMemo(() => {
     const latest = visibleConversationItems.at(-1);
     if (!latest) {
@@ -3927,6 +4103,19 @@ export function Chat() {
 
               {isConfigMenuOpen ? (
                 <div className="absolute right-0 top-10 z-50 w-52 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg">
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => {
+                      setIsConfigMenuOpen(false);
+                      handleExportConversationMarkdown();
+                    }}
+                    disabled={stream.conversationItems.length === 0}
+                  >
+                    <FileCode2Icon className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">导出 Markdown</span>
+                  </button>
+                  {SIDEPANEL_MENU_ITEMS.length > 0 ? <div className="my-1 h-px bg-border" /> : null}
                   {SIDEPANEL_MENU_ITEMS.map((item) => {
                     const Icon = menuIcons[item.id] ?? SettingsIcon;
                     return (
@@ -4057,6 +4246,8 @@ export function Chat() {
               isFullConversationVisible={isFullConversationVisible}
               onShowFullConversation={showFullConversation}
               onCollapseConversation={collapseConversation}
+              onCopyAssistantMarkdown={handleCopyAssistantMarkdown}
+              onExportAssistantMarkdown={handleExportAssistantMarkdown}
             />
           )}
         </div>

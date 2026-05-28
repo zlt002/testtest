@@ -155,6 +155,17 @@ export function changeFontSize(els, direction) {
       el.style[style] = `${font_size <= 6 ? 6 : font_size}px`)
 }
 
+export function setFontSize(els, value) {
+  const fontSize = Math.max(6, Number.parseFloat(value))
+  if (Number.isNaN(fontSize)) return
+
+  els
+    .map(el => showHideSelected(el))
+    .forEach(el => {
+      el.style.fontSize = `${fontSize}px`
+    })
+}
+
 const weightMap = {
   normal: 2,
   bold:   5,
@@ -186,6 +197,17 @@ export function changeFontWeight(els, direction) {
       ])
 }
 
+export function setFontWeight(els, value) {
+  const fontWeight = Number.parseInt(value, 10)
+  if (Number.isNaN(fontWeight)) return
+
+  els
+    .map(el => showHideSelected(el))
+    .forEach(el => {
+      el.style.fontWeight = String(fontWeight)
+    })
+}
+
 const alignMap = {
   start: 0,
   left: 0,
@@ -211,4 +233,26 @@ export function changeAlignment(els, direction) {
       }))
     .forEach(({el, style, value}) =>
       el.style[style] = alignOptions[value < 0 ? 0 : value >= 2 ? 2: value])
+}
+
+export function setLineHeight(els, value) {
+  const lineHeight = Number.parseFloat(value)
+  if (Number.isNaN(lineHeight) || lineHeight <= 0) return
+
+  els
+    .map(el => showHideSelected(el))
+    .forEach(el => {
+      el.style.lineHeight = `${lineHeight}px`
+    })
+}
+
+export function setLetterSpacing(els, value) {
+  const letterSpacing = Number.parseFloat(value)
+  if (Number.isNaN(letterSpacing)) return
+
+  els
+    .map(el => showHideSelected(el))
+    .forEach(el => {
+      el.style.letterSpacing = `${Math.max(-2, letterSpacing)}px`
+    })
 }
