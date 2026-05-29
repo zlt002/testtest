@@ -90,6 +90,7 @@ import {
   buildMarkdownPreviewImageUrl,
   fileToBase64,
   insertMarkdownImageSnippet,
+  loadMarkdownPreviewImageSource,
   resolveAvailableImageAssetPath,
   validateMarkdownImageFile,
 } from './file-preview.image-assets';
@@ -218,6 +219,18 @@ function preserveMarkdownHref(value: string) {
 function parseCodeLanguage(className?: string) {
   const languageMatch = /language-([\w-]+)/.exec(className || '');
   return languageMatch ? languageMatch[1].toLowerCase() : 'text';
+}
+
+export function buildPendingLiveWriteNotice(
+  payload: Pick<LiveWritePreviewPayload, 'status'> | null | undefined
+): string | null {
+  if (!payload || payload.status === 'failed') {
+    return null;
+  }
+  if (payload.status === 'completed') {
+    return 'AI 已生成预览内容，正在等待磁盘文件同步完成，预览会自动刷新。';
+  }
+  return '文件正在等待写入审批，批准后会自动生成并刷新预览。';
 }
 
 function looksLikeMermaidChart(value: string) {
@@ -1133,6 +1146,7 @@ function normalizeMermaidSvgElement(svgElement: SVGSVGElement | null) {
 function MermaidBlock({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
   const [viewport, setViewport] = useState<MermaidViewport>({ scale: 1, x: 0, y: 0 });
   const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -2010,13 +2024,10 @@ const MarkdownPreviewBody = memo(function MarkdownPreviewBody({
     () => ({
       ...markdownPreviewComponents(renderMermaid),
       img: ({ src, alt }: { src?: string; alt?: string }) => (
-        <img
-          src={buildMarkdownPreviewImageUrl({
-            backendBaseUrl: config.api.agentV2BaseUrl,
-            projectPath,
-            markdownFilePath: filePath,
-            imageSrc: src,
-          })}
+        <MarkdownPreviewImage
+          src={src}
+          projectPath={projectPath}
+          markdownFilePath={filePath}
           alt={alt || ''}
           className="my-4 max-w-full rounded-md border"
         />
@@ -2102,6 +2113,62 @@ const MarkdownPreviewBody = memo(function MarkdownPreviewBody({
       </div>
     </article>
   );
+});
+
+const MarkdownPreviewImage = memo(function MarkdownPreviewImage({
+  alt,
+  className,
+  markdownFilePath,
+  projectPath,
+  src,
+}: {
+  alt?: string;
+  className?: string;
+  markdownFilePath: string;
+  projectPath: string;
+  src?: string;
+}) {
+  const fallbackSrc = buildMarkdownPreviewImageUrl({
+    backendBaseUrl: config.api.agentV2BaseUrl,
+    projectPath,
+    markdownFilePath,
+    imageSrc: src,
+  });
+  const [resolvedSrc, setResolvedSrc] = useState(fallbackSrc);
+
+  useEffect(() => {
+    let released = false;
+    let currentRevoke = () => {};
+
+    setResolvedSrc(fallbackSrc);
+
+    void loadMarkdownPreviewImageSource({
+      backendBaseUrl: config.api.agentV2BaseUrl,
+      projectPath,
+      markdownFilePath,
+      imageSrc: src,
+    })
+      .then((result) => {
+        if (released) {
+          result.revoke();
+          return;
+        }
+        currentRevoke = result.revoke;
+        setResolvedSrc(result.src);
+      })
+      .catch(() => {
+        if (!released) {
+          setResolvedSrc(fallbackSrc);
+        }
+      });
+
+    return () => {
+      released = true;
+      currentRevoke();
+    };
+  }, [fallbackSrc, markdownFilePath, projectPath, src]);
+
+  return <img src={resolvedSrc} alt={alt || ''} className={className} />;
 });
 
 function AnnotationComposer({
@@ -2557,6 +2624,7 @@ function FilePreviewPage() {
   const load = useCallback(async () => {
     setStatus('loading');
     setError(null);
+    setLoadNotice(null);
     setSaveStatus('idle');
     try {
       const nextContent = await agentClient.readFile(params);
@@ -2564,6 +2632,20 @@ function FilePreviewPage() {
       setDraftContent(nextContent);
       setStatus('ready');
     } catch (loadError) {
+      const pendingLiveWrite = await readLiveWritePreview(params.projectPath, params.filePath);
+      const pendingNotice = buildPendingLiveWriteNotice(pendingLiveWrite);
+      if (pendingLiveWrite && pendingNotice) {
+        setLiveWrite(pendingLiveWrite);
+        setContent(pendingLiveWrite.content);
+        setDraftContent(pendingLiveWrite.content);
+        liveBaseContentRef.current = pendingLiveWrite.content;
+        livePayloadVersionRef.current = liveWritePreviewPayloadVersion(pendingLiveWrite);
+        liveWriteIdRef.current = pendingLiveWrite.id;
+        liveShownLengthRef.current = pendingLiveWrite.content.length;
+        setStatus('ready');
+        setLoadNotice(pendingNotice);
+        return;
+      }
       setStatus('error');
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     }
@@ -2581,6 +2663,7 @@ function FilePreviewPage() {
   const save = useCallback(async () => {
     setSaveStatus('saving');
     setError(null);
+    setLoadNotice(null);
     try {
       await agentClient.writeFile({
         ...params,
@@ -2623,6 +2706,7 @@ function FilePreviewPage() {
       setLiveWrite(payload);
       setStatus('ready');
       setError(null);
+      setLoadNotice(null);
 
       const baseContent = liveBaseContentRef.current;
       const editStart =
@@ -3257,6 +3341,13 @@ function FilePreviewPage() {
         <div className="m-4 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm text-destructive">
           <AlertCircleIcon className="h-4 w-4" />
           <span>{error}</span>
+        </div>
+      ) : null}
+
+      {loadNotice ? (
+        <div className="m-4 flex items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <AlertCircleIcon className="h-4 w-4" />
+          <span>{loadNotice}</span>
         </div>
       ) : null}
 

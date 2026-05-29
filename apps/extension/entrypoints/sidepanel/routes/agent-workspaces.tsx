@@ -36,6 +36,7 @@ import {
 } from '@/entrypoints/sidepanel/components/ui/dialog';
 import { Label } from '@/entrypoints/sidepanel/components/ui/label';
 import { createAgentV2Client } from '../lib/agent-v2/client';
+import { localizeUserFacingError } from '../lib/user-facing-error';
 import {
   AGENT_V2_CURRENT_SESSION_STORAGE_KEY,
   AGENT_V2_SESSION_SELECTION_STORAGE_KEY,
@@ -276,7 +277,7 @@ function isHiddenFileEntry(file: FileTreeEntry) {
 }
 
 function formatWorkspaceBrowseError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = localizeUserFacingError(error, '加载本地文件夹失败，请稍后重试。');
   if (!message) {
     return '加载本地文件夹失败，请稍后重试。';
   }
@@ -1856,8 +1857,9 @@ export function AgentWorkspacesContent({
         pendingDelete.deleteDirectory ? '工作区及系统文件夹已删除' : '工作区已从列表移除'
       );
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : String(error));
-      toast.error(error instanceof Error ? error.message : '移除工作区失败');
+      const localizedError = localizeUserFacingError(error, '移除工作区失败');
+      setWorkspaceError(localizedError);
+      toast.error(localizedError);
     } finally {
       setIsDeletingWorkspace(false);
     }

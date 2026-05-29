@@ -1,6 +1,7 @@
 import { GlobeIcon } from 'lucide-react';
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Button } from '@/entrypoints/sidepanel/components/ui/button';
 import { Checkbox } from '@/entrypoints/sidepanel/components/ui/checkbox';
 import type { SessionTabSummary } from '@/entrypoints/sidepanel/lib/session-tab-selection';
 import { cn } from '@/entrypoints/sidepanel/lib/utils';
@@ -220,16 +221,18 @@ export function SessionTabStrip({
   return (
     <div className="relative">
       <div data-testid="session-tab-strip-trigger" className="flex items-center">
-        <button
+        <Button
           ref={triggerButtonRef}
           type="button"
+          variant="outline"
+          size="icon"
           aria-label={
             triggerTab
               ? `已选标签页 ${getTabDisplayName(triggerTab)}，共 ${selectedCount} 个`
               : `当前窗口标签页，共 ${tabs.length} 个`
           }
           className={cn(
-            'relative flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-semibold shadow-sm transition disabled:pointer-events-none disabled:opacity-50',
+            'relative h-6.5 w-6.5 rounded-full text-xs font-semibold',
             selectedCount > 0
               ? 'border-primary/60 bg-primary/5 text-primary hover:bg-primary/10'
               : 'border-border/70 text-muted-foreground hover:bg-muted/60'
@@ -253,7 +256,7 @@ export function SessionTabStrip({
           >
             {selectedCount}
           </span>
-        </button>
+        </Button>
       </div>
 
       {open && menuAnchorRef?.current && menuStyle

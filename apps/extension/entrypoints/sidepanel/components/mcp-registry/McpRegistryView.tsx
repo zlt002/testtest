@@ -36,6 +36,7 @@ import type {
   McpServerScope,
 } from '@/entrypoints/sidepanel/lib/agent-v2/types';
 import { config } from '@/entrypoints/sidepanel/lib/config';
+import { localizeUserFacingError } from '@/entrypoints/sidepanel/lib/user-facing-error';
 import { cn } from '@/entrypoints/sidepanel/lib/utils';
 
 type ViewMode =
@@ -777,7 +778,7 @@ export function McpRegistryView({
       await client.setMcpToolEnabled(tool.fullName, enabled, { projectPath });
       await loadRegistry();
     } catch (toggleError) {
-      toast.error(toggleError instanceof Error ? toggleError.message : '更新工具权限失败');
+      toast.error(localizeUserFacingError(toggleError, '更新工具权限失败'));
       await loadTools(toolsState.server.name);
     }
   };

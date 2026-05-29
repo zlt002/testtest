@@ -129,6 +129,54 @@ export function buildMarkdownPreviewImageUrl(input: {
   return `${input.backendBaseUrl.replace(/\/+$/, '')}/api/preview/file?${params}`;
 }
 
+type MarkdownPreviewImageSourceInput = {
+  backendBaseUrl: string;
+  projectPath: string;
+  markdownFilePath: string;
+  imageSrc?: string;
+};
+
+type MarkdownPreviewImageSourceResult = {
+  src: string;
+  revoke: () => void;
+};
+
+type MarkdownPreviewImageSourceDeps = {
+  fetch?: typeof fetch;
+  createObjectURL?: (blob: Blob) => string;
+  revokeObjectURL?: (url: string) => void;
+};
+
+export async function loadMarkdownPreviewImageSource(
+  input: MarkdownPreviewImageSourceInput,
+  deps: MarkdownPreviewImageSourceDeps = {}
+): Promise<MarkdownPreviewImageSourceResult> {
+  const imageSrc = input.imageSrc?.trim() || '';
+  if (!imageSrc || isExternalImageUrl(imageSrc)) {
+    return {
+      src: imageSrc,
+      revoke() {},
+    };
+  }
+
+  const fetchImpl = deps.fetch ?? fetch;
+  const createObjectURLImpl = deps.createObjectURL ?? URL.createObjectURL.bind(URL);
+  const revokeObjectURLImpl = deps.revokeObjectURL ?? URL.revokeObjectURL.bind(URL);
+  const previewUrl = buildMarkdownPreviewImageUrl(input);
+  const response = await fetchImpl(previewUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to load markdown preview image: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const objectUrl = createObjectURLImpl(blob);
+  return {
+    src: objectUrl,
+    revoke() {
+      revokeObjectURLImpl(objectUrl);
+    },
+  };
+}
+
 export async function fileToBase64(file: File) {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);

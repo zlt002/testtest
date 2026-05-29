@@ -37,6 +37,7 @@ import {
 import { deriveModelAccessViewState, type ModelSourceProbeStatus } from '../lib/model-access-state';
 import { publishModelAccessChanged, subscribeModelAccessChanged } from '../lib/model-access-events';
 import { readAgentV2ProjectSelection } from '../lib/agent-v2/session-selection';
+import { localizeUserFacingError } from '../lib/user-facing-error';
 import type {
   AgentAuthSource,
   AgentDetectedModelConfig,
@@ -509,9 +510,9 @@ export function ModelSettings({
                   )}
                 >
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="font-medium">User Claude settings test</span>
+                    <span className="font-medium">用户级 Claude settings 测试结果</span>
                     <Badge variant={userClaudeSettingsTestResult.ok ? 'default' : 'outline'}>
-                      {userClaudeSettingsTestResult.ok ? 'Success' : 'Failed'}
+                      {userClaudeSettingsTestResult.ok ? '成功' : '失败'}
                     </Badge>
                   </div>
                   <div className="whitespace-pre-wrap text-sm">
@@ -660,8 +661,8 @@ export function ModelSettings({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="openai">OpenAI</SelectItem>
-                        <SelectItem value="anthropic">Anthropic</SelectItem>
+                        <SelectItem value="openai">OpenAI 兼容</SelectItem>
+                        <SelectItem value="anthropic">Anthropic 兼容</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -817,9 +818,9 @@ export function ModelSettings({
                   )}
                 >
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="font-medium">Project model config test</span>
+                    <span className="font-medium">项目模型配置测试结果</span>
                     <Badge variant={projectModelConfigTestResult.ok ? 'default' : 'outline'}>
-                      {projectModelConfigTestResult.ok ? 'Success' : 'Failed'}
+                      {projectModelConfigTestResult.ok ? '成功' : '失败'}
                     </Badge>
                   </div>
                   <div className="whitespace-pre-wrap text-sm">
@@ -1145,7 +1146,7 @@ export const SettingsPanel = () => {
         toast.success('项目模型配置已保存');
       })
       .catch((error) => {
-        toast.error(error instanceof Error ? error.message : '保存项目模型配置失败');
+        toast.error(localizeUserFacingError(error, '保存项目模型配置失败'));
       });
   }
   function selectAuthSource(nextSource: AgentAuthSource) {
@@ -1170,7 +1171,7 @@ export const SettingsPanel = () => {
       })
       .catch((error) => {
         setSelectedAuthSource(runtimeInfo?.selectedAuthSource ?? selectedAuthSource);
-        toast.error(error instanceof Error ? error.message : '切换当前生效来源失败');
+        toast.error(localizeUserFacingError(error, '切换当前生效来源失败'));
       });
   }
 
@@ -1190,7 +1191,7 @@ export const SettingsPanel = () => {
         );
       })
       .catch((error) => {
-        toast.error(error instanceof Error ? error.message : '用户级 Claude settings 测试失败');
+        toast.error(localizeUserFacingError(error, '用户级 Claude settings 测试失败'));
       })
       .finally(() => {
         setUserClaudeSettingsTestPending(false);
@@ -1204,7 +1205,7 @@ export const SettingsPanel = () => {
     try {
       JSON.parse(userClaudeSettingsText);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '用户级 Claude settings JSON 解析失败');
+      toast.error(localizeUserFacingError(error, '用户级 Claude settings JSON 解析失败'));
       return;
     }
     hasUserInteractedWithAuthSourceRef.current = true;
@@ -1227,7 +1228,7 @@ export const SettingsPanel = () => {
         toast.success('用户级 Claude settings 已保存');
       })
       .catch((error) => {
-        toast.error(error instanceof Error ? error.message : '保存用户级 Claude settings 失败');
+        toast.error(localizeUserFacingError(error, '保存用户级 Claude settings 失败'));
       })
       .finally(() => {
         setUserClaudeSettingsSavePending(false);
@@ -1250,7 +1251,7 @@ export const SettingsPanel = () => {
         );
       })
       .catch((error) => {
-        toast.error(error instanceof Error ? error.message : '项目模型配置测试失败');
+        toast.error(localizeUserFacingError(error, '项目模型配置测试失败'));
       })
       .finally(() => {
         setProjectModelConfigTestPending(false);
@@ -1338,7 +1339,7 @@ export const SettingsPanel = () => {
               projectModelConfigProbeStatus={modelAccessViewState.projectModelConfig}
             />
           ) : (
-            <div className="p-4 text-sm text-muted-foreground">Loading settings...</div>
+            <div className="p-4 text-sm text-muted-foreground">正在加载设置...</div>
           )
         ) : settingsMode === 'mcp' ? (
           <McpSettingsContent />

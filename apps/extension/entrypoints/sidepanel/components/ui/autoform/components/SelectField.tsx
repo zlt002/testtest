@@ -20,7 +20,7 @@ export const SelectField: React.FC<AutoFormFieldProps> = ({ field, inputProps, e
       defaultValue={field.default}
     >
       <SelectTrigger id={id} className={`h-8 text-[10px] ${error ? 'border-destructive' : ''}`}>
-        <SelectValue placeholder="Select..." />
+        <SelectValue placeholder="请选择..." />
       </SelectTrigger>
       <SelectContent className="max-h-[200px]">
         {(field.options || []).map(([key, label]) => (

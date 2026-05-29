@@ -16,6 +16,20 @@ const BROWSER_EXTENSION_ALLOWED_TOOLS = [
 
 const EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 
+function supportsReasoningEffort(sdkEnv: Record<string, string | undefined> | undefined): boolean {
+  const anthropicBaseUrl = sdkEnv?.ANTHROPIC_BASE_URL?.trim();
+  if (!anthropicBaseUrl) {
+    return true;
+  }
+
+  try {
+    const url = new URL(anthropicBaseUrl);
+    return url.hostname === 'api.anthropic.com';
+  } catch {
+    return false;
+  }
+}
+
 function allowedToolsForMcpServers(mcpServers: Record<string, unknown> | undefined): string[] {
   if (!mcpServers || !Object.hasOwn(mcpServers, 'browser_extension')) {
     return [];
@@ -65,7 +79,10 @@ export function buildClaudeRequestOptions(input: {
     disallowedTools: input.disallowedTools,
     includePartialMessages: true,
     permissionMode: normalizePermissionMode(input.permissionMode),
-    effort: input.effort && EFFORT_LEVELS.has(input.effort) ? input.effort : undefined,
+    effort:
+      input.effort && EFFORT_LEVELS.has(input.effort) && supportsReasoningEffort(input.sdkEnv)
+        ? input.effort
+        : undefined,
     settingSources: input.settingSources || ['user', 'project', 'local'],
     skills: input.skills,
     plugins: input.plugins,

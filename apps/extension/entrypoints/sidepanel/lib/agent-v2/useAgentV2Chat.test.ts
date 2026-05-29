@@ -86,6 +86,24 @@ describe('useAgentV2Chat', () => {
     expect(result.current.error).not.toContain('Request not allowed');
   });
 
+  it('将运行时抛出的英文连接异常转成中文错误', async () => {
+    clientMocks.startRun.mockRejectedValueOnce(
+      new Error('Could not establish connection. Receiving end does not exist.')
+    );
+
+    const { result } = renderHook(() =>
+      useAgentV2Chat({ baseUrl: 'http://localhost:3000', endpoint: '/api/agent-v2' })
+    );
+
+    await act(async () => {
+      await result.current.sendMessage('你好');
+    });
+
+    await waitFor(() => {
+      expect(result.current.error).toBe('无法连接到目标页面，请刷新页面或重新打开侧边栏后重试。');
+    });
+  });
+
   it.each(['run.started', 'session.bound'] as const)(
     'writes connecting active run session state for %s events',
     async (eventType) => {

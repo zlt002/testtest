@@ -176,13 +176,13 @@ function getUserScriptsLoadErrorDetails(error: unknown) {
   if (normalizedMessage.includes('userscripts api is not available')) {
     return {
       summary: '当前浏览器没有向这个扩展开放用户脚本能力，所以暂时无法读取脚本列表。',
-      steps: [
-        '请打开：扩展程序 -> 本扩展的详情页。',
-        '如果你使用较新的 Chrome，请开启“Allow User Scripts”。',
-        '如果你使用较老版本的 Chrome，请开启“开发者模式（Developer mode）”。',
-        '开启后返回这里，点击“重试”重新加载。',
-      ],
-    };
+        steps: [
+          '请打开：扩展程序 -> 本扩展的详情页。',
+          '如果你使用较新的 Chrome，请开启“允许用户脚本”。',
+          '如果你使用较老版本的 Chrome，请开启“开发者模式”。',
+          '开启后返回这里，点击“重试”重新加载。',
+        ],
+      };
   }
 
   return {
@@ -1388,7 +1388,7 @@ export function UserScriptsWorkspace({
                                 {...field}
                                 value={field.value ?? ''}
                                 disabled={mode === 'edit'}
-                                placeholder="my-userscript"
+                                placeholder="请输入脚本 ID"
                               />
                             </FormControl>
                             <FormMessage />
@@ -1449,9 +1449,9 @@ export function UserScriptsWorkspace({
                                     value={field.value}
                                     onChange={(event) => field.onChange(event.target.value)}
                                   >
-                                    <option value="document_start">document_start</option>
-                                    <option value="document_end">document_end</option>
-                                    <option value="document_idle">document_idle</option>
+                                    <option value="document_start">文档开始时</option>
+                                    <option value="document_end">文档结束时</option>
+                                    <option value="document_idle">页面空闲时</option>
                                   </select>
                                 </FormControl>
                                 <FormMessage />
@@ -1471,8 +1471,8 @@ export function UserScriptsWorkspace({
                                     value={field.value}
                                     onChange={(event) => field.onChange(event.target.value)}
                                   >
-                                    <option value="MAIN">MAIN</option>
-                                    <option value="USER_SCRIPT">USER_SCRIPT</option>
+                                    <option value="MAIN">主世界（MAIN）</option>
+                                    <option value="USER_SCRIPT">用户脚本世界（USER_SCRIPT）</option>
                                   </select>
                                 </FormControl>
                                 <FormMessage />

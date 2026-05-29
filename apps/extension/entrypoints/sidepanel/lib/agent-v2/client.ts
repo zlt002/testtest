@@ -1,4 +1,5 @@
 import type { DomAnalyzeRequest, DomAnalyzeResult } from '../dom-analysis/types';
+import { localizeUserFacingMessage } from '../user-facing-error';
 import type {
   AgentAuthSource,
   AgentBackendV2Capabilities,
@@ -126,13 +127,13 @@ async function buildRequestError(response: Response, fallback: string) {
   if (contentType.includes('application/json')) {
     const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
     if (typeof payload?.error === 'string' && payload.error.trim()) {
-      return new Error(payload.error);
+      return new Error(localizeUserFacingMessage(payload.error));
     }
   }
 
   const text = await response.text().catch(() => '');
   const detail = text.trim();
-  return new Error(detail || `${fallback}: ${response.status}`);
+  return new Error(localizeUserFacingMessage(detail || `${fallback}: ${response.status}`));
 }
 
 async function fetchWithTimeout(
@@ -173,11 +174,13 @@ async function readAgentEventStream(
 ): Promise<void> {
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(text || `Agent V2 request failed with ${response.status}`);
+    throw new Error(
+      localizeUserFacingMessage(text || `Agent V2 request failed with ${response.status}`)
+    );
   }
 
   if (!response.body) {
-    throw new Error('Agent V2 response did not include an SSE body');
+    throw new Error(localizeUserFacingMessage('Agent V2 response did not include an SSE body'));
   }
 
   const reader = response.body.getReader();

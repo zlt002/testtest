@@ -564,13 +564,32 @@ function buildRunCard(input: {
   const latestInteraction = [...sorted]
     .reverse()
     .find((message) => message.kind === 'interaction' && message.requestId);
-  const latestInteractionResolved = [...sorted]
-    .reverse()
-    .find((message) => message.kind === 'run_status' && message.status === 'interaction_resolved');
+  const latestInteractionRequestId = latestInteraction?.requestId || null;
+  const latestInteractionResolved =
+    latestInteractionRequestId === null
+      ? null
+      : [...sorted].reverse().find((message) => {
+          if (message.kind !== 'run_status' || message.status !== 'interaction_resolved') {
+            return false;
+          }
+          if (!message.raw || typeof message.raw !== 'object') {
+            return false;
+          }
+          return (message.raw as { requestId?: unknown }).requestId === latestInteractionRequestId;
+        });
+  const latestInteractionResult =
+    latestInteractionRequestId === null
+      ? null
+      : [...sorted].reverse().find(
+          (message) =>
+            message.kind === 'tool_result' && message.toolId === latestInteractionRequestId
+        );
   const hasActiveInteraction = Boolean(
     latestInteraction &&
       (!latestInteractionResolved ||
-        timeOf(latestInteractionResolved.timestamp) < timeOf(latestInteraction.timestamp))
+        timeOf(latestInteractionResolved.timestamp) < timeOf(latestInteraction.timestamp)) &&
+      (!latestInteractionResult ||
+        timeOf(latestInteractionResult.timestamp) < timeOf(latestInteraction.timestamp))
   );
   const cardStatus = statusFromMessages(sorted);
 

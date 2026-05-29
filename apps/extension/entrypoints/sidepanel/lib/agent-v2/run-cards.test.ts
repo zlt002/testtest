@@ -318,6 +318,74 @@ describe('projectConversationRunItems', () => {
     });
   });
 
+  it('clears permission cards when the matching interaction is resolved', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'interaction-1',
+        runId: 'run-1',
+        role: 'system',
+        kind: 'interaction',
+        requestId: 'toolu-bash-1',
+        interactionKind: 'permission_request',
+        toolName: 'Bash',
+        text: 'Claude 请求使用 Bash',
+        timestamp: '2026-05-11T00:00:00.000Z',
+      }),
+      message({
+        id: 'interaction-resolved-1',
+        runId: 'run-1',
+        role: 'system',
+        kind: 'run_status',
+        status: 'interaction_resolved',
+        timestamp: '2026-05-11T00:00:01.000Z',
+        raw: {
+          requestId: 'toolu-bash-1',
+          outcome: 'allowed',
+        },
+      }),
+    ]);
+
+    const run = items.find((item) => item.type === 'run');
+
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.activeInteraction).toBeNull();
+    expect(run.card.cardStatus).toBe('running');
+  });
+
+  it('clears stale permission cards once the same tool request already has a result', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'interaction-1',
+        runId: 'run-1',
+        role: 'system',
+        kind: 'interaction',
+        requestId: 'toolu-bash-2',
+        interactionKind: 'permission_request',
+        toolName: 'Bash',
+        text: 'Claude 请求使用 Bash',
+        timestamp: '2026-05-11T00:00:00.000Z',
+      }),
+      message({
+        id: 'tool-result-1',
+        runId: 'run-1',
+        role: 'tool',
+        kind: 'tool_result',
+        toolId: 'toolu-bash-2',
+        toolName: 'Bash',
+        toolResult: '/tmp/project',
+        timestamp: '2026-05-11T00:00:01.000Z',
+      }),
+    ]);
+
+    const run = items.find((item) => item.type === 'run');
+
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.activeInteraction).toBeNull();
+    expect(run.card.cardStatus).toBe('running');
+  });
+
   it('anchors a live run to the user message with the same runId when backend timestamps are earlier', () => {
     const items = projectConversationRunItems([
       message({

@@ -1,11 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  clearAgentV2ActiveRunSession,
-  publishAgentV2ActiveRunSession,
-} from './active-run-session';
+import { clearAgentV2ActiveRunSession, publishAgentV2ActiveRunSession } from './active-run-session';
 import { createAgentV2Client, normalizeRunAttachmentsForRequest } from './client';
 import { projectAgentEventsToMessages, projectToolDisplayRecords } from './project-events';
 import { projectConversationRunItems } from './run-cards';
+import { localizeUserFacingError, localizeUserFacingMessage } from '../user-facing-error';
 import {
   buildWebEditWorkflowInstruction,
   isWebEditBrowserContext,
@@ -44,7 +42,9 @@ function tokenCountFromUsage(value: unknown): number {
   }, 0);
 }
 
-function attachmentsToDisplayImages(attachments: SessionAttachment[] | undefined): ImageAttachment[] | undefined {
+function attachmentsToDisplayImages(
+  attachments: SessionAttachment[] | undefined
+): ImageAttachment[] | undefined {
   const images = (attachments || [])
     .filter(
       (attachment) =>
@@ -76,9 +76,7 @@ function activeRunStatusFromEvent(event: AgentEvent): 'connecting' | 'streaming'
 
 function isTerminalRunEvent(event: AgentEvent): boolean {
   return (
-    event.type === 'run.completed' ||
-    event.type === 'run.failed' ||
-    event.type === 'run.aborted'
+    event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.aborted'
   );
 }
 
@@ -219,22 +217,23 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
 
         const toolName =
           input.preferredBrowserTool || 'mcp__browser_extension__read_current_page_content';
-        const blocks = input.browserContext.source === 'selected-tabs'
-          ? [
-              '<webmcp_browser_tool_instruction>',
-              '当前请求来自浏览器 sidepanel，并带有用户显式勾选的 tabs 上下文。',
-              `如果用户要求读取、总结、检查、操作这些已勾选页面，优先使用 ${toolName}，并将操作限制在 browser_context.allowedTabIds 内。`,
-              '如果目标标签页不在 browser_context.allowedTabIds 中，先停止执行并提醒用户勾选对应标签页。',
-              `不要把这些页面 URL 当作普通远程网页去 WebFetch，除非 ${toolName} 调用失败。`,
-              '</webmcp_browser_tool_instruction>',
-            ]
-          : [
-          '<webmcp_browser_tool_instruction>',
-          '当前请求来自浏览器 sidepanel，并带有当前 tab 上下文。',
-          `如果用户要求读取、总结、检查、操作“当前页面”或“当前网页”，优先使用 ${toolName}，并传入 browser_context 里的 tabId/windowId。`,
-          `不要把当前页面 URL 当作普通远程网页去 WebFetch，除非 ${toolName} 调用失败。`,
-          '</webmcp_browser_tool_instruction>',
-        ];
+        const blocks =
+          input.browserContext.source === 'selected-tabs'
+            ? [
+                '<webmcp_browser_tool_instruction>',
+                '当前请求来自浏览器 sidepanel，并带有用户显式勾选的 tabs 上下文。',
+                `如果用户要求读取、总结、检查、操作这些已勾选页面，优先使用 ${toolName}，并将操作限制在 browser_context.allowedTabIds 内。`,
+                '如果目标标签页不在 browser_context.allowedTabIds 中，先停止执行并提醒用户勾选对应标签页。',
+                `不要把这些页面 URL 当作普通远程网页去 WebFetch，除非 ${toolName} 调用失败。`,
+                '</webmcp_browser_tool_instruction>',
+              ]
+            : [
+                '<webmcp_browser_tool_instruction>',
+                '当前请求来自浏览器 sidepanel，并带有当前 tab 上下文。',
+                `如果用户要求读取、总结、检查、操作“当前页面”或“当前网页”，优先使用 ${toolName}，并传入 browser_context 里的 tabId/windowId。`,
+                `不要把当前页面 URL 当作普通远程网页去 WebFetch，除非 ${toolName} 调用失败。`,
+                '</webmcp_browser_tool_instruction>',
+              ];
 
         if (
           input.browserContext.source !== 'selected-tabs' &&
@@ -246,11 +245,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
           }
         }
 
-        return [
-          blocks.join('\n'),
-          '',
-          trimmed,
-        ].join('\n');
+        return [blocks.join('\n'), '', trimmed].join('\n');
       })();
 
       const controller = new AbortController();
@@ -291,12 +286,12 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         }
 
         hasReceivedEvent = true;
-        setLocalMessages((current) =>
-          current.filter((message) => message.id !== localAssistantId)
-        );
+        setLocalMessages((current) => current.filter((message) => message.id !== localAssistantId));
         setStatus(activeRunStatusFromEvent(event));
         setEvents((current) =>
-          current.some((existing) => existing.eventId === event.eventId) ? current : [...current, event]
+          current.some((existing) => existing.eventId === event.eventId)
+            ? current
+            : [...current, event]
         );
         if (event.runId && event.sessionId && !isTerminalRunEvent(event)) {
           void publishAgentV2ActiveRunSession({
@@ -337,7 +332,9 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
             typeof event.payload.authGuidance === 'string' ? event.payload.authGuidance : null;
           setError(
             authGuidance ||
-              (typeof event.payload.error === 'string' ? event.payload.error : 'Agent run failed')
+              localizeUserFacingMessage(
+                typeof event.payload.error === 'string' ? event.payload.error : 'Agent run failed'
+              )
           );
         }
       };
@@ -386,7 +383,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         }
         setLocalMessages((current) => current.filter((message) => message.id !== localAssistantId));
         setStatus('error');
-        setError(runError instanceof Error ? runError.message : String(runError));
+        setError(localizeUserFacingError(runError));
       } finally {
         if (!hasReceivedEvent) {
           setLocalMessages((current) =>
@@ -401,22 +398,25 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     [client, sessionId, status]
   );
 
-  const stop = useCallback(async (reason?: 'user_stop' | 'window_takeover_user_left') => {
-    abortControllerRef.current?.abort();
-    if (activeRunId) {
-      await Promise.resolve(client.abortRun(activeRunId)).catch((abortError) => {
-        console.debug('[agent-v2] abort failed:', abortError);
+  const stop = useCallback(
+    async (reason?: 'user_stop' | 'window_takeover_user_left') => {
+      abortControllerRef.current?.abort();
+      if (activeRunId) {
+        await Promise.resolve(client.abortRun(activeRunId)).catch((abortError) => {
+          console.debug('[agent-v2] abort failed:', abortError);
+        });
+      }
+      setActiveRunId(null);
+      setStatus('idle');
+      await clearAgentV2ActiveRunSession().catch((clearError) => {
+        console.debug('[agent-v2] failed to clear active run session on stop:', clearError);
       });
-    }
-    setActiveRunId(null);
-    setStatus('idle');
-    await clearAgentV2ActiveRunSession().catch((clearError) => {
-      console.debug('[agent-v2] failed to clear active run session on stop:', clearError);
-    });
-    if (reason === 'window_takeover_user_left') {
-      setError('当前运行因离开目标页面而中断');
-    }
-  }, [activeRunId, client]);
+      if (reason === 'window_takeover_user_left') {
+        setError('当前运行因离开目标页面而中断');
+      }
+    },
+    [activeRunId, client]
+  );
 
   const resolveInteraction = useCallback(
     async (input: { runId: string; requestId: string; decision: InteractionDecision }) => {

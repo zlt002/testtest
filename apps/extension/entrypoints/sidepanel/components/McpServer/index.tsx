@@ -21,6 +21,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { mcpToolsToZodSchemas } from '../../lib/mcpToZod';
+import { localizeUserFacingMessage } from '../../lib/user-facing-error';
 import { cn } from '../../lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
@@ -156,9 +157,7 @@ export default function McpServer(): React.ReactElement {
           <div className="px-3 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Server className="h-3.5 w-3.5 text-muted-foreground animate-pulse" />
-              <span className="font-medium text-xs text-muted-foreground">
-                Connecting to MCP Hub...
-              </span>
+              <span className="font-medium text-xs text-muted-foreground">正在连接 MCP Hub...</span>
             </div>
             <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse" />
           </div>
@@ -166,7 +165,7 @@ export default function McpServer(): React.ReactElement {
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                 <div className="h-2 w-2 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
-                <span>Discovering tools from active tabs...</span>
+                <span>正在发现活动标签页中的工具...</span>
               </div>
               <div className="space-y-1">
                 <Skeleton className="h-3 w-32" />
@@ -185,9 +184,9 @@ export default function McpServer(): React.ReactElement {
       <div className="h-full p-3">
         <Alert variant="destructive" className="border-destructive/50">
           <XCircle className="h-3.5 w-3.5" />
-          <AlertTitle className="text-xs font-medium">Connection Failed</AlertTitle>
+          <AlertTitle className="text-xs font-medium">连接失败</AlertTitle>
           <AlertDescription className="text-xs mt-1 space-y-2">
-            <p>{error.message || 'Unable to connect to the MCP hub'}</p>
+            <p>{localizeUserFacingMessage(error.message || 'Unable to connect to the MCP hub')}</p>
             <div className="flex flex-col gap-1.5 mt-2">
               <Button
                 // onClick={() => connect()}
@@ -196,10 +195,10 @@ export default function McpServer(): React.ReactElement {
                 className="h-6 text-[11px] w-full"
               >
                 <RefreshCwIcon className="h-3 w-3 mr-1" />
-                Retry Connection
+                重试连接
               </Button>
               <p className="text-[10px] text-muted-foreground text-center">
-                Make sure you have tabs open with MCP-enabled sites
+                请确认已打开启用 MCP 的网页标签页
               </p>
             </div>
           </AlertDescription>
@@ -219,9 +218,9 @@ export default function McpServer(): React.ReactElement {
   };
 
   const callTool = async (toolName: string, data: unknown) => {
-    if (!client) return toast.error('MCP client not found');
+    if (!client) return toast.error('未找到 MCP 客户端');
     setCallingTools((prev) => new Set([...prev, toolName]));
-    const loadingToastId = toast.loading(`Executing ${toolName.split('_')[1]}...`);
+    const loadingToastId = toast.loading(`正在执行 ${toolName.split('_')[1]}...`);
     console.log(`calling tool ${toolName} with ${JSON.stringify(data, null, 2)}`);
     try {
       const result = await client.callTool({
@@ -275,7 +274,7 @@ export default function McpServer(): React.ReactElement {
 
       const isPlainText = typeof displayData === 'string';
 
-      toast.success(`${toolName} executed`, {
+      toast.success(`${toolName} 已执行`, {
         description: isPlainText ? (
           <div className="mt-1 max-h-32 overflow-y-auto">
             <p className="text-[11px] text-muted-foreground whitespace-pre-wrap break-words">
@@ -297,12 +296,12 @@ export default function McpServer(): React.ReactElement {
 
       const { title, description } = formatMcpError(error);
 
-      toast.error(`${toolName} failed: ${title}`, {
+      toast.error(`${toolName} 执行失败：${title}`, {
         description,
         icon: <XCircle className="h-4 w-4" />,
         duration: 7000,
         action: {
-          label: 'Retry',
+          label: '重试',
           onClick: () => {
             const form = document.querySelector(
               `[data-tool-form="${toolName}"]`
@@ -327,7 +326,7 @@ export default function McpServer(): React.ReactElement {
       <div className="toolbar-surface-top">
         <div className="toolbar-inner px-4">
           <div className="flex items-center justify-between w-full">
-            <h2 className="text-sm font-semibold">MCP Tools</h2>
+            <h2 className="text-sm font-semibold">MCP 工具</h2>
             <div className={cn('flex items-center gap-1.5')}>
               <div
                 className={cn(
@@ -335,7 +334,7 @@ export default function McpServer(): React.ReactElement {
                   isConnected ? 'bg-green-500' : 'bg-muted-foreground'
                 )}
               />
-              <span className="text-xs text-muted-foreground">{mcpTools.length} available</span>
+              <span className="text-xs text-muted-foreground">{mcpTools.length} 个可用</span>
             </div>
           </div>
         </div>
@@ -366,7 +365,7 @@ export default function McpServer(): React.ReactElement {
                           isConnected ? 'text-green-600' : 'text-muted-foreground'
                         )}
                       >
-                        {isConnected ? 'Connected' : 'Disconnected'}
+                        {isConnected ? '已连接' : '未连接'}
                       </span>
                     )}
                   </div>
@@ -376,14 +375,14 @@ export default function McpServer(): React.ReactElement {
                 <div className="px-2.5 pb-2 space-y-2">
                   <div className="flex items-center gap-2">
                     <Server className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground">Server Status</span>
+                    <span className="text-[10px] text-muted-foreground">服务状态</span>
                     <span
                       className={cn(
                         'text-[10px] font-medium',
                         isConnected ? 'text-green-600' : 'text-muted-foreground'
                       )}
                     >
-                      {isConnected ? 'Connected' : 'Disconnected'}
+                      {isConnected ? '已连接' : '未连接'}
                     </span>
                   </div>
                   {/* {!isConnected && (
@@ -399,7 +398,7 @@ export default function McpServer(): React.ReactElement {
                   )} */}
                   {capabilities && (
                     <div className="space-y-1">
-                      <p className="text-[10px] font-medium text-muted-foreground">Capabilities</p>
+                      <p className="text-[10px] font-medium text-muted-foreground">能力</p>
                       <div className="flex flex-wrap gap-0.5">
                         {Object.entries(capabilities).map(([key, enabled]) => (
                           <Badge
@@ -430,7 +429,7 @@ export default function McpServer(): React.ReactElement {
                   <div className="px-2.5 py-2 flex items-center justify-between hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-2">
                       <Puzzle className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-medium text-xs">Extension</span>
+                      <span className="font-medium text-xs">扩展</span>
                       {expandedSection !== 'extensionTools' && (
                         <div className="flex items-center gap-1">
                           <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3">
@@ -507,7 +506,7 @@ export default function McpServer(): React.ReactElement {
                   <div className="px-2.5 py-2 flex items-center justify-between hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-2">
                       <Globe className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-medium text-xs">Web</span>
+                      <span className="font-medium text-xs">网页</span>
                       {expandedSection !== 'tools' && (
                         <div className="flex items-center gap-1">
                           <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3">
@@ -526,7 +525,7 @@ export default function McpServer(): React.ReactElement {
                     {webTools.length === 0 ? (
                       <div className="py-4 text-center">
                         <Globe className="h-6 w-6 mx-auto text-muted-foreground/30 mb-1.5" />
-                        <p className="text-[11px] text-muted-foreground">No web tools discovered</p>
+                        <p className="text-[11px] text-muted-foreground">暂未发现网页工具</p>
                         <p className="text-[10px] text-muted-foreground mt-0.5">
                           Open MCP-enabled sites
                         </p>
@@ -753,7 +752,7 @@ export default function McpServer(): React.ReactElement {
                   <div className="px-2.5 py-2 flex items-center justify-between hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-2">
                       <Wrench className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-medium text-xs">Userscripts</span>
+                      <span className="font-medium text-xs">用户脚本</span>
                       {expandedSection !== 'userscripts' && (
                         <div className="flex items-center gap-1">
                           <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3">
@@ -827,7 +826,7 @@ export default function McpServer(): React.ReactElement {
                   <div className="px-2.5 py-2 flex items-center justify-between hover:bg-muted/30 transition-colors">
                     <div className="flex items-center gap-2">
                       <FileText className="h-3 w-3 text-muted-foreground" />
-                      <span className="font-medium text-xs">Resources</span>
+                      <span className="font-medium text-xs">资源</span>
                       {expandedSection !== 'resources' && (
                         <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3">
                           {resources.length}

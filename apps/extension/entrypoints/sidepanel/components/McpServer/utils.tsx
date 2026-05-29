@@ -1,4 +1,5 @@
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+import { localizeUserFacingMessage } from '../../lib/user-facing-error';
 import { Badge } from '../ui/badge';
 import type { InputSchema, McpErrorInfo, ToolInfo } from './types';
 
@@ -320,7 +321,10 @@ export function groupExtensionToolsByApi(tools: McpTool[]): Map<string, McpTool[
  * Format MCP error for display
  */
 export function formatMcpError(error: unknown): McpErrorInfo {
-  const errorMessage = error instanceof Error ? error.message : 'Tool execution failed';
+  const errorMessage =
+    error instanceof Error
+      ? localizeUserFacingMessage(error.message, '工具执行失败')
+      : '工具执行失败';
 
   const mcpErrorMatch = errorMessage.match(/MCP error (-?\d+):\s*(.+)/);
 
@@ -335,10 +339,10 @@ export function formatMcpError(error: unknown): McpErrorInfo {
         const validationErrors = JSON.parse(`[${jsonMatch[1]}]`);
 
         return {
-          title: `MCP Error ${errorCode}`,
+          title: `MCP 错误 ${errorCode}`,
           description: (
             <div className="space-y-2">
-              <p className="text-xs">Invalid arguments provided:</p>
+              <p className="text-xs">传入参数无效：</p>
               <div className="space-y-1">
                 {validationErrors.map((err: unknown) => {
                   const validationError = err as {
@@ -346,20 +350,20 @@ export function formatMcpError(error: unknown): McpErrorInfo {
                     message?: string;
                     validation?: string;
                   };
-                  const key = `${validationError.path?.join('.') || 'field'}-${validationError.message || 'unknown'}`;
+                  const key = `${validationError.path?.join('.') || '字段'}-${validationError.message || 'unknown'}`;
                   return (
                     <div key={key} className="bg-destructive/10 rounded p-2 space-y-1">
                       <div className="flex items-center gap-2">
                         <Badge variant="destructive" className="text-xs">
-                          {validationError.path?.join('.') || 'field'}
+                          {validationError.path?.join('.') || '字段'}
                         </Badge>
                         <span className="text-xs font-medium">
-                          {validationError.message || 'Unknown error'}
+                          {localizeUserFacingMessage(validationError.message || '未知错误')}
                         </span>
                       </div>
                       {validationError.validation && (
                         <p className="text-xs text-muted-foreground">
-                          Expected: {validationError.validation}
+                          期望：{validationError.validation}
                         </p>
                       )}
                     </div>
@@ -371,20 +375,24 @@ export function formatMcpError(error: unknown): McpErrorInfo {
         };
       } catch {
         return {
-          title: `MCP Error ${errorCode}`,
-          description: <p className="text-xs">{errorDetails.replace(/\[.*\]/, '').trim()}</p>,
+          title: `MCP 错误 ${errorCode}`,
+          description: (
+            <p className="text-xs">
+              {localizeUserFacingMessage(errorDetails.replace(/\[.*\]/, '').trim())}
+            </p>
+          ),
         };
       }
     }
 
     return {
-      title: `MCP Error ${errorCode}`,
-      description: <p className="text-xs">{errorDetails}</p>,
+      title: `MCP 错误 ${errorCode}`,
+      description: <p className="text-xs">{localizeUserFacingMessage(errorDetails)}</p>,
     };
   }
 
   return {
-    title: 'Execution Failed',
+    title: '执行失败',
     description: <p className="text-xs">{errorMessage}</p>,
   };
 }

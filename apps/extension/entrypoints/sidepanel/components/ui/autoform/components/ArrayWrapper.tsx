@@ -10,7 +10,7 @@ export const ArrayWrapper: React.FC<ArrayWrapperProps> = ({ label, children, onA
       {children}
       <Button onClick={onAddItem} variant="outline" size="sm" type="button" className="h-7 px-2.5">
         <PlusIcon className="h-3.5 w-3.5" />
-        <span className="text-xs">Add Item</span>
+        <span className="text-xs">添加项</span>
       </Button>
     </div>
   );

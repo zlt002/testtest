@@ -340,6 +340,135 @@ function shouldUseDefaultAllowedTools(input: {
   return true;
 }
 
+const TOOL_MUTATION_NAMES = new Set([
+  'Write',
+  'Edit',
+  'MultiEdit',
+]);
+const MCP_MUTATING_OPERATIONS = [
+  'write',
+  'edit',
+  'multiedit',
+  'patch',
+  'create',
+  'update',
+  'delete',
+  'remove',
+  'call',
+  'run',
+  'execute',
+  'navigate',
+  'click',
+  'type',
+  'submit',
+];
+
+const BASH_MUTATING_COMMANDS = new Set([
+  'mkdir',
+  'touch',
+  'rm',
+  'rmdir',
+  'mv',
+  'cp',
+  'install',
+  'chmod',
+  'chown',
+  'tee',
+  'dd',
+  'truncate',
+  'ln',
+]);
+const GIT_MUTATING_SUBCOMMANDS = new Set([
+  'add',
+  'apply',
+  'am',
+  'checkout',
+  'switch',
+  'restore',
+  'reset',
+  'clean',
+  'commit',
+  'merge',
+  'rebase',
+  'cherry-pick',
+  'revert',
+  'tag',
+  'branch',
+  'push',
+  'pull',
+  'fetch',
+  'clone',
+]);
+const SHELL_MUTATING_OPERATORS = ['>', '>>', ';', '&&', '||', '$(', '`'];
+
+function isMutatingBashCommand(command: string): boolean {
+  const normalized = command.trim();
+  if (!normalized) {
+    return true;
+  }
+
+  if (SHELL_MUTATING_OPERATORS.some((operator) => normalized.includes(operator))) {
+    return true;
+  }
+
+  const [binary, ...args] = normalized.split(/\s+/);
+  const lowerBinary = binary.toLowerCase();
+
+  if (lowerBinary === 'sed') {
+    const normalizedArgs = args.map((arg) => arg.toLowerCase());
+    const hasInPlace = normalizedArgs.includes('-i') || normalizedArgs.includes('--in-place');
+    return hasInPlace;
+  }
+
+  if (BASH_MUTATING_COMMANDS.has(lowerBinary)) {
+    return true;
+  }
+
+  if (lowerBinary !== 'git') {
+    return false;
+  }
+
+  const subcommand = args[0]?.toLowerCase();
+  return Boolean(subcommand && GIT_MUTATING_SUBCOMMANDS.has(subcommand));
+}
+
+function requiresApprovalForSideEffects(
+  toolName: string,
+  toolInput: Record<string, unknown>
+): boolean {
+  if (toolName === 'Bash') {
+    return (
+      typeof toolInput.command !== 'string' || isMutatingBashCommand(toolInput.command)
+    );
+  }
+
+  if (toolName === 'Skill') {
+    return false;
+  }
+
+  if (TOOL_MUTATION_NAMES.has(toolName)) {
+    return true;
+  }
+
+  if (toolName.startsWith('mcp__')) {
+    const parts = toolName.split('__');
+    const operation = parts.at(-1)?.toLowerCase();
+    if (!operation) {
+      return false;
+    }
+
+    return MCP_MUTATING_OPERATIONS.some(
+      (keyword) => operation === keyword || operation.startsWith(`${keyword}_`)
+    );
+  }
+
+  if (toolName === 'AskUserQuestion') {
+    return true;
+  }
+
+  return false;
+}
+
 function isExternalBrowserAutomationToolName(toolName: string): boolean {
   const normalizedToolName = toolName.trim().toLowerCase();
   return (
@@ -666,6 +795,7 @@ export function createAgentService(deps: AgentServiceDeps) {
             env: deps.env,
             runtimeCapabilities,
             modelConfig,
+            preferAvailableSource: runtimeCapabilities?.selectedAuthSource ? false : undefined,
           })
         : null;
     const requestModel =
@@ -774,6 +904,15 @@ export function createAgentService(deps: AgentServiceDeps) {
       }
 
       if (input.permissionMode === 'bypassPermissions' && !isInteractivePrompt) {
+        allowedToolUses.set(requestId, toolName);
+        return {
+          behavior: 'allow',
+          updatedInput: toolInput,
+          toolUseID: requestId,
+        };
+      }
+
+      if (!isInteractivePrompt && !requiresApprovalForSideEffects(toolName, toolInput)) {
         allowedToolUses.set(requestId, toolName);
         return {
           behavior: 'allow',

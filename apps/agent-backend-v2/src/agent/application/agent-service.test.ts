@@ -68,6 +68,14 @@ async function flushAsyncWork() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function getInteractionRequestId(event: Record<string, unknown> | undefined): string | undefined {
+  if (!event || typeof event.payload !== 'object' || event.payload === null) {
+    return undefined;
+  }
+  const payload = event.payload as { requestId?: unknown };
+  return typeof payload.requestId === 'string' ? payload.requestId : undefined;
+}
+
 test('getSessionHistory delegates to normalized Claude history', async () => {
   const service = createAgentService({
     historyReader: {
@@ -472,7 +480,7 @@ test('agent service blocks browser extension operate tools when browser context 
 
   assert.equal(decision.behavior, 'block');
   assert.match(String(decision.message || ''), /browser_context 与工具输入不一致/);
-  assert.match(String(decision.message || ''), /当前标签页上下文不一致/);
+  assert.match(String(decision.message || ''), /当前标签页未获授权/);
 
   for await (const _event of stream) {
     // Drain stream.
@@ -814,6 +822,581 @@ test('session.bound 后的手工交互事件会继承真实 sessionId 并刷新 
   controlledRun.push({
     type: 'result',
     session_id: 'claude-session-1',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('plan 模式会自动放行只读和检索类工具', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '请先研究，不要改代码',
+    projectPath: '/tmp/project-plan-allow',
+    permissionMode: 'plan',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-plan-allow',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const toolCases = [
+    ['Read', { file_path: '/tmp/project-plan-allow/README.md' }],
+    ['Grep', { pattern: 'permissionMode' }],
+    ['WebSearch', { query: 'Claude Code permission modes' }],
+    ['mcp__codebase_memory_mcp__search_graph', { query: 'createAgentService' }],
+  ] as const;
+
+  for (const [toolName, toolInput] of toolCases) {
+    const eventCountBefore = events.length;
+    const decisionPromise = capturedCanUseTool!(toolName, toolInput, {});
+    await flushAsyncWork();
+
+    const requiredEvent = events
+      .slice(eventCountBefore)
+      .find((event) => event.type === 'interaction.required');
+
+    if (requiredEvent) {
+      const requestId = getInteractionRequestId(requiredEvent);
+      if (requestId) {
+        service.resolveInteraction({
+          runId: stream.runId,
+          requestId,
+          decision: { allow: true, message: '测试清理审批状态' },
+        });
+      }
+    }
+
+    assert.equal(requiredEvent, undefined, `${toolName} 在 plan 模式下不应触发审批`);
+
+    const decision = await decisionPromise;
+    assert.equal(decision.behavior, 'allow');
+  }
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-plan-allow',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('plan 模式仍然要求审批写入类工具', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '先分析，再准备修改',
+    projectPath: '/tmp/project-plan-block',
+    permissionMode: 'plan',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-plan-block',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const decisionPromise = capturedCanUseTool!(
+    'Write',
+    { file_path: '/tmp/project-plan-block/README.md', content: 'hello' },
+    { toolUseID: 'toolu-plan-write-1' }
+  );
+  await flushAsyncWork();
+
+  const requiredEvent = events.find((event) => event.type === 'interaction.required');
+  assert.ok(requiredEvent);
+  assert.equal(requiredEvent.sessionId, 'claude-session-plan-block');
+  assert.equal(
+    (requiredEvent.payload as { kind?: unknown }).kind,
+    'permission_request'
+  );
+  assert.equal((requiredEvent.payload as { toolName?: unknown }).toolName, 'Write');
+
+  assert.equal(
+    service.resolveInteraction({
+      runId: stream.runId,
+      requestId: String(getInteractionRequestId(requiredEvent) || ''),
+      decision: { allow: false, message: '计划模式下禁止直接写入' },
+    }).resolved,
+    true
+  );
+
+  const decision = await decisionPromise;
+  assert.equal(decision.behavior, 'deny');
+  assert.match(String(decision.message || ''), /计划模式下禁止直接写入/);
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-plan-block',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('非写入型 Skill 会自动放行', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '做一些研究分析',
+    projectPath: '/tmp/project-skill-readonly',
+    permissionMode: 'default',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-skill-readonly',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const decision = await capturedCanUseTool!(
+    'Skill',
+    {
+      skill: 'deep-research',
+      args: '请分析 Claude Code 的评估指标，不要写文件。',
+    },
+    { toolUseID: 'toolu-skill-1' }
+  );
+
+  assert.equal(decision.behavior, 'allow');
+  assert.equal(events.find((event) => event.type === 'interaction.required'), undefined);
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-skill-readonly',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('只读 Bash 命令会自动放行，写入 Bash 命令仍然要求审批', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '先检查项目结构',
+    projectPath: '/tmp/project-bash-readonly',
+    permissionMode: 'default',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-bash-readonly',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+
+  const readonlyDecision = await capturedCanUseTool!(
+    'Bash',
+    { command: 'ls -la /tmp/project-bash-readonly' },
+    { toolUseID: 'toolu-bash-read-1' }
+  );
+  assert.equal(readonlyDecision.behavior, 'allow');
+  assert.equal(events.find((event) => event.type === 'interaction.required'), undefined);
+
+  const writeDecisionPromise = capturedCanUseTool!(
+    'Bash',
+    { command: 'mkdir -p /tmp/project-bash-readonly/docs' },
+    { toolUseID: 'toolu-bash-write-1' }
+  );
+  await flushAsyncWork();
+
+  const requiredEvent = events.find(
+    (event) =>
+      event.type === 'interaction.required' &&
+      (event.payload as { toolName?: unknown }).toolName === 'Bash'
+  );
+  assert.ok(requiredEvent);
+
+  assert.equal(
+    service.resolveInteraction({
+      runId: stream.runId,
+      requestId: String(getInteractionRequestId(requiredEvent) || ''),
+      decision: { allow: false, message: '写入命令需要人工确认' },
+    }).resolved,
+    true
+  );
+
+  const writeDecision = await writeDecisionPromise;
+  assert.equal(writeDecision.behavior, 'deny');
+  assert.match(String(writeDecision.message || ''), /写入命令需要人工确认/);
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-bash-readonly',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('扩展只读 Bash 白名单会放行 git grep、git ls-files 和 sed -n', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '检查仓库里的只读信息',
+    projectPath: '/tmp/project-bash-extended-readonly',
+    permissionMode: 'default',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-bash-extended-readonly',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+
+  const readonlyCases = [
+    'git grep permissionMode',
+    'git ls-files',
+    'sed -n 1,20p README.md',
+  ];
+
+  for (const command of readonlyCases) {
+    const decision = await capturedCanUseTool!(
+      'Bash',
+      { command },
+      { toolUseID: `toolu-${command.replace(/\W+/g, '-').toLowerCase()}` }
+    );
+    assert.equal(decision.behavior, 'allow', `${command} 应视为只读命令`);
+  }
+
+  assert.equal(events.find((event) => event.type === 'interaction.required'), undefined);
+
+  const writeDecisionPromise = capturedCanUseTool!(
+    'Bash',
+    { command: 'sed -i "" "s/old/new/" README.md' },
+    { toolUseID: 'toolu-bash-sed-write-1' }
+  );
+  await flushAsyncWork();
+
+  const requiredEvent = events.find(
+    (event) =>
+      event.type === 'interaction.required' &&
+      (event.payload as { toolName?: unknown }).toolName === 'Bash'
+  );
+  assert.ok(requiredEvent);
+
+  assert.equal(
+    service.resolveInteraction({
+      runId: stream.runId,
+      requestId: String(getInteractionRequestId(requiredEvent) || ''),
+      decision: { allow: false, message: 'sed -i 会修改文件，必须审批' },
+    }).resolved,
+    true
+  );
+
+  const writeDecision = await writeDecisionPromise;
+  assert.equal(writeDecision.behavior, 'deny');
+  assert.match(String(writeDecision.message || ''), /必须审批/);
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-bash-extended-readonly',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('默认会放行复合只读 Bash 和 WebFetch，但继续拦截副作用工具', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '做一些分析，不要改动任何内容',
+    projectPath: '/tmp/project-readonly-default-allow',
+    permissionMode: 'default',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-readonly-default-allow',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+
+  const allowedCases: Array<[string, Record<string, unknown>]> = [
+    ['Bash', { command: 'git log --numstat | awk "{print $1}" | sort | uniq -c' }],
+    ['WebFetch', { url: 'https://example.com/report' }],
+    ['mcp__browser_extension__read_current_page_content', { tabId: 12, windowId: 5 }],
+  ];
+
+  for (const [toolName, toolInput] of allowedCases) {
+    const decision = await capturedCanUseTool!(toolName, toolInput, { toolUseID: `toolu-${toolName}` });
+    assert.equal(decision.behavior, 'allow', `${toolName} 应默认自动放行`);
+  }
+
+  const blockedCases: Array<[string, Record<string, unknown>, string]> = [
+    ['Bash', { command: 'git log --numstat > stats.txt' }, 'toolu-bash-redirect'],
+    ['mcp__browser_extension__click', { tabId: 12, windowId: 5 }, 'toolu-browser-click'],
+    ['Write', { file_path: '/tmp/project-readonly-default-allow/out.md', content: 'hi' }, 'toolu-write'],
+  ];
+
+  for (const [toolName, toolInput, toolUseID] of blockedCases) {
+    const decisionPromise = capturedCanUseTool!(toolName, toolInput, { toolUseID });
+    await flushAsyncWork();
+
+    const requiredEvent = events.find(
+      (event) =>
+        event.type === 'interaction.required' &&
+        (event.payload as { requestId?: unknown }).requestId === toolUseID
+    );
+    assert.ok(requiredEvent, `${toolName} 应继续要求审批`);
+
+    assert.equal(
+      service.resolveInteraction({
+        runId: stream.runId,
+        requestId: String(getInteractionRequestId(requiredEvent) || ''),
+        decision: { allow: false, message: `${toolName} 有副作用，需要审批` },
+      }).resolved,
+      true
+    );
+
+    const decision = await decisionPromise;
+    assert.equal(decision.behavior, 'deny');
+  }
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-readonly-default-allow',
     subtype: 'success',
     is_error: false,
     result: 'done',

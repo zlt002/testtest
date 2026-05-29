@@ -3,6 +3,7 @@ import { AlertCircle, FileQuestion } from 'lucide-react';
 import { Toaster } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { localizeUserFacingError } from '../lib/user-facing-error';
 
 export const Route = createRootRouteWithContext<Record<string, never>>()({
   component: RootComponent,
@@ -10,13 +11,11 @@ export const Route = createRootRouteWithContext<Record<string, never>>()({
     <div className="flex flex-col items-center justify-center h-full p-6">
       <Alert variant="destructive" className="max-w-md mb-4">
         <FileQuestion className="h-5 w-5 mr-2" />
-        <AlertTitle>Page Not Found</AlertTitle>
-        <AlertDescription>
-          The page you're looking for doesn't exist or has been moved.
-        </AlertDescription>
+        <AlertTitle>页面不存在</AlertTitle>
+        <AlertDescription>你访问的页面不存在，或已被移动。</AlertDescription>
       </Alert>
       <Button asChild>
-        <Link to="/chat">Return Home</Link>
+        <Link to="/chat">返回首页</Link>
       </Button>
     </div>
   ),
@@ -24,13 +23,11 @@ export const Route = createRootRouteWithContext<Record<string, never>>()({
     <div className="flex flex-col items-center justify-center h-full p-6">
       <Alert variant="destructive" className="max-w-md mb-4">
         <AlertCircle className="h-5 w-5 mr-2" />
-        <AlertTitle>Something went wrong!</AlertTitle>
-        <AlertDescription>
-          {error instanceof Error ? error.message : 'An unknown error occurred'}
-        </AlertDescription>
+        <AlertTitle>出现异常</AlertTitle>
+        <AlertDescription>{localizeUserFacingError(error, '发生未知错误')}</AlertDescription>
       </Alert>
       <Button asChild>
-        <Link to="/chat">Return Home</Link>
+        <Link to="/chat">返回首页</Link>
       </Button>
     </div>
   ),

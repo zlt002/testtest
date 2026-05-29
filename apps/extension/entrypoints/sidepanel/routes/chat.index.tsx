@@ -54,6 +54,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/entrypoints/sidepanel/components/ui/sheet';
+import { localizeUserFacingError, localizeUserFacingMessage } from '../lib/user-facing-error';
 import { createAgentV2Client, findRemovedUploadedSessionAttachments } from '../lib/agent-v2/client';
 import {
   completeBackendLivePreview,
@@ -2259,7 +2260,7 @@ export function Chat() {
     }
 
     if (nextStatus === 'failed') {
-      toast.error(bootstrapGate.backgroundSync.detail);
+      toast.error(localizeUserFacingMessage(bootstrapGate.backgroundSync.detail));
     }
   }, [bootstrapGate.backgroundSync]);
 
@@ -2793,7 +2794,7 @@ export function Chat() {
       );
       toast.success('会话 Markdown 已开始导出');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '导出 Markdown 失败');
+      toast.error(localizeUserFacingError(error, '导出 Markdown 失败'));
     }
   }, [conversationExportTitle, conversationId, stream.conversationItems, stream.sessionId]);
   const handleCopyAssistantMarkdown = useCallback(async (card: RunCard) => {
@@ -2806,7 +2807,7 @@ export function Chat() {
       await navigator.clipboard.writeText(buildAssistantResponseMarkdown(card));
       toast.success('Markdown 已复制');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '复制 Markdown 失败');
+      toast.error(localizeUserFacingError(error, '复制 Markdown 失败'));
     }
   }, []);
   const handleExportAssistantMarkdown = useCallback((card: RunCard) => {
@@ -2822,7 +2823,7 @@ export function Chat() {
       );
       toast.success('回答 Markdown 已开始导出');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '导出 Markdown 失败');
+      toast.error(localizeUserFacingError(error, '导出 Markdown 失败'));
     }
   }, []);
   const latestVisibleConversationItemKey = useMemo(() => {

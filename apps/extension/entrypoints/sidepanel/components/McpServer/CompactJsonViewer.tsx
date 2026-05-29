@@ -18,7 +18,7 @@ export const CompactJsonViewer: React.FC<CompactJsonViewerProps> = ({ data, clas
 
   const formatValue = (value: JsonValue, depth = 0): React.ReactNode => {
     if (value === null) return <span className={getValueColor(value)}>null</span>;
-    if (value === undefined) return <span className="text-gray-400">undefined</span>;
+    if (value === undefined) return <span className="text-gray-400">未定义</span>;
 
     if (typeof value === 'string') {
       const maxLength = 50;
@@ -46,7 +46,7 @@ export const CompactJsonViewer: React.FC<CompactJsonViewerProps> = ({ data, clas
               {formatValue(item, depth + 1)}
             </span>
           ))}
-          {hasMore && <span className="text-gray-400">, ...{value.length - 3} more</span>}]
+          {hasMore && <span className="text-gray-400">, 另有 {value.length - 3} 项</span>}]
         </span>
       );
     }
@@ -69,7 +69,7 @@ export const CompactJsonViewer: React.FC<CompactJsonViewerProps> = ({ data, clas
               {formatValue(val, depth + 1)}
             </span>
           ))}
-          {hasMore && <span className="text-gray-400">, ...{entries.length - 5} more</span>}
+          {hasMore && <span className="text-gray-400">, 另有 {entries.length - 5} 项</span>}
           <span className="text-gray-400">{' }'}</span>
         </div>
       );

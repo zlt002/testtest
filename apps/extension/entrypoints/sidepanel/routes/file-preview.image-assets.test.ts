@@ -6,6 +6,7 @@ import {
   buildMarkdownPreviewImageUrl,
   imageExtensionFromMimeType,
   insertMarkdownImageSnippet,
+  loadMarkdownPreviewImageSource,
   resolveAvailableImageAssetPath,
   validateMarkdownImageFile,
 } from './file-preview.image-assets';
@@ -111,5 +112,37 @@ describe('file preview image assets', () => {
         imageSrc: 'data:image/png;base64,abc',
       })
     ).toBe('data:image/png;base64,abc');
+  });
+
+  it('loads relative markdown images as blob urls instead of direct backend urls', async () => {
+    const fetch = async (input: string | URL) => {
+      expect(String(input)).toBe(
+        'http://127.0.0.1:12306/api/preview/file?projectPath=%2FUsers%2Fme%2Fproject&filePath=docs%2Fassets%2F%E6%B5%81%E7%A8%8B%E5%9B%BE.png'
+      );
+      return new Response(new Blob(['png-bytes'], { type: 'image/png' }), {
+        status: 200,
+      });
+    };
+    const revokeObjectURL = () => {};
+
+    const result = await loadMarkdownPreviewImageSource(
+      {
+        backendBaseUrl: 'http://127.0.0.1:12306/',
+        projectPath: '/Users/me/project',
+        markdownFilePath: 'docs/PRD.md',
+        imageSrc: 'assets/流程图.png',
+      },
+      {
+        fetch,
+        createObjectURL(blob) {
+          expect(blob.type).toBe('image/png');
+          return 'blob:chrome-extension://test/preview-image';
+        },
+        revokeObjectURL,
+      }
+    );
+
+    expect(result.src).toBe('blob:chrome-extension://test/preview-image');
+    result.revoke();
   });
 });
