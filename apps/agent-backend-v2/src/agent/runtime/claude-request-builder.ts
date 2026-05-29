@@ -38,6 +38,46 @@ function allowedToolsForMcpServers(mcpServers: Record<string, unknown> | undefin
   return BROWSER_EXTENSION_ALLOWED_TOOLS;
 }
 
+function mergeSystemPrompt(input: {
+  appendSystemPrompt?: string;
+  systemPrompt?:
+    | string
+    | string[]
+    | {
+        type: 'preset';
+        preset: 'claude_code';
+        append?: string;
+        excludeDynamicSections?: boolean;
+      };
+}) {
+  const appendSystemPrompt = input.appendSystemPrompt?.trim();
+  if (!appendSystemPrompt) {
+    return input.systemPrompt;
+  }
+
+  if (!input.systemPrompt) {
+    return {
+      type: 'preset' as const,
+      preset: 'claude_code' as const,
+      append: appendSystemPrompt,
+    };
+  }
+
+  if (typeof input.systemPrompt === 'string') {
+    return `${appendSystemPrompt}\n\n${input.systemPrompt}`;
+  }
+
+  if (Array.isArray(input.systemPrompt)) {
+    return [appendSystemPrompt, ...input.systemPrompt];
+  }
+
+  const existingAppend = input.systemPrompt.append?.trim();
+  return {
+    ...input.systemPrompt,
+    append: existingAppend ? `${appendSystemPrompt}\n\n${existingAppend}` : appendSystemPrompt,
+  };
+}
+
 export function buildClaudeRequestOptions(input: {
   env: AgentBackendV2Env;
   projectPath?: string;
@@ -62,6 +102,7 @@ export function buildClaudeRequestOptions(input: {
         append?: string;
         excludeDynamicSections?: boolean;
       };
+  appendSystemPrompt?: string;
 }) {
   const allowedTools =
     input.allowedTools !== undefined
@@ -86,7 +127,7 @@ export function buildClaudeRequestOptions(input: {
     settingSources: input.settingSources || ['user', 'project', 'local'],
     skills: input.skills,
     plugins: input.plugins,
-    systemPrompt: input.systemPrompt,
+    systemPrompt: mergeSystemPrompt(input),
     allowDangerouslySkipPermissions: input.permissionMode === 'bypassPermissions',
     env: {
       ...process.env,

@@ -39,3 +39,35 @@ test('keeps effort for official anthropic api', () => {
 
   assert.equal(options.effort, 'high');
 });
+
+test('injects default chinese system prompt when none is provided', () => {
+  const options = buildClaudeRequestOptions({
+    env: BASE_ENV,
+    appendSystemPrompt: '你正在服务中文用户，所有面向用户的可见内容必须以简体中文输出。',
+  });
+
+  assert.deepEqual(options.systemPrompt, {
+    type: 'preset',
+    preset: 'claude_code',
+    append: '你正在服务中文用户，所有面向用户的可见内容必须以简体中文输出。',
+  });
+});
+
+test('merges default chinese system prompt with preset append prompts', () => {
+  const options = buildClaudeRequestOptions({
+    env: BASE_ENV,
+    appendSystemPrompt: '你正在服务中文用户，所有面向用户的可见内容必须以简体中文输出。',
+    systemPrompt: {
+      type: 'preset',
+      preset: 'claude_code',
+      append: '当前是 WebEdit 扩展内置办公会话。',
+    },
+  });
+
+  assert.deepEqual(options.systemPrompt, {
+    type: 'preset',
+    preset: 'claude_code',
+    append:
+      '你正在服务中文用户，所有面向用户的可见内容必须以简体中文输出。\n\n当前是 WebEdit 扩展内置办公会话。',
+  });
+});

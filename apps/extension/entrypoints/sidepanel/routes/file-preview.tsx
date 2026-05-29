@@ -1146,7 +1146,6 @@ function normalizeMermaidSvgElement(svgElement: SVGSVGElement | null) {
 function MermaidBlock({ chart }: { chart: string }) {
   const [svg, setSvg] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [loadNotice, setLoadNotice] = useState<string | null>(null);
   const [viewport, setViewport] = useState<MermaidViewport>({ scale: 1, x: 0, y: 0 });
   const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -2561,6 +2560,7 @@ function FilePreviewPage() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [loadNotice, setLoadNotice] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<FileAnnotation[]>([]);
   const [activeAnnotationPreview, setActiveAnnotationPreview] =
     useState<ActiveAnnotationPreview | null>(null);

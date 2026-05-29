@@ -1,7 +1,11 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest';
-import { projectConversationRunItems, sliceConversationRunItems } from './run-cards';
+import {
+  attachSubagentsToConversationItems,
+  projectConversationRunItems,
+  sliceConversationRunItems,
+} from './run-cards';
 import type { DisplayMessage } from './types';
 
 const timestamp = '2026-05-11T00:00:00.000Z';
@@ -159,6 +163,52 @@ describe('projectConversationRunItems', () => {
     if (run?.type !== 'run') return;
     expect(run.card.processItemCount).toBe(1);
     expect(run.card.processItems.map((item) => item.id)).toEqual(['tool-1']);
+  });
+
+  it('localizes brainstorming todo items into chinese for user-facing cards', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'todo-1',
+        runId: 'run-1',
+        kind: 'tool_call',
+        toolName: 'TodoWrite',
+        toolInput: {
+          todos: [
+            {
+              content: 'Explore project context and understand codebase',
+              status: 'in_progress',
+            },
+            {
+              content: "Clarify user's specific needs and constraints",
+              status: 'pending',
+            },
+            {
+              content: 'Propose 2-3 approaches with trade-offs',
+              status: 'pending',
+            },
+          ],
+        },
+      }),
+    ]);
+
+    const run = items.find((item) => item.type === 'run');
+
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.todos).toEqual([
+      {
+        content: '了解项目上下文并理解代码库',
+        status: 'in_progress',
+      },
+      {
+        content: '明确用户的具体需求和约束',
+        status: 'pending',
+      },
+      {
+        content: '提出 2-3 个方案并说明权衡',
+        status: 'pending',
+      },
+    ]);
   });
 
   it('preserves the full process list when a run has many process events', () => {
@@ -426,6 +476,58 @@ describe('projectConversationRunItems', () => {
       'current-user',
       'run-1',
     ]);
+  });
+
+  it('attaches subagent snapshots to the matching live run card', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'user-1',
+        role: 'user',
+        kind: 'text',
+        text: '帮我分析项目',
+      }),
+      message({
+        id: 'tool-1',
+        runId: 'run-1',
+        kind: 'tool_call',
+        toolName: 'Agent',
+        timestamp: '2026-05-11T00:00:01.000Z',
+      }),
+    ]);
+
+    const merged = attachSubagentsToConversationItems({
+      items,
+      runId: 'run-1',
+      subagents: [
+        {
+          agentId: 'a1',
+          title: 'Explore project context',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:02.000Z',
+          updatedAt: '2026-05-11T00:00:04.000Z',
+          latestSummary: '正在整理项目结构',
+          latestToolName: 'Read',
+          messageCount: 2,
+          toolCount: 3,
+          activities: [
+            {
+              id: 'activity-1',
+              timestamp: '2026-05-11T00:00:04.000Z',
+              kind: 'message',
+              title: '子代理消息',
+              detail: '正在整理项目结构',
+            },
+          ],
+        },
+      ],
+    });
+
+    const run = merged.find((item) => item.type === 'run');
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.subagents).toHaveLength(1);
+    expect(run.card.subagents[0]?.title).toBe('Explore project context');
+    expect(run.card.subagents[0]?.latestToolName).toBe('Read');
   });
 });
 

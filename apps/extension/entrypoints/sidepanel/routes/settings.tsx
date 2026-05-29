@@ -23,6 +23,7 @@ import {
 import { Textarea } from '@/entrypoints/sidepanel/components/ui/textarea';
 import { createAgentV2Client } from '../lib/agent-v2/client';
 import {
+  OFFICIAL_API_KEY_PORTAL_URL,
   OFFICIAL_MODEL_GATEWAY_BASE_URL,
   createDefaultUserClaudeSettingsJson,
   hasStoredProjectModelConfig,
@@ -570,6 +571,12 @@ export function ModelSettings({
                       />
                       <Button variant="ghost" onClick={() => setShowAnthropic((value) => !value)}>
                         {showAnthropic ? '隐藏' : '显示'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => window.open(OFFICIAL_API_KEY_PORTAL_URL, '_blank', 'noreferrer')}
+                      >
+                        查看Key
                       </Button>
                       <Button
                         variant="outline"

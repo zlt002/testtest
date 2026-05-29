@@ -48,6 +48,32 @@ export type DisplayMessage = {
   interactionKind?: 'interactive_prompt' | 'permission_request' | null;
 };
 
+export type SessionSubagentActivity = {
+  id: string;
+  timestamp: string;
+  kind: 'message' | 'tool_started' | 'tool_completed' | 'status';
+  title: string;
+  detail: string;
+};
+
+export type SessionSubagentSnapshot = {
+  agentId: string;
+  title: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string | null;
+  updatedAt: string | null;
+  latestSummary?: string | null;
+  latestToolName?: string | null;
+  messageCount: number;
+  toolCount: number;
+  activities: SessionSubagentActivity[];
+};
+
+export type SessionSubagentsResponse = {
+  sessionId: string;
+  subagents: SessionSubagentSnapshot[];
+};
+
 export type ToolDisplayRecord = {
   id: string;
   runId?: string | null;

@@ -36,6 +36,7 @@ import type {
   SessionAttachment,
   SessionRunStateRecord,
   SessionHistoryResponse,
+  SessionSubagentsResponse,
   SkillHealthCheckResult,
   StartRunInput,
   SystemUpdateInfo,
@@ -454,6 +455,25 @@ export function createAgentV2Client(options: AgentV2ClientOptions) {
       );
       if (!response.ok) {
         throw new Error(`Failed to load Agent V2 session history: ${response.status}`);
+      }
+      return response.json();
+    },
+
+    async getSessionSubagents(
+      sessionId: string,
+      input?: { projectPath?: string; signal?: AbortSignal }
+    ): Promise<SessionSubagentsResponse> {
+      const query = input?.projectPath
+        ? `?projectPath=${encodeURIComponent(input.projectPath)}`
+        : '';
+      const response = await fetch(
+        createApiUrl(options, `/sessions/${encodeURIComponent(sessionId)}/subagents${query}`),
+        {
+          signal: input?.signal,
+        }
+      );
+      if (!response.ok) {
+        throw await buildRequestError(response, 'Failed to load Agent V2 subagents');
       }
       return response.json();
     },

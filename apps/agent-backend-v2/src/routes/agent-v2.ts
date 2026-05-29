@@ -190,6 +190,7 @@ export function createAgentV2Route(agentService: {
   listSessions?(): Promise<unknown>;
   getSessionRunState?(input: { sessionId: string }): Promise<unknown>;
   getSessionHistory(input: { sessionId: string; projectPath?: string }): Promise<unknown>;
+  getSessionSubagents?(input: { sessionId: string; projectPath?: string }): Promise<unknown>;
   abortRun(input: { runId: string }): Promise<unknown>;
   resolveInteraction?(input: {
     runId: string;
@@ -308,6 +309,21 @@ export function createAgentV2Route(agentService: {
             sessionId: params.sessionId,
             projectPath: requestUrl.searchParams.get('projectPath') || undefined,
           })
+        );
+        return true;
+      }
+
+      const subagentParams = matchPath('/api/agent-v2/sessions/:sessionId/subagents', pathname);
+      if (subagentParams) {
+        sendJson(
+          res,
+          200,
+          agentService.getSessionSubagents
+            ? await agentService.getSessionSubagents({
+                sessionId: subagentParams.sessionId,
+                projectPath: requestUrl.searchParams.get('projectPath') || undefined,
+              })
+            : { sessionId: subagentParams.sessionId, subagents: [] }
         );
         return true;
       }

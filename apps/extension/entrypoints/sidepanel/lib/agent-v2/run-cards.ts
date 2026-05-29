@@ -1,4 +1,4 @@
-import type { DisplayMessage } from './types';
+import type { DisplayMessage, SessionSubagentSnapshot } from './types';
 
 export const PROCESS_PREVIEW_ITEM_LIMIT = 2;
 const THINKING_BODY_LIMIT = 640;
@@ -61,6 +61,7 @@ export type RunCard = {
   startedAt: string | null;
   updatedAt: string | null;
   source: 'sdk-live' | 'official-history';
+  subagents: SessionSubagentSnapshot[];
 };
 
 export type ConversationRunItem =
@@ -306,9 +307,40 @@ function isTodoItem(value: unknown): value is TodoItem {
   );
 }
 
+const TODO_CONTENT_LOCALIZATION_RULES: Array<[pattern: RegExp, replacement: string]> = [
+  [/^explore project context and understand codebase$/i, '了解项目上下文并理解代码库'],
+  [/^explore project context$/i, '了解项目上下文'],
+  [/^offer visual companion(?: \(if visual questions ahead\))?$/i, '提供可视化辅助'],
+  [/^clarify user['’]s specific needs and constraints$/i, '明确用户的具体需求和约束'],
+  [/^ask clarifying questions$/i, '确认需求问题'],
+  [/^propose 2-3 approaches(?: with trade-offs)?$/i, '提出 2-3 个方案并说明权衡'],
+  [/^present design(?: sections incrementally)?$/i, '分阶段呈现设计方案'],
+  [/^write design doc(?: to .+)?$/i, '编写设计文档'],
+  [/^spec self-review$/i, '自检设计文档'],
+  [/^user reviews written spec$/i, '等待用户评审文档'],
+  [/^transition to implementation$/i, '进入实现阶段'],
+];
+
+export function localizeTodoContent(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return content;
+  }
+
+  for (const [pattern, replacement] of TODO_CONTENT_LOCALIZATION_RULES) {
+    if (pattern.test(trimmed)) {
+      return replacement;
+    }
+  }
+
+  return content;
+}
+
 function extractTodos(value: unknown): TodoItem[] {
   if (Array.isArray(value)) {
-    return value.filter(isTodoItem);
+    return value
+      .filter(isTodoItem)
+      .map((todo) => ({ ...todo, content: localizeTodoContent(todo.content) }));
   }
   if (typeof value === 'string') {
     try {
@@ -623,6 +655,7 @@ function buildRunCard(input: {
     startedAt: sorted[0]?.timestamp || null,
     updatedAt: sorted.at(-1)?.timestamp || null,
     source: input.source,
+    subagents: [],
   };
 }
 
@@ -730,4 +763,27 @@ export function projectConversationRunItems(messages: DisplayMessage[]): Convers
   }
 
   return items;
+}
+
+export function attachSubagentsToConversationItems(input: {
+  items: ConversationRunItem[];
+  runId: string | null;
+  subagents: SessionSubagentSnapshot[];
+}): ConversationRunItem[] {
+  if (!input.runId || input.subagents.length === 0) {
+    return input.items;
+  }
+
+  return input.items.map((item) => {
+    if (item.type !== 'run' || item.card.runId !== input.runId) {
+      return item;
+    }
+    return {
+      ...item,
+      card: {
+        ...item.card,
+        subagents: input.subagents,
+      },
+    };
+  });
 }

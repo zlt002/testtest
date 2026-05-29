@@ -1018,6 +1018,77 @@ test('plan 模式仍然要求审批写入类工具', async () => {
   await consumeStream;
 });
 
+test('Agent 工具会继承父代理权限上下文并注入到子代理 prompt', async () => {
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    toolPermissionsProvider: {
+      async getToolPermissions() {
+        return {
+          allowedTools: ['WebSearch', 'Read', 'mcp__codebase_memory_mcp__search_graph'],
+          disallowedTools: ['Bash', 'Write'],
+        };
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return Object.assign((async function* () {})(), {
+          async interrupt() {},
+        });
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '请并行调研问题',
+    projectPath: '/tmp/project-subagent-permission-inherit',
+    permissionMode: 'bypassPermissions',
+  });
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const decision = await capturedCanUseTool!(
+    'Agent',
+    {
+      description: '调研佛山天气情况',
+      prompt: '请使用 WebSearch 工具搜索最新天气信息并总结。',
+      subagent_type: 'claude',
+    },
+    { toolUseID: 'toolu-agent-inherit-1' }
+  );
+
+  assert.equal(decision.behavior, 'allow');
+  const updatedInput = decision.updatedInput as Record<string, unknown>;
+  assert.equal(updatedInput.subagent_type, 'claude');
+  assert.match(String(updatedInput.description || ''), /继承父级权限上下文/);
+  assert.match(String(updatedInput.prompt || ''), /<parent_permission_context>/);
+  assert.match(String(updatedInput.prompt || ''), /父级 permissionMode: bypassPermissions/);
+  assert.match(String(updatedInput.prompt || ''), /WebSearch, Read, mcp__codebase_memory_mcp__search_graph/);
+  assert.match(String(updatedInput.prompt || ''), /Bash, Write/);
+  assert.match(String(updatedInput.prompt || ''), /<subagent_task>/);
+  assert.match(String(updatedInput.prompt || ''), /请使用 WebSearch 工具搜索最新天气信息并总结。/);
+
+  for await (const _event of stream) {
+    // Drain stream.
+  }
+});
+
 test('非写入型 Skill 会自动放行', async () => {
   const controlledRun = createControlledQueryRun();
   let capturedCanUseTool:

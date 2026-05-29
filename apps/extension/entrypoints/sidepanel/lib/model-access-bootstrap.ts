@@ -12,6 +12,7 @@ import {
   type ModelAccessViewState,
 } from './model-access-state';
 
+export const OFFICIAL_API_KEY_PORTAL_URL = 'https://anapi-uat.annto.com/api-key-portal';
 export const OFFICIAL_MODEL_GATEWAY_BASE_URL = 'https://anapi-uat.annto.com/api-sse-anthropic';
 const OFFICIAL_MODEL_GATEWAY_V1_BASE_URL = `${OFFICIAL_MODEL_GATEWAY_BASE_URL}/v1`;
 

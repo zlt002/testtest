@@ -55,6 +55,7 @@ import {
   SheetTitle,
 } from '@/entrypoints/sidepanel/components/ui/sheet';
 import { localizeUserFacingError, localizeUserFacingMessage } from '../lib/user-facing-error';
+import { deriveDisplayedTodoStatus, formatDisplayedTodoStatus } from '../lib/todo-display';
 import { createAgentV2Client, findRemovedUploadedSessionAttachments } from '../lib/agent-v2/client';
 import {
   completeBackendLivePreview,
@@ -77,7 +78,7 @@ import type {
   RunProcessItem,
   TodoItem,
 } from '../lib/agent-v2/run-cards';
-import { sliceConversationRunItems } from '../lib/agent-v2/run-cards';
+import { localizeTodoContent, sliceConversationRunItems } from '../lib/agent-v2/run-cards';
 import {
   clearAgentV2ActiveRunSession,
   readAgentV2ActiveRunSession,
@@ -115,6 +116,7 @@ import type {
   DisplayMessage,
   PermissionMode,
   SessionAttachment,
+  SessionSubagentSnapshot,
   ThinkingMode,
   ToolDisplayRecord,
 } from '../lib/agent-v2/types';
@@ -129,6 +131,7 @@ import {
   deriveCurrentChatContext,
   deriveSessionTitleFromMessage,
 } from '../lib/current-chat-context';
+import { OFFICIAL_API_KEY_PORTAL_URL } from '../lib/model-access-bootstrap';
 import { deriveModelAccessViewState } from '../lib/model-access-state';
 import { subscribeModelAccessChanged } from '../lib/model-access-events';
 import {
@@ -200,7 +203,6 @@ function ClaudeCodeEmptyStateIcon() {
   );
 }
 
-const OFFICIAL_API_KEY_PORTAL_URL = 'https://anapi-uat.annto.com/api-key-portal';
 const OFFICIAL_MODEL_GATEWAY_BASE_URL = 'https://anapi-uat.annto.com/api-sse-anthropic';
 const OFFICIAL_MODEL_GATEWAY_DEFAULT_MODEL = 'qwen3.6-plus';
 
@@ -886,7 +888,13 @@ function ProcessDetailCard({ item }: { item: RunProcessItem }) {
   );
 }
 
-function TodoListPreview({ todos }: { todos: TodoItem[] }) {
+function TodoListPreview({
+  todos,
+  cardStatus,
+}: {
+  todos: TodoItem[];
+  cardStatus: RunCard['cardStatus'];
+}) {
   if (todos.length === 0) {
     return null;
   }
@@ -899,7 +907,7 @@ function TodoListPreview({ todos }: { todos: TodoItem[] }) {
         {visible.map((todo, index) => (
           <div key={`${todo.content}-${index}`} className="flex items-center gap-2">
             <span className="w-14 shrink-0 text-muted-foreground">
-              {formatTodoStatus(todo.status)}
+              {formatTodoStatus(todo.status, cardStatus)}
             </span>
             <span className="min-w-0 flex-1 truncate">{formatTodoContent(todo.content)}</span>
           </div>
@@ -909,44 +917,123 @@ function TodoListPreview({ todos }: { todos: TodoItem[] }) {
   );
 }
 
-function formatTodoStatus(status: string) {
-  const labels: Record<string, string> = {
-    in_progress: '进行中',
-    pending: '待处理',
-    completed: '已完成',
-    cancelled: '已取消',
-  };
-  return labels[status] || status;
+function formatTodoStatus(status: string, cardStatus: RunCard['cardStatus']) {
+  return formatDisplayedTodoStatus(deriveDisplayedTodoStatus(status, cardStatus));
 }
 
 function formatTodoContent(content: string) {
-  const labels: Record<string, string> = {
-    'Explore project context': '了解项目上下文',
-    'Offer visual companion (if visual questions ahead)': '提供可视化辅助',
-    'Ask clarifying questions': '确认需求问题',
-    'Propose 2-3 approaches': '提出 2-3 个方案',
-    'Present design': '呈现设计方案',
-    'Write design doc': '编写设计文档',
-    'Spec self-review': '自检设计文档',
-    'User reviews written spec': '等待用户评审文档',
-    'Transition to implementation': '进入实现阶段',
-  };
-  return labels[content] || content;
+  return localizeTodoContent(content);
 }
 
-function RunProcessPreview({ card }: { card: RunCard }) {
-  const items = card.previewItems;
-  if (card.processItems.length === 0) {
+function formatSubagentStatus(status: SessionSubagentSnapshot['status']) {
+  if (status === 'completed') {
+    return '已完成';
+  }
+  if (status === 'failed') {
+    return '失败';
+  }
+  return '运行中';
+}
+
+function formatSubagentDuration(startedAt: string | null, updatedAt: string | null) {
+  if (!startedAt || !updatedAt) {
+    return null;
+  }
+  const start = new Date(startedAt).getTime();
+  const end = new Date(updatedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return null;
+  }
+  const totalSeconds = Math.max(0, Math.round((end - start) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
+}
+
+function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }) {
+  const [expanded, setExpanded] = useState(() =>
+    subagents.some((subagent) => subagent.status === 'running')
+  );
+
+  useEffect(() => {
+    if (subagents.some((subagent) => subagent.status === 'running')) {
+      setExpanded(true);
+    }
+  }, [subagents]);
+
+  if (subagents.length === 0) {
     return null;
   }
 
   return (
-    <div className="rounded-md bg-muted/30 px-3 py-2">
-      <div className="space-y-0.5">
-        {items.map((item) => (
-          <ProcessRow key={item.id} item={item} />
-        ))}
-      </div>
+    <div className="rounded-md border bg-muted/20 px-3 py-2">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-2 text-left text-xs text-muted-foreground"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span>子代理 {subagents.length} 个</span>
+        <span className="flex items-center gap-1">
+          <span>{expanded ? '收起' : '展开'}</span>
+          <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      {expanded ? (
+        <div className="mt-2 space-y-2">
+          {subagents.map((subagent) => {
+            const latestActivity = subagent.activities.at(-1);
+            const duration = formatSubagentDuration(subagent.startedAt, subagent.updatedAt);
+            return (
+              <div key={subagent.agentId} className="rounded-md bg-background/80 px-3 py-2 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="truncate font-medium text-foreground">{subagent.title}</span>
+                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                      {formatSubagentStatus(subagent.status)}
+                    </Badge>
+                    {duration ? (
+                      <span className="tabular-nums text-muted-foreground">{duration}</span>
+                    ) : null}
+                  </div>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                    {subagent.messageCount} 条消息 · {subagent.toolCount} 次工具调用
+                  </span>
+                </div>
+                <div className="mt-1 space-y-1 text-muted-foreground">
+                  {subagent.latestToolName ? <div>最近工具：{subagent.latestToolName}</div> : null}
+                  {subagent.latestSummary ? (
+                    <div className="line-clamp-2">最近摘要：{subagent.latestSummary}</div>
+                  ) : latestActivity ? (
+                    <div className="line-clamp-2">最近动作：{latestActivity.detail}</div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RunProcessPreview({ card }: { card: RunCard }) {
+  const items = card.previewItems;
+  if (card.processItems.length === 0 && card.subagents.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      {card.processItems.length > 0 ? (
+        <div className="rounded-md bg-muted/30 px-3 py-2">
+          <div className="space-y-0.5">
+            {items.map((item) => (
+              <ProcessRow key={item.id} item={item} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <SubagentPreview subagents={card.subagents} />
     </div>
   );
 }
@@ -1567,7 +1654,7 @@ const AssistantRunCard = memo(function AssistantRunCard({
             open={isProcessSheetOpen}
             onOpenChange={setIsProcessSheetOpen}
           />
-          <TodoListPreview todos={card.todos} />
+          <TodoListPreview todos={card.todos} cardStatus={card.cardStatus} />
           <FileReferencesPreview files={card.files} projectPath={projectPath} />
           {card.responseMessages.length > 0 ? (
             <AssistantBubble>

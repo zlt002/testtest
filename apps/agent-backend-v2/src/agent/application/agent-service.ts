@@ -22,6 +22,10 @@ import {
 } from '../runtime/interaction-policy-router.ts';
 import { createPolicyAuditLog } from '../runtime/policy-audit.ts';
 import { selectSessionSkillPlan } from '../runtime/skill-selection.ts';
+import {
+  type SessionSubagentSnapshot,
+  readSessionSubagentSnapshots,
+} from '../../claude-history/subagent-history-reader.ts';
 import { type AbortRunResult, abortRun } from './abort-run.ts';
 import { getSessionHistory } from './get-session-history.ts';
 import {
@@ -86,6 +90,14 @@ const CHINESE_LANGUAGE_INSTRUCTION = [
   '请始终使用中文进行对话、计划、待办、过程说明和最终回答。',
   '代码、API 名称、工具名、文件路径、命令和必要的技术标识可以保留英文。',
   '</language_instruction>',
+].join('\n');
+
+const CHINESE_USER_SYSTEM_PROMPT = [
+  '你正在服务中文用户。',
+  '除非用户明确要求，否则所有面向用户的可见内容都必须使用简体中文。',
+  '所有计划、待办、步骤拆解、过程说明、状态更新和最终回答都必须使用简体中文。',
+  '代码、API 名称、工具名、文件路径、命令和必要的技术标识可以保留英文。',
+  '如果上游 skill、插件、模板或工具返回英文，应该优先改写或翻译成中文后再面向用户展示。',
 ].join('\n');
 
 function buildProjectWorkspaceInstruction(projectPath?: string): string | null {
@@ -291,6 +303,72 @@ function mapActiveRunStatus(event: AgentEvent): SessionRunStateStatus {
 
 function normalizeStringList(value: string[] | undefined): string[] {
   return [...new Set((value || []).map((item) => item.trim()).filter(Boolean))];
+}
+
+function buildSubagentPermissionInheritanceInstruction(input: {
+  permissionMode?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+}): string {
+  const permissionMode = input.permissionMode?.trim() || 'default';
+  const allowedTools = normalizeStringList(input.allowedTools);
+  const disallowedTools = normalizeStringList(input.disallowedTools);
+  const allowedToolsText = allowedTools.length > 0 ? allowedTools.join(', ') : '(未显式限制)';
+  const disallowedToolsText =
+    disallowedTools.length > 0 ? disallowedTools.join(', ') : '(未显式限制)';
+
+  return [
+    '<parent_permission_context>',
+    '这是父代理显式传递给你的权限上下文，你必须按同一套规则继续执行，不要自行降级、收紧或忽略。',
+    `父级 permissionMode: ${permissionMode}`,
+    `父级 allowedTools: ${allowedToolsText}`,
+    `父级 disallowedTools: ${disallowedToolsText}`,
+    '执行要求：',
+    '1. 你是父代理的子代理，默认继承父代理当前的授权边界。',
+    '2. 如果父级 permissionMode 是 bypassPermissions，说明父代理已经获得放行，不要因为“需要额外授权”而拒绝执行。',
+    '3. 如果存在 allowedTools，仅在该范围内选择工具。',
+    '4. 如果存在 disallowedTools，绝对不要调用这些工具。',
+    '5. 如果你原本想因为权限原因拒绝任务，请改为在上述继承权限范围内继续完成任务。',
+    '</parent_permission_context>',
+  ].join('\n');
+}
+
+function inheritParentPermissionsForAgentTool(input: {
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  permissionMode?: string;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+}): Record<string, unknown> {
+  if (input.toolName !== 'Agent') {
+    return input.toolInput;
+  }
+
+  const originalPrompt =
+    typeof input.toolInput.prompt === 'string' ? input.toolInput.prompt.trim() : '';
+  if (originalPrompt.includes('<parent_permission_context>')) {
+    return input.toolInput;
+  }
+
+  const permissionBlock = buildSubagentPermissionInheritanceInstruction({
+    permissionMode: input.permissionMode,
+    allowedTools: input.allowedTools,
+    disallowedTools: input.disallowedTools,
+  });
+  const description =
+    typeof input.toolInput.description === 'string' ? input.toolInput.description.trim() : '';
+  const nextDescription =
+    description && !description.includes('继承父级权限')
+      ? `${description}（继承父级权限上下文）`
+      : description;
+
+  return {
+    ...input.toolInput,
+    ...(nextDescription ? { description: nextDescription } : {}),
+    prompt: originalPrompt
+      ? `${permissionBlock}\n\n<subagent_task>\n${originalPrompt}\n</subagent_task>`
+      : permissionBlock,
+  };
 }
 
 function resolveRuntimePlugins(input: {
@@ -850,6 +928,7 @@ export function createAgentService(deps: AgentServiceDeps) {
           plugins: runtimePlugins,
           sdkEnv,
           systemPrompt: skillPlan?.systemPrompt,
+          appendSystemPrompt: CHINESE_USER_SYSTEM_PROMPT,
         })
       : {
           cwd: input.projectPath,
@@ -863,6 +942,15 @@ export function createAgentService(deps: AgentServiceDeps) {
           plugins: runtimePlugins,
           systemPrompt: skillPlan?.systemPrompt,
         };
+    if (!deps.env) {
+      (options as Record<string, unknown>).systemPrompt = {
+        type: 'preset',
+        preset: 'claude_code',
+        append: skillPlan?.systemPrompt?.append
+          ? `${CHINESE_USER_SYSTEM_PROMPT}\n\n${skillPlan.systemPrompt.append}`
+          : CHINESE_USER_SYSTEM_PROMPT,
+      };
+    }
     (options as Record<string, unknown>).attachments = (input.attachments || []).map(
       ({ data, ...attachment }) => attachment
     );
@@ -871,6 +959,13 @@ export function createAgentService(deps: AgentServiceDeps) {
       toolInput: Record<string, unknown>,
       context: Record<string, unknown> = {}
     ) => {
+      const effectiveToolInput = inheritParentPermissionsForAgentTool({
+        toolName,
+        toolInput,
+        permissionMode: input.permissionMode,
+        allowedTools: toolPermissions?.allowedTools,
+        disallowedTools: toolPermissions?.disallowedTools,
+      });
       const isInteractivePrompt = toolName === 'AskUserQuestion';
       const requestId =
         typeof context.toolUseID === 'string' && context.toolUseID
@@ -887,7 +982,7 @@ export function createAgentService(deps: AgentServiceDeps) {
           toolUseID: requestId,
         };
       }
-      const policyDecision = policySession.beforeToolUse(toolName, toolInput);
+      const policyDecision = policySession.beforeToolUse(toolName, effectiveToolInput);
 
       if (policyDecision.behavior !== 'allow') {
         recordPolicyDecisionAudit({
@@ -907,16 +1002,16 @@ export function createAgentService(deps: AgentServiceDeps) {
         allowedToolUses.set(requestId, toolName);
         return {
           behavior: 'allow',
-          updatedInput: toolInput,
+          updatedInput: effectiveToolInput,
           toolUseID: requestId,
         };
       }
 
-      if (!isInteractivePrompt && !requiresApprovalForSideEffects(toolName, toolInput)) {
+      if (!isInteractivePrompt && !requiresApprovalForSideEffects(toolName, effectiveToolInput)) {
         allowedToolUses.set(requestId, toolName);
         return {
           behavior: 'allow',
-          updatedInput: toolInput,
+          updatedInput: effectiveToolInput,
           toolUseID: requestId,
         };
       }
@@ -932,7 +1027,7 @@ export function createAgentService(deps: AgentServiceDeps) {
               : isInteractivePrompt
                 ? 'Claude 需要向你确认一个问题。'
                 : `Claude 请求使用 ${toolName}`,
-          input: toolInput,
+          input: effectiveToolInput,
           context,
         })
       );
@@ -977,8 +1072,8 @@ export function createAgentService(deps: AgentServiceDeps) {
         decision.updatedInput && typeof decision.updatedInput === 'object'
           ? (decision.updatedInput as Record<string, unknown>)
           : decision.answers
-            ? { ...toolInput, answers: decision.answers }
-            : toolInput;
+            ? { ...effectiveToolInput, answers: decision.answers }
+            : effectiveToolInput;
       allowedToolUses.set(requestId, toolName);
       return {
         behavior: 'allow',
@@ -1315,6 +1410,22 @@ export function createAgentService(deps: AgentServiceDeps) {
 
     getSessionHistory(input: { sessionId: string; projectPath?: string }) {
       return getSessionHistory({ ...input, historyReader: deps.historyReader });
+    },
+
+    async getSessionSubagents(input: { sessionId: string; projectPath?: string }): Promise<{
+      sessionId: string;
+      subagents: SessionSubagentSnapshot[];
+    }> {
+      if (!input.projectPath) {
+        return { sessionId: input.sessionId, subagents: [] };
+      }
+      return {
+        sessionId: input.sessionId,
+        subagents: await readSessionSubagentSnapshots({
+          sessionId: input.sessionId,
+          projectPath: input.projectPath,
+        }),
+      };
     },
 
     abortRun(input: { runId: string }) {

@@ -503,6 +503,46 @@ describe('ModelSettings', () => {
     });
   });
 
+  it('opens the official api key portal from model settings', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const view = render(
+      <ModelSettings
+        localConfig={baseModelConfig()}
+        setLocalConfig={vi.fn()}
+        runtimeInfo={baseRuntimeInfo()}
+        selectedAuthSource="project_model_config"
+        userClaudeSettings={baseUserClaudeSettings()}
+        userClaudeSettingsText={baseUserClaudeSettings().rawJson ?? ''}
+        onChangeUserClaudeSettingsText={vi.fn()}
+        officialModels={[]}
+        officialModelsPending={false}
+        officialModelsError={null}
+        officialQuota={null}
+        officialQuotaPending={false}
+        officialQuotaError={null}
+        onRefreshOfficialData={vi.fn()}
+        onSelectAuthSource={vi.fn()}
+        onSaveUserClaudeSettings={vi.fn()}
+        onSaveProjectConfig={vi.fn()}
+        onTestUserClaudeSettings={vi.fn()}
+        onTestProjectModelConfig={vi.fn()}
+        userClaudeSettingsTestResult={null}
+        userClaudeSettingsSavePending={false}
+        userClaudeSettingsTestPending={false}
+        projectModelConfigTestResult={null}
+        projectModelConfigTestPending={false}
+      />
+    );
+
+    fireEvent.click(view.getByRole('button', { name: '查看Key' }));
+
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://anapi-uat.annto.com/api-key-portal',
+      '_blank',
+      'noreferrer'
+    );
+  });
+
   it('shows warning when process_env fallback appears unexpectedly', () => {
     const view = render(
       <ModelSettings

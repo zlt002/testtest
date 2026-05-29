@@ -112,9 +112,13 @@ test('agent service starts a session run through runtime query stream', async ()
       mcpServers: Record<string, unknown>;
       settingSources?: string[];
       skills?: string[] | 'all';
+      systemPrompt?: { type: 'preset'; preset: 'claude_code'; append?: string };
     };
   };
   assert.match(queryInput.prompt, /请始终使用中文/);
+  assert.deepEqual(queryInput.options.systemPrompt?.type, 'preset');
+  assert.deepEqual(queryInput.options.systemPrompt?.preset, 'claude_code');
+  assert.match(queryInput.options.systemPrompt?.append || '', /你正在服务中文用户/);
   assert.match(queryInput.prompt, /当前项目根目录：\/tmp\/project/);
   assert.match(queryInput.prompt, /默认所有新建或导出的文档、Markdown、代码和配置文件都必须写入当前项目根目录内/);
   assert.match(queryInput.prompt, /优先使用结构化写文件\/改文件工具/);

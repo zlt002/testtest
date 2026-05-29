@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clearAgentV2ActiveRunSession, publishAgentV2ActiveRunSession } from './active-run-session';
 import { createAgentV2Client, normalizeRunAttachmentsForRequest } from './client';
 import { projectAgentEventsToMessages, projectToolDisplayRecords } from './project-events';
-import { projectConversationRunItems } from './run-cards';
+import { attachSubagentsToConversationItems, projectConversationRunItems } from './run-cards';
 import { localizeUserFacingError, localizeUserFacingMessage } from '../user-facing-error';
 import {
   buildWebEditWorkflowInstruction,
@@ -16,6 +16,7 @@ import type {
   ImageAttachment,
   InteractionDecision,
   SessionRunStateRecord,
+  SessionSubagentSnapshot,
   SessionAttachment,
   SessionHistoryResponse,
 } from './types';
@@ -89,6 +90,10 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [subagentRunId, setSubagentRunId] = useState<string | null>(null);
+  const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
+  const [activeRunStartedAt, setActiveRunStartedAt] = useState<string | null>(null);
+  const [subagents, setSubagents] = useState<SessionSubagentSnapshot[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const eventMessages = useMemo(() => projectAgentEventsToMessages(events), [events]);
@@ -115,7 +120,15 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     [allMessages]
   );
   const tools = useMemo(() => projectToolDisplayRecords(allMessages), [allMessages]);
-  const conversationItems = useMemo(() => projectConversationRunItems(allMessages), [allMessages]);
+  const conversationItems = useMemo(
+    () =>
+      attachSubagentsToConversationItems({
+        items: projectConversationRunItems(allMessages),
+        runId: subagentRunId,
+        subagents,
+      }),
+    [allMessages, subagentRunId, subagents]
+  );
   const contextPercent = useMemo(() => {
     const tokenTotal = events.reduce((total, event) => {
       if (event.type !== 'run.completed' && event.type !== 'usage.updated') {
@@ -135,6 +148,10 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setEvents([]);
     setSessionId(null);
     setActiveRunId(null);
+    setSubagentRunId(null);
+    setActiveProjectPath(null);
+    setActiveRunStartedAt(null);
+    setSubagents([]);
   }, []);
 
   const loadHistory = useCallback((history: SessionHistoryResponse) => {
@@ -146,6 +163,10 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setEvents([]);
     setSessionId(history.sessionId);
     setActiveRunId(null);
+    setSubagentRunId(null);
+    setActiveProjectPath(null);
+    setSubagents([]);
+    setActiveRunStartedAt(null);
   }, []);
 
   const restoreSessionRunState = useCallback((runState: SessionRunStateRecord | null) => {
@@ -158,6 +179,9 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
 
     setSessionId(runState.sessionId);
     setActiveRunId(runState.runId);
+    setSubagentRunId(runState.runId);
+    setActiveProjectPath(runState.projectPath || null);
+    setActiveRunStartedAt(runState.startedAt);
     setError(null);
     const activeStatus = runState.status === 'connecting' ? 'connecting' : 'streaming';
     setStatus(activeStatus);
@@ -254,6 +278,10 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         ? input.images
         : attachmentsToDisplayImages(attachments);
       abortControllerRef.current = controller;
+      setActiveProjectPath(input?.projectPath || null);
+      setActiveRunStartedAt(new Date().toISOString());
+      setSubagents([]);
+      setSubagentRunId(null);
       const localUserId = `local-user-${crypto.randomUUID()}`;
       const localAssistantId = `local-assistant-${crypto.randomUUID()}`;
       let hasReceivedEvent = false;
@@ -304,6 +332,10 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         }
         if (event.runId) {
           setActiveRunId(event.runId);
+          setSubagentRunId(event.runId);
+          if (event.type === 'run.started') {
+            setActiveRunStartedAt(event.timestamp);
+          }
           setLocalMessages((current) =>
             current.map((message) =>
               message.id === localUserId && !message.runId
@@ -397,6 +429,54 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     },
     [client, sessionId, status]
   );
+
+  useEffect(() => {
+    if (!sessionId || !activeProjectPath || !activeRunId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const response = await client.getSessionSubagents(sessionId, {
+          projectPath: activeProjectPath,
+          signal: controller.signal,
+        });
+        if (!cancelled) {
+          const startedAtMs = activeRunStartedAt ? new Date(activeRunStartedAt).getTime() : 0;
+          setSubagents(
+            response.subagents.filter((subagent) => {
+              const candidate = subagent.startedAt || subagent.updatedAt;
+              const candidateMs = candidate ? new Date(candidate).getTime() : 0;
+              return !startedAtMs || candidateMs >= startedAtMs;
+            })
+          );
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.debug('[agent-v2] failed to poll subagents:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => {
+            void poll();
+          }, 1500);
+        }
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [activeProjectPath, activeRunId, activeRunStartedAt, client, sessionId]);
 
   const stop = useCallback(
     async (reason?: 'user_stop' | 'window_takeover_user_left') => {
