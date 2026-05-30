@@ -78,7 +78,20 @@ import type {
   RunProcessItem,
   TodoItem,
 } from '../lib/agent-v2/run-cards';
-import { localizeTodoContent, sliceConversationRunItems } from '../lib/agent-v2/run-cards';
+import {
+  deriveSubagentRuntimeState,
+  localizeTodoContent,
+  sanitizeUserVisibleProcessText,
+  sliceConversationRunItems,
+  summarizeSubagentWaitingState,
+} from '../lib/agent-v2/run-cards';
+import {
+  buildPlanApprovalActions,
+  resolvePlanApprovalAction,
+  type ExecutablePermissionMode,
+  type PendingContinuation,
+} from '../lib/agent-v2/plan-mode';
+import { buildContinuationPrompt } from '../lib/agent-v2/continuation';
 import {
   clearAgentV2ActiveRunSession,
   readAgentV2ActiveRunSession,
@@ -799,6 +812,7 @@ function ProcessLabel({ item }: { item: RunProcessItem }) {
     tool_result: '结果',
     interactive_prompt: '提问',
     permission_request: '审批',
+    plan_approval: '计划',
     session_status: '状态',
     notice: '过程',
   };
@@ -925,16 +939,6 @@ function formatTodoContent(content: string) {
   return localizeTodoContent(content);
 }
 
-function formatSubagentStatus(status: SessionSubagentSnapshot['status']) {
-  if (status === 'completed') {
-    return '已完成';
-  }
-  if (status === 'failed') {
-    return '失败';
-  }
-  return '运行中';
-}
-
 function formatSubagentDuration(startedAt: string | null, updatedAt: string | null) {
   if (!startedAt || !updatedAt) {
     return null;
@@ -950,7 +954,19 @@ function formatSubagentDuration(startedAt: string | null, updatedAt: string | nu
   return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
 }
 
+function useStatusClock(intervalMs = 5000) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+
+  return now;
+}
+
 function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }) {
+  const now = useStatusClock();
   const [expanded, setExpanded] = useState(() =>
     subagents.some((subagent) => subagent.status === 'running')
   );
@@ -983,28 +999,43 @@ function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }
           {subagents.map((subagent) => {
             const latestActivity = subagent.activities.at(-1);
             const duration = formatSubagentDuration(subagent.startedAt, subagent.updatedAt);
+            const runtimeState = deriveSubagentRuntimeState(subagent, now);
             return (
               <div key={subagent.agentId} className="rounded-md bg-background/80 px-3 py-2 text-xs">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="truncate font-medium text-foreground">{subagent.title}</span>
-                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                      {formatSubagentStatus(subagent.status)}
+                    <Badge
+                      variant="outline"
+                      className={`h-5 px-1.5 text-[10px] ${
+                        runtimeState.phase === 'stalled'
+                          ? 'border-red-300 text-red-700 dark:border-red-800 dark:text-red-300'
+                          : runtimeState.phase === 'waiting'
+                            ? 'border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-300'
+                            : ''
+                      }`}
+                    >
+                      {runtimeState.label}
                     </Badge>
                     {duration ? (
                       <span className="tabular-nums text-muted-foreground">{duration}</span>
                     ) : null}
                   </div>
                   <span className="shrink-0 text-[11px] text-muted-foreground">
-                    {subagent.messageCount} 条消息 · {subagent.toolCount} 次工具调用
+                    {subagent.messageCount} 消息 · {subagent.toolCount} 工具
                   </span>
                 </div>
                 <div className="mt-1 space-y-1 text-muted-foreground">
-                  {subagent.latestToolName ? <div>最近工具：{subagent.latestToolName}</div> : null}
+                  {subagent.latestToolName ? <div>工具：{subagent.latestToolName}</div> : null}
+                  {runtimeState.detail ? <div>{runtimeState.detail}</div> : null}
                   {subagent.latestSummary ? (
-                    <div className="line-clamp-2">最近摘要：{subagent.latestSummary}</div>
+                    <div className="line-clamp-2">
+                      摘要：{sanitizeUserVisibleProcessText(subagent.latestSummary)}
+                    </div>
                   ) : latestActivity ? (
-                    <div className="line-clamp-2">最近动作：{latestActivity.detail}</div>
+                    <div className="line-clamp-2">
+                      动作：{sanitizeUserVisibleProcessText(latestActivity.detail)}
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -1016,14 +1047,54 @@ function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }
   );
 }
 
-function RunProcessPreview({ card }: { card: RunCard }) {
+function RunProcessPreview({
+  card,
+  onStop,
+}: {
+  card: RunCard;
+  onStop?: () => void | Promise<void>;
+}) {
+  const now = useStatusClock();
   const items = card.previewItems;
   if (card.processItems.length === 0 && card.subagents.length === 0) {
     return null;
   }
 
+  const waitingSummaryState = summarizeSubagentWaitingState(card.subagents, now, {
+    parentLastActivityAt: card.updatedAt,
+  });
+  const parentWaitingSummary = waitingSummaryState.message;
+  const canStopForOrphanedSubagents =
+    waitingSummaryState.orphanedCount > 0 && card.cardStatus === 'running' && Boolean(onStop);
+
   return (
     <div className="space-y-2">
+      {parentWaitingSummary ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          <div>{parentWaitingSummary}</div>
+          {waitingSummaryState.orphanedCount > 0 &&
+          waitingSummaryState.activeWaitingCount === 0 &&
+          !waitingSummaryState.parentAdvancedBeyondOrphans &&
+          !waitingSummaryState.shouldAutoStop ? (
+            <div className="mt-1 text-[11px] text-amber-700/90 dark:text-amber-300/90">
+              如果全部子代理持续失联满 2 分钟，系统会自动停止当前运行，避免你继续空等。
+            </div>
+          ) : null}
+          {canStopForOrphanedSubagents ? (
+            <div className="mt-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 border-amber-300 bg-background/80 px-2 text-xs text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40"
+                onClick={() => void onStop?.()}
+              >
+                停止当前运行
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {card.processItems.length > 0 ? (
         <div className="rounded-md bg-muted/30 px-3 py-2">
           <div className="space-y-0.5">
@@ -1084,6 +1155,7 @@ type InteractionDecisionInput = {
     message?: string;
     updatedInput?: unknown;
     answers?: Record<string, unknown>;
+    nextPermissionMode?: 'acceptEdits' | 'bypassPermissions';
   };
 };
 
@@ -1162,6 +1234,25 @@ function normalizeAskQuestions(input: unknown, fallback: string | null | undefin
   const fallbackText =
     fallback || (isRecord(input) && typeof input.prompt === 'string' ? input.prompt : '');
   return fallbackText ? [{ question: fallbackText, options: [] }] : [];
+}
+
+function deriveOriginalGoal(card: ActiveInteractionCard, items: ConversationRunItem[]): string {
+  const reversed = [...items].reverse();
+  const matchedUser = reversed.find(
+    (item) =>
+      item.type === 'user' &&
+      typeof item.message.text === 'string' &&
+      (!card.runId || item.message.runId === card.runId || !item.message.runId)
+  );
+  return matchedUser?.type === 'user' ? matchedUser.message.text || '' : '';
+}
+
+function deriveApprovedPlan(interaction: ActiveInteractionCard['activeInteraction']): string {
+  const input = interaction.input;
+  if (input && typeof input === 'object' && typeof (input as { plan?: unknown }).plan === 'string') {
+    return String((input as { plan: string }).plan);
+  }
+  return interaction.message || '';
 }
 
 function AskUserQuestionPanel({
@@ -1520,6 +1611,102 @@ function ToolApprovalCard({
   );
 }
 
+function PlanApprovalCard({
+  card,
+  conversationItems,
+  onResolveInteraction,
+  onContinueWithClearContext,
+  onPermissionModeSelected,
+}: {
+  card: ActiveInteractionCard;
+  conversationItems: ConversationRunItem[];
+  onResolveInteraction: (input: InteractionDecisionInput) => Promise<void>;
+  onContinueWithClearContext: (input: PendingContinuation) => void;
+  onPermissionModeSelected: (mode: ExecutablePermissionMode) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const interaction = card.activeInteraction;
+  const rawInput = formatUnknown(interaction.input);
+  const actions = buildPlanApprovalActions();
+
+  const resolve = async (input: {
+    nextPermissionMode: ExecutablePermissionMode | null;
+    clearContext?: boolean;
+  }) => {
+    const { nextPermissionMode, clearContext } = input;
+    const continuationPrompt =
+      clearContext && nextPermissionMode
+        ? buildContinuationPrompt({
+            originalGoal: deriveOriginalGoal(card, conversationItems),
+            approvedPlan: deriveApprovedPlan(interaction),
+          })
+        : null;
+    const resolution = resolvePlanApprovalAction({
+      nextPermissionMode,
+      clearContext,
+      interactionInput: interaction.input,
+      continuationPrompt,
+    });
+
+    if (resolution.selectedPermissionMode) {
+      onPermissionModeSelected(resolution.selectedPermissionMode);
+    }
+
+    await onResolveInteraction({
+      runId: card.runId,
+      requestId: interaction.requestId,
+      decision: resolution.decision,
+    });
+
+    if (resolution.continuation) {
+      onContinueWithClearContext(resolution.continuation);
+    }
+  };
+
+  const handleActionClick = (action: (typeof actions)[number]) => {
+    void resolve({
+      nextPermissionMode: action.nextPermissionMode,
+      clearContext: action.clearContext,
+    });
+  };
+
+  return (
+    <div className="rounded-lg border bg-card px-3 py-2.5 text-xs text-card-foreground shadow-lg ring-1 ring-primary/20">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 truncate font-medium">{interaction.title || '计划确认'}</div>
+        <button
+          type="button"
+          className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? '收起' : '查看计划'}
+        </button>
+      </div>
+      {interaction.message ? (
+        <div className="mt-1 whitespace-pre-wrap text-muted-foreground">{interaction.message}</div>
+      ) : null}
+      {expanded && rawInput ? (
+        <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/30 p-2 text-[11px] leading-4 text-foreground">
+          {rawInput}
+        </pre>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        {actions.map((action) => (
+          <Button
+            key={action.id}
+            size="sm"
+            variant={action.nextPermissionMode ? 'default' : 'outline'}
+            className="h-7 px-2 text-xs"
+            onClick={() => handleActionClick(action)}
+          >
+            {action.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FileReferencesPreview({
   files,
   projectPath,
@@ -1554,11 +1741,13 @@ const AssistantRunCard = memo(function AssistantRunCard({
   projectPath,
   onCopyMarkdown,
   onExportMarkdown,
+  onStop,
 }: {
   card: RunCard;
   projectPath?: string;
   onCopyMarkdown: (card: RunCard) => void | Promise<void>;
   onExportMarkdown: (card: RunCard) => void | Promise<void>;
+  onStop?: () => void | Promise<void>;
 }) {
   const [isProcessSheetOpen, setIsProcessSheetOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -1648,7 +1837,7 @@ const AssistantRunCard = memo(function AssistantRunCard({
               </div>
             </div>
           </div>
-          <RunProcessPreview card={card} />
+          <RunProcessPreview card={card} onStop={onStop} />
           <RunProcessSheet
             card={card}
             open={isProcessSheetOpen}
@@ -1694,6 +1883,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCollapseConversation,
   onCopyAssistantMarkdown,
   onExportAssistantMarkdown,
+  onStopRun,
 }: {
   items: ConversationRunItem[];
   projectPath?: string;
@@ -1703,6 +1893,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onCollapseConversation: () => void;
   onCopyAssistantMarkdown: (card: RunCard) => void | Promise<void>;
   onExportAssistantMarkdown: (card: RunCard) => void | Promise<void>;
+  onStopRun: () => void | Promise<void>;
 }) {
   return (
     <div className="space-y-3">
@@ -1740,6 +1931,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
               projectPath={projectPath}
               onCopyMarkdown={onCopyAssistantMarkdown}
               onExportMarkdown={onExportAssistantMarkdown}
+              onStop={onStopRun}
             />
           </div>
         )
@@ -2109,6 +2301,7 @@ export function Chat() {
   const [hasAttemptedDefaultWorkspaceBootstrap, setHasAttemptedDefaultWorkspaceBootstrap] =
     useState(false);
   const [conversationId, setConversationId] = useState<string>(() => crypto.randomUUID());
+  const [pendingContinuation, setPendingContinuation] = useState<PendingContinuation | null>(null);
   const [hasContentBelow, setHasContentBelow] = useState(false);
   const [isRestoringSessionRun, setIsRestoringSessionRun] = useState(false);
   const [takeoverState, setTakeoverState] = useState<WindowTakeoverState | null>(null);
@@ -2821,6 +3014,9 @@ export function Chat() {
   );
   const permissionInteractionCards = activeInteractionCards.filter(
     (card) => card.activeInteraction.kind === 'permission_request'
+  );
+  const planApprovalInteractionCards = activeInteractionCards.filter(
+    (card) => card.activeInteraction.kind === 'plan_approval'
   );
   const isDecisionBlocked = activeInteractionCards.length > 0;
   const collapsedConversation = useMemo(
@@ -3643,6 +3839,31 @@ export function Chat() {
     setIsFullConversationVisible(false);
     setConversationId(crypto.randomUUID());
   };
+
+  useEffect(() => {
+    if (!pendingContinuation) {
+      return;
+    }
+    if (stream.sessionId || stream.activeRunId) {
+      return;
+    }
+
+    const permissionMode = pendingContinuation.permissionMode;
+    const prompt = pendingContinuation.prompt;
+    setPendingContinuation(null);
+    void stream.sendMessage(prompt, {
+      browserContext: browserContextRef.current,
+      projectPath: activeProjectPathRef.current || backendWorkdir || undefined,
+      permissionMode,
+      effort: thinkingMode,
+      attachments: [],
+    });
+  }, [
+    backendWorkdir,
+    pendingContinuation,
+    stream,
+    thinkingMode,
+  ]);
 
   const loadSession = useCallback(
     async (sessionId: string, projectPath?: string, sessionTitle?: string) => {
@@ -4483,6 +4704,7 @@ export function Chat() {
               onCollapseConversation={collapseConversation}
               onCopyAssistantMarkdown={handleCopyAssistantMarkdown}
               onExportAssistantMarkdown={handleExportAssistantMarkdown}
+              onStopRun={() => stream.stop('user_stop')}
             />
           )}
         </div>
@@ -4548,6 +4770,23 @@ export function Chat() {
                 key={`${card.runId}-${card.activeInteraction.requestId}`}
                 card={card}
                 onResolveInteraction={stream.resolveInteraction}
+              />
+            ))}
+            {planApprovalInteractionCards.map((card) => (
+              <PlanApprovalCard
+                key={`${card.runId}-${card.activeInteraction.requestId}`}
+                card={card}
+                conversationItems={stream.conversationItems}
+                onResolveInteraction={stream.resolveInteraction}
+                onPermissionModeSelected={setPermissionMode}
+                onContinueWithClearContext={async (next) => {
+                  setPermissionMode(next.permissionMode);
+                  await stream.stop('user_stop');
+                  resetConversation({
+                    preserveProjectPath: activeProjectPathRef.current || backendWorkdir,
+                  });
+                  setPendingContinuation(next);
+                }}
               />
             ))}
           </div>

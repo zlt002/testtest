@@ -3,8 +3,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   attachSubagentsToConversationItems,
+  buildSubagentWaitingSummary,
+  deriveSubagentRuntimeState,
   projectConversationRunItems,
+  sanitizeUserVisibleProcessText,
   sliceConversationRunItems,
+  SUBAGENT_AUTO_STOP_THRESHOLD_MS,
+  summarizeSubagentWaitingState,
 } from './run-cards';
 import type { DisplayMessage } from './types';
 
@@ -208,6 +213,54 @@ describe('projectConversationRunItems', () => {
         content: '提出 2-3 个方案并说明权衡',
         status: 'pending',
       },
+    ]);
+  });
+
+  it('falls back to approved plan todos for continuation runs before TodoWrite arrives', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'user-1',
+        runId: 'run-1',
+        role: 'user',
+        kind: 'text',
+        text: [
+          '系统提示：已开启新执行会话。当前聊天历史已清空，请基于以下目标和已批准计划继续执行。',
+          '',
+          '<original_user_goal>',
+          '修复计划模式执行阶段的 todo 展示',
+          '</original_user_goal>',
+          '',
+          '<approved_plan>',
+          '1. 续跑后立即展示计划待办',
+          '2. 等待真实 TodoWrite 覆盖',
+          '3. 跑定向测试',
+          '</approved_plan>',
+        ].join('\n'),
+      }),
+      message({
+        id: 'status-1',
+        runId: 'run-1',
+        role: 'system',
+        kind: 'run_status',
+        status: 'started',
+      }),
+      message({
+        id: 'assistant-1',
+        runId: 'run-1',
+        role: 'assistant',
+        kind: 'text',
+        text: '开始按批准计划执行。',
+      }),
+    ]);
+
+    const run = items.find((item) => item.type === 'run');
+
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.todos).toEqual([
+      { content: '续跑后立即展示计划待办', status: 'in_progress' },
+      { content: '等待真实 TodoWrite 覆盖', status: 'pending' },
+      { content: '跑定向测试', status: 'pending' },
     ]);
   });
 
@@ -436,6 +489,41 @@ describe('projectConversationRunItems', () => {
     expect(run.card.cardStatus).toBe('running');
   });
 
+  it('projects plan approval interactions into dedicated run card actions', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'interaction-plan-1',
+        runId: 'run-1',
+        role: 'system',
+        kind: 'interaction',
+        requestId: 'toolu-plan-1',
+        interactionKind: 'plan_approval',
+        runPhase: 'awaiting_plan_approval',
+        toolName: 'ExitPlanMode',
+        text: 'Claude 已完成计划，等待你确认后继续执行',
+        timestamp: '2026-05-11T00:00:00.000Z',
+      }),
+    ]);
+
+    const run = items.find((item) => item.type === 'run');
+
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.activeInteraction).toEqual({
+      requestId: 'toolu-plan-1',
+      kind: 'plan_approval',
+      title: '计划确认',
+      toolName: 'ExitPlanMode',
+      message: 'Claude 已完成计划，等待你确认后继续执行',
+      input: undefined,
+    });
+    expect(run.card.processItems.at(-1)).toMatchObject({
+      kind: 'plan_approval',
+      title: '计划确认',
+      body: 'Claude 已完成计划，等待你确认后继续执行',
+    });
+  });
+
   it('anchors a live run to the user message with the same runId when backend timestamps are earlier', () => {
     const items = projectConversationRunItems([
       message({
@@ -528,6 +616,318 @@ describe('projectConversationRunItems', () => {
     expect(run.card.subagents).toHaveLength(1);
     expect(run.card.subagents[0]?.title).toBe('Explore project context');
     expect(run.card.subagents[0]?.latestToolName).toBe('Read');
+  });
+
+  it('localizes internal subagent launch text and background task payload in process rows', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'thinking-launch',
+        runId: 'run-1',
+        kind: 'thinking',
+        text: "I've launched two research agents in the background. Let me wait for them to return.",
+      }),
+      message({
+        id: 'tool-call-background',
+        runId: 'run-1',
+        kind: 'tool_call',
+        toolName: 'wait',
+        toolInput: {
+          task_id: 'ac0b5306dbb69c2e1',
+          block: true,
+          timeout: 120000,
+        },
+      }),
+      message({
+        id: 'tool-result-webreader',
+        runId: 'run-1',
+        kind: 'tool_result',
+        toolName: 'webReader',
+        toolResult:
+          '**Output:** **webReader_result_summary:** [{"text":{"title":"Not Found \\\\ Anthropic","description":"Anthropic is an..."}}]',
+      }),
+    ]);
+    const run = items.find((item) => item.type === 'run');
+
+    expect(run?.type).toBe('run');
+    if (run?.type !== 'run') return;
+    expect(run.card.processItems.map((item) => item.body)).toEqual([
+      '已启动并行子代理，父代理正在等待它们返回结果。',
+      '子代理任务已转入后台执行，父代理正在等待结果返回。',
+      '网页读取返回未命中或内容异常，正在继续整理可用信息。',
+    ]);
+  });
+});
+
+describe('subagent runtime helpers', () => {
+  it('sanitizes noisy english or raw webreader summaries for user-facing text', () => {
+    expect(
+      sanitizeUserVisibleProcessText(
+        "I've launched two research agents in the background. Let me wait for them to return."
+      )
+    ).toBe('已启动并行子代理，父代理正在等待它们返回结果。');
+    expect(
+      sanitizeUserVisibleProcessText(
+        '**🌐 Z.ai Built-in Tool: webReader** **Input:** ```json {"return_format":"markdown","url":"https://example.com"}'
+      )
+    ).toBe('正在调用网页读取工具获取资料。');
+    expect(
+      sanitizeUserVisibleProcessText(
+        '**Output:** **webReader_result_summary:** [{"text":{"title":"Not Found \\\\ Anthropic"}}]'
+      )
+    ).toBe('网页读取返回未命中或内容异常，正在继续整理可用信息。');
+  });
+
+  it('marks a running subagent as waiting or stalled based on idle time', () => {
+    const base = {
+      agentId: 'a1',
+      title: 'Search metrics',
+      status: 'running' as const,
+      startedAt: '2026-05-11T00:00:00.000Z',
+      updatedAt: '2026-05-11T00:00:10.000Z',
+      latestSummary: '正在搜索资料',
+      latestToolName: 'WebSearch',
+      messageCount: 3,
+      toolCount: 10,
+      activities: [],
+    };
+
+    expect(
+      deriveSubagentRuntimeState(base, new Date('2026-05-11T00:00:20.000Z').getTime())
+    ).toMatchObject({
+      phase: 'running',
+      label: '运行中',
+    });
+
+    expect(
+      deriveSubagentRuntimeState(base, new Date('2026-05-11T00:00:30.000Z').getTime())
+    ).toMatchObject({
+      phase: 'waiting',
+      label: '疑似等待工具响应',
+    });
+
+    expect(
+      deriveSubagentRuntimeState(base, new Date('2026-05-11T00:01:20.000Z').getTime())
+    ).toMatchObject({
+      phase: 'stalled',
+      label: '已失联',
+    });
+  });
+
+  it('builds a parent waiting summary that separates stalled subagents from active waits', () => {
+    const now = new Date('2026-05-11T00:01:20.000Z').getTime();
+    const summaryState = summarizeSubagentWaitingState(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+        {
+          agentId: 'a2',
+          title: 'Read papers',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:01:00.000Z',
+          latestSummary: '正在读取论文',
+          latestToolName: 'WebFetch',
+          messageCount: 2,
+          toolCount: 4,
+          activities: [],
+        },
+        {
+          agentId: 'a3',
+          title: 'Completed one',
+          status: 'completed',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:40.000Z',
+          latestSummary: '已整理完成',
+          latestToolName: 'Read',
+          messageCount: 2,
+          toolCount: 3,
+          activities: [],
+        },
+      ],
+      now
+    );
+
+    expect(summaryState).toMatchObject({
+      activeWaitingCount: 1,
+      waitingCount: 1,
+      orphanedCount: 1,
+      minOrphanedIdleMs: 70_000,
+      parentAdvancedBeyondOrphans: false,
+      shouldAutoStop: false,
+      message: '父代理正在等待 1 个活跃子代理返回，另有 1 个失联子代理可能不会再返回。',
+    });
+    expect(buildSubagentWaitingSummary(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+        {
+          agentId: 'a2',
+          title: 'Read papers',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:01:00.000Z',
+          latestSummary: '正在读取论文',
+          latestToolName: 'WebFetch',
+          messageCount: 2,
+          toolCount: 4,
+          activities: [],
+        },
+        {
+          agentId: 'a3',
+          title: 'Completed one',
+          status: 'completed',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:40.000Z',
+          latestSummary: '已整理完成',
+          latestToolName: 'Read',
+          messageCount: 2,
+          toolCount: 3,
+          activities: [],
+        },
+      ],
+      now
+    )).toBe('父代理正在等待 1 个活跃子代理返回，另有 1 个失联子代理可能不会再返回。');
+  });
+
+  it('reports only orphaned subagents when no active waits remain', () => {
+    const now = new Date('2026-05-11T00:02:30.000Z').getTime();
+    const summaryState = summarizeSubagentWaitingState(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+      ],
+      now
+    );
+
+    expect(summaryState).toMatchObject({
+      activeWaitingCount: 0,
+      waitingCount: 0,
+      orphanedCount: 1,
+      minOrphanedIdleMs: 140_000,
+      parentAdvancedBeyondOrphans: false,
+      shouldAutoStop: true,
+      message: '检测到 1 个失联子代理，父代理可能不会再收到它的返回。',
+    });
+    expect(buildSubagentWaitingSummary(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+      ],
+      now
+    )).toBe('检测到 1 个失联子代理，父代理可能不会再收到它的返回。');
+  });
+
+  it('does not auto-stop until all running subagents have been stalled long enough', () => {
+    const beforeThreshold = summarizeSubagentWaitingState(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+      ],
+      new Date('2026-05-11T00:01:59.000Z').getTime()
+    );
+    expect(beforeThreshold.shouldAutoStop).toBe(false);
+
+    const afterThreshold = summarizeSubagentWaitingState(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+      ],
+      new Date('2026-05-11T00:02:10.000Z').getTime()
+    );
+    expect(afterThreshold.minOrphanedIdleMs).toBeGreaterThanOrEqual(SUBAGENT_AUTO_STOP_THRESHOLD_MS);
+    expect(afterThreshold.shouldAutoStop).toBe(true);
+  });
+
+  it('does not auto-stop orphaned subagents after the parent has clearly continued progressing', () => {
+    const now = new Date('2026-05-11T00:02:30.000Z').getTime();
+    const summaryState = summarizeSubagentWaitingState(
+      [
+        {
+          agentId: 'a1',
+          title: 'Search metrics',
+          status: 'running',
+          startedAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:10.000Z',
+          latestSummary: '正在搜索资料',
+          latestToolName: 'WebSearch',
+          messageCount: 3,
+          toolCount: 10,
+          activities: [],
+        },
+      ],
+      now,
+      {
+        parentLastActivityAt: '2026-05-11T00:02:20.000Z',
+      }
+    );
+
+    expect(summaryState).toMatchObject({
+      activeWaitingCount: 0,
+      orphanedCount: 1,
+      parentAdvancedBeyondOrphans: true,
+      shouldAutoStop: false,
+      message: '检测到 1 个失联子代理，但父代理已经继续执行，当前不会因这些尾部子代理自动中断。',
+    });
   });
 });
 

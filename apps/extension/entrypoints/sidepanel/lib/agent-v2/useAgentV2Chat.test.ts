@@ -8,6 +8,7 @@ import type { AgentEvent } from './types';
 const clientMocks = vi.hoisted(() => ({
   startRun: vi.fn(),
   continueRun: vi.fn(),
+  getSessionSubagents: vi.fn(async () => ({ sessionId: 'session-1', subagents: [] })),
   abortRun: vi.fn(async () => undefined),
 }));
 
@@ -23,6 +24,7 @@ vi.mock('./client', async () => {
     createAgentV2Client: () => ({
       startRun: clientMocks.startRun,
       continueRun: clientMocks.continueRun,
+      getSessionSubagents: clientMocks.getSessionSubagents,
       abortRun: clientMocks.abortRun,
     }),
   };
@@ -50,6 +52,7 @@ describe('useAgentV2Chat', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clientMocks.getSessionSubagents.mockResolvedValue({ sessionId: 'session-1', subagents: [] });
   });
 
   it('prefers structured auth guidance over upstream 403 details', async () => {
@@ -312,6 +315,148 @@ describe('useAgentV2Chat', () => {
     expect(clientMocks.abortRun).toHaveBeenCalledWith('run-1');
     expect(activeRunSessionMocks.publishAgentV2ActiveRunSession).toHaveBeenCalledTimes(1);
     expect(activeRunSessionMocks.clearAgentV2ActiveRunSession).toHaveBeenCalled();
+  });
+
+  it('automatically stops the run when all running subagents remain orphaned for too long', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(
+      new Date('2026-05-11T00:02:30.000Z').getTime()
+    );
+    try {
+
+      clientMocks.startRun.mockImplementationOnce(
+        async (input: unknown, onEvent: (event: AgentEvent) => void) => {
+          onEvent({
+            eventId: 'event-1',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            type: 'run.started',
+            timestamp: '2026-05-11T00:00:00.000Z',
+            payload: {},
+          });
+
+          await new Promise<void>((resolve) => {
+            (input as { signal: AbortSignal }).signal.addEventListener('abort', () => resolve(), {
+              once: true,
+            });
+          });
+
+          throw new Error('aborted');
+        }
+      );
+      clientMocks.getSessionSubagents.mockResolvedValue({
+        sessionId: 'session-1',
+        subagents: [
+          {
+            agentId: 'agent-1',
+            title: 'Search metrics',
+            status: 'running',
+            startedAt: '2026-05-11T00:00:00.000Z',
+            updatedAt: '2026-05-11T00:00:10.000Z',
+            latestSummary: '正在搜索资料',
+            latestToolName: 'WebSearch',
+            messageCount: 3,
+            toolCount: 10,
+            activities: [],
+          },
+        ],
+      });
+
+      const { result } = renderHook(() =>
+        useAgentV2Chat({ baseUrl: 'http://localhost:3000', endpoint: '/api/agent-v2' })
+      );
+
+      act(() => {
+        void result.current.sendMessage('继续执行', {
+          projectPath: '/tmp/project-subagent-timeout',
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.activeRunId).toBe('run-1');
+      });
+
+      await waitFor(() => {
+        expect(result.current.activeRunId).toBeNull();
+      });
+      expect(clientMocks.abortRun).toHaveBeenCalledWith('run-1');
+      expect(result.current.error).toContain('自动停止当前运行');
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('does not auto-stop when the parent run has newer activity than the orphaned subagent', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(
+      new Date('2026-05-11T00:02:30.000Z').getTime()
+    );
+    try {
+      clientMocks.startRun.mockImplementationOnce(
+        async (_input: unknown, onEvent: (event: AgentEvent) => void) => {
+          onEvent({
+            eventId: 'event-1',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 1,
+            type: 'run.started',
+            timestamp: '2026-05-11T00:00:00.000Z',
+            payload: {},
+          });
+          onEvent({
+            eventId: 'event-2',
+            runId: 'run-1',
+            sessionId: 'session-1',
+            sequence: 2,
+            type: 'assistant.message.delta',
+            timestamp: '2026-05-11T00:02:20.000Z',
+            payload: { delta: '父代理继续整理主结果' },
+          });
+
+          await new Promise(() => {
+            // keep stream open for assertion window
+          });
+        }
+      );
+      clientMocks.getSessionSubagents.mockResolvedValue({
+        sessionId: 'session-1',
+        subagents: [
+          {
+            agentId: 'agent-1',
+            title: 'Search metrics',
+            status: 'running',
+            startedAt: '2026-05-11T00:00:00.000Z',
+            updatedAt: '2026-05-11T00:00:10.000Z',
+            latestSummary: '正在搜索资料',
+            latestToolName: 'WebSearch',
+            messageCount: 3,
+            toolCount: 10,
+            activities: [],
+          },
+        ],
+      });
+
+      const { result } = renderHook(() =>
+        useAgentV2Chat({ baseUrl: 'http://localhost:3000', endpoint: '/api/agent-v2' })
+      );
+
+      act(() => {
+        void result.current.sendMessage('继续执行', {
+          projectPath: '/tmp/project-parent-progress',
+        });
+      });
+
+      await waitFor(() => {
+        expect(result.current.activeRunId).toBe('run-1');
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(clientMocks.abortRun).not.toHaveBeenCalledWith('run-1');
+      expect(result.current.error).toBeNull();
+      expect(result.current.activeRunId).toBe('run-1');
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('keeps uploaded image preview URLs on local user messages', async () => {

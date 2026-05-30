@@ -1,8 +1,17 @@
 import type { DisplayMessage, SessionSubagentSnapshot } from './types';
+import { deriveContinuationTodos } from './continuation';
+import { getInteractionDisplayMeta } from './plan-mode';
 
 export const PROCESS_PREVIEW_ITEM_LIMIT = 2;
 const THINKING_BODY_LIMIT = 640;
 const INTERNAL_PROTOCOL_PLACEHOLDER = '内部工具调用过程已隐藏';
+export const SUBAGENT_WAITING_THRESHOLD_MS = 15_000;
+export const SUBAGENT_STALLED_THRESHOLD_MS = 60_000;
+export const SUBAGENT_AUTO_STOP_THRESHOLD_MS = 120_000;
+const BACKGROUND_SUBAGENT_PLACEHOLDER = '已启动并行子代理，父代理正在等待它们返回结果。';
+const BACKGROUND_TASK_PLACEHOLDER = '子代理任务已转入后台执行，父代理正在等待结果返回。';
+const WEB_READER_RESULT_PLACEHOLDER = '网页读取已返回结果，正在整理摘要。';
+const WEB_READER_ERROR_PLACEHOLDER = '网页读取返回未命中或内容异常，正在继续整理可用信息。';
 
 export type RunCardStatus = 'running' | 'waiting_for_input' | 'completed' | 'failed' | 'aborted';
 
@@ -22,6 +31,7 @@ export type RunProcessItem = {
     | 'tool_result'
     | 'interactive_prompt'
     | 'permission_request'
+    | 'plan_approval'
     | 'session_status'
     | 'notice';
   title: string;
@@ -53,7 +63,8 @@ export type RunCard = {
   files: RunFileReference[];
   activeInteraction: {
     requestId: string;
-    kind: 'interactive_prompt' | 'permission_request';
+    kind: 'interactive_prompt' | 'permission_request' | 'plan_approval';
+    title: string;
     toolName?: string | null;
     message?: string | null;
     input?: unknown;
@@ -62,6 +73,27 @@ export type RunCard = {
   updatedAt: string | null;
   source: 'sdk-live' | 'official-history';
   subagents: SessionSubagentSnapshot[];
+};
+
+export type SubagentRuntimeState = {
+  phase: 'running' | 'waiting' | 'stalled' | 'completed' | 'failed';
+  label: string;
+  idleMs: number;
+  detail: string | null;
+};
+
+export type SubagentWaitingSummary = {
+  activeWaitingCount: number;
+  waitingCount: number;
+  orphanedCount: number;
+  minOrphanedIdleMs: number;
+  parentAdvancedBeyondOrphans: boolean;
+  shouldAutoStop: boolean;
+  message: string | null;
+};
+
+type SubagentWaitingSummaryOptions = {
+  parentLastActivityAt?: string | number | null;
 };
 
 export type ConversationRunItem =
@@ -110,18 +142,241 @@ function timeOf(value: string | null | undefined): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+function formatRelativeDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds} 秒`;
+  }
+  return `${minutes} 分 ${seconds} 秒`;
+}
+
+export function deriveSubagentRuntimeState(
+  subagent: SessionSubagentSnapshot,
+  now = Date.now()
+): SubagentRuntimeState {
+  if (subagent.status === 'completed') {
+    return {
+      phase: 'completed',
+      label: '已完成',
+      idleMs: 0,
+      detail: null,
+    };
+  }
+  if (subagent.status === 'failed') {
+    return {
+      phase: 'failed',
+      label: '失败',
+      idleMs: 0,
+      detail: null,
+    };
+  }
+
+  const lastActivityAt = timeOf(subagent.updatedAt || subagent.startedAt);
+  const idleMs = lastActivityAt > 0 ? Math.max(0, now - lastActivityAt) : 0;
+
+  if (idleMs >= SUBAGENT_STALLED_THRESHOLD_MS) {
+    return {
+      phase: 'stalled',
+      label: '已失联',
+      idleMs,
+      detail: `已超过 ${formatRelativeDuration(idleMs)} 没有新活动，该子代理可能已经失联，可考虑中断或重试。`,
+    };
+  }
+  if (idleMs >= SUBAGENT_WAITING_THRESHOLD_MS) {
+    return {
+      phase: 'waiting',
+      label: '疑似等待工具响应',
+      idleMs,
+      detail: `已超过 ${formatRelativeDuration(idleMs)} 没有新活动，可能正在等待外部工具或网络响应。`,
+    };
+  }
+
+  return {
+    phase: 'running',
+    label: '运行中',
+    idleMs,
+    detail: idleMs > 0 ? `最近 ${formatRelativeDuration(idleMs)} 内有新活动。` : null,
+  };
+}
+
+export function summarizeSubagentWaitingState(
+  subagents: SessionSubagentSnapshot[],
+  now = Date.now(),
+  options?: SubagentWaitingSummaryOptions
+): SubagentWaitingSummary {
+  const running = subagents.filter((subagent) => subagent.status === 'running');
+  if (running.length === 0) {
+    return {
+      activeWaitingCount: 0,
+      waitingCount: 0,
+      orphanedCount: 0,
+      minOrphanedIdleMs: 0,
+      parentAdvancedBeyondOrphans: false,
+      shouldAutoStop: false,
+      message: null,
+    };
+  }
+
+  const states = running.map((subagent) => deriveSubagentRuntimeState(subagent, now));
+  const activeWaitingCount = states.filter(
+    (state) => state.phase === 'running' || state.phase === 'waiting'
+  ).length;
+  const waitingCount = states.filter((state) => state.phase === 'waiting').length;
+  const orphanedStates = states.filter((state) => state.phase === 'stalled');
+  const orphanedCount = orphanedStates.length;
+  const minOrphanedIdleMs =
+    orphanedStates.length > 0
+      ? orphanedStates.reduce((min, state) => Math.min(min, state.idleMs), Number.POSITIVE_INFINITY)
+      : 0;
+  const latestRunningSubagentActivityAt = running.reduce((max, subagent) => {
+    return Math.max(max, timeOf(subagent.updatedAt || subagent.startedAt));
+  }, 0);
+  const parentLastActivityAt =
+    typeof options?.parentLastActivityAt === 'number'
+      ? options.parentLastActivityAt
+      : timeOf(options?.parentLastActivityAt);
+  const parentAdvancedBeyondOrphans =
+    parentLastActivityAt > 0 &&
+    latestRunningSubagentActivityAt > 0 &&
+    parentLastActivityAt > latestRunningSubagentActivityAt;
+  const shouldAutoStop =
+    orphanedCount > 0 &&
+    activeWaitingCount === 0 &&
+    !parentAdvancedBeyondOrphans &&
+    minOrphanedIdleMs >= SUBAGENT_AUTO_STOP_THRESHOLD_MS;
+
+  if (activeWaitingCount > 0 && orphanedCount > 0) {
+    return {
+      activeWaitingCount,
+      waitingCount,
+      orphanedCount,
+      minOrphanedIdleMs,
+      parentAdvancedBeyondOrphans,
+      shouldAutoStop,
+      message: `父代理正在等待 ${activeWaitingCount} 个活跃子代理返回，另有 ${orphanedCount} 个失联子代理可能不会再返回。`,
+    };
+  }
+  if (orphanedCount > 0 && activeWaitingCount === 0 && parentAdvancedBeyondOrphans) {
+    return {
+      activeWaitingCount,
+      waitingCount,
+      orphanedCount,
+      minOrphanedIdleMs,
+      parentAdvancedBeyondOrphans,
+      shouldAutoStop,
+      message: `检测到 ${orphanedCount} 个失联子代理，但父代理已经继续执行，当前不会因这些尾部子代理自动中断。`,
+    };
+  }
+  if (orphanedCount > 0 && activeWaitingCount === 0) {
+    return {
+      activeWaitingCount,
+      waitingCount,
+      orphanedCount,
+      minOrphanedIdleMs,
+      parentAdvancedBeyondOrphans,
+      shouldAutoStop,
+      message: `检测到 ${orphanedCount} 个失联子代理，父代理可能不会再收到它的返回。`,
+    };
+  }
+  if (waitingCount > 0) {
+    return {
+      activeWaitingCount,
+      waitingCount,
+      orphanedCount,
+      minOrphanedIdleMs,
+      parentAdvancedBeyondOrphans,
+      shouldAutoStop,
+      message: `父代理正在等待 ${activeWaitingCount} 个活跃子代理返回，其中 ${waitingCount} 个疑似等待工具响应。`,
+    };
+  }
+  return {
+    activeWaitingCount,
+    waitingCount,
+    orphanedCount,
+    minOrphanedIdleMs,
+    parentAdvancedBeyondOrphans,
+    shouldAutoStop,
+    message: `父代理正在等待 ${activeWaitingCount} 个活跃子代理返回。`,
+  };
+}
+
+export function buildSubagentWaitingSummary(
+  subagents: SessionSubagentSnapshot[],
+  now = Date.now(),
+  options?: SubagentWaitingSummaryOptions
+): string | null {
+  return summarizeSubagentWaitingState(subagents, now, options).message;
+}
+
 function compactPreview(value: unknown): string {
   if (value === null || value === undefined) {
     return '';
   }
   if (typeof value === 'string') {
-    return value.trim().replace(/\s+/g, ' ').slice(0, 220);
+    return sanitizeUserVisibleProcessText(value).replace(/\s+/g, ' ').slice(0, 220);
+  }
+  if (Array.isArray(value)) {
+    const localized = value
+      .map((item) => compactPreview(item))
+      .filter(Boolean)
+      .join(' ');
+    return localized.slice(0, 220);
+  }
+  if (isBackgroundTaskPayload(value)) {
+    return BACKGROUND_TASK_PLACEHOLDER;
   }
   try {
     return JSON.stringify(value).replace(/\s+/g, ' ').slice(0, 220);
   } catch {
     return String(value).slice(0, 220);
   }
+}
+
+function isBackgroundTaskPayload(value: unknown): value is {
+  task_id: string;
+  block?: boolean;
+  timeout?: number;
+} {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      typeof (value as Record<string, unknown>).task_id === 'string'
+  );
+}
+
+export function sanitizeUserVisibleProcessText(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (!normalized) {
+    return value;
+  }
+
+  if (/^i['’]ve launched .*agents? in the background/i.test(normalized)) {
+    return BACKGROUND_SUBAGENT_PLACEHOLDER;
+  }
+
+  if (
+    normalized.includes('"task_id"') &&
+    normalized.includes('"block"') &&
+    normalized.includes('"timeout"')
+  ) {
+    return BACKGROUND_TASK_PLACEHOLDER;
+  }
+
+  if (/webreader_result_summary/i.test(normalized)) {
+    return /not found|404|error|failed/i.test(normalized)
+      ? WEB_READER_ERROR_PLACEHOLDER
+      : WEB_READER_RESULT_PLACEHOLDER;
+  }
+
+  if (/z\.ai built-in tool:\s*webreader/i.test(normalized)) {
+    return /not found|404|error|failed/i.test(normalized)
+      ? WEB_READER_ERROR_PLACEHOLDER
+      : '正在调用网页读取工具获取资料。';
+  }
+
+  return normalized;
 }
 
 function labelForFilePath(filePath: string): string {
@@ -378,6 +633,16 @@ function todosFromMessage(message: DisplayMessage): TodoItem[] {
   return [...extractTodos(message.toolInput), ...extractTodos(message.toolResult)];
 }
 
+function continuationTodosFromMessage(message: DisplayMessage): TodoItem[] {
+  if (message.role !== 'user' || message.kind !== 'text' || typeof message.text !== 'string') {
+    return [];
+  }
+  return deriveContinuationTodos(message.text).map((todo) => ({
+    ...todo,
+    content: localizeTodoContent(todo.content),
+  }));
+}
+
 function processItemFromMessage(message: DisplayMessage): RunProcessItem | null {
   if (message.kind === 'tool_call') {
     const title = message.toolName ? `工具调用 · ${message.toolName}` : '工具调用';
@@ -442,14 +707,17 @@ function processItemFromMessage(message: DisplayMessage): RunProcessItem | null 
     const kind =
       message.interactionKind === 'interactive_prompt'
         ? 'interactive_prompt'
-        : 'permission_request';
+        : message.interactionKind === 'plan_approval'
+          ? 'plan_approval'
+          : 'permission_request';
+    const display = getInteractionDisplayMeta(kind);
     return {
       id: message.id,
       timestamp: message.timestamp,
       kind,
-      title: kind === 'interactive_prompt' ? '交互提问' : '权限请求',
+      title: display.title,
       body: message.text || compactPreview(message.toolInput) || '等待你处理',
-      tone: 'warning',
+      tone: display.tone,
       payload: message.toolInput ?? message.raw,
     };
   }
@@ -512,7 +780,7 @@ function sanitizeThinkingContent(value: string): string {
     return sanitized;
   }
 
-  return sanitized;
+  return sanitizeUserVisibleProcessText(sanitized);
 }
 
 function mergeAdjacentThinkingItems(items: RunProcessItem[]): RunProcessItem[] {
@@ -591,7 +859,10 @@ function buildRunCard(input: {
     sorted.map(processItemFromMessage).filter((item): item is RunProcessItem => Boolean(item))
   );
   const processItems = allProcessItems;
-  const todos = sorted.flatMap(todosFromMessage);
+  const toolTodos = sorted.flatMap(todosFromMessage);
+  const continuationTodos =
+    toolTodos.length > 0 ? [] : sorted.flatMap(continuationTodosFromMessage);
+  const todos = toolTodos.length > 0 ? toolTodos : continuationTodos;
   const files = filesFromMessages(sorted);
   const latestInteraction = [...sorted]
     .reverse()
@@ -646,7 +917,16 @@ function buildRunCard(input: {
             kind:
               latestInteraction.interactionKind === 'interactive_prompt'
                 ? 'interactive_prompt'
-                : 'permission_request',
+                : latestInteraction.interactionKind === 'plan_approval'
+                  ? 'plan_approval'
+                  : 'permission_request',
+            title: getInteractionDisplayMeta(
+              latestInteraction.interactionKind === 'interactive_prompt'
+                ? 'interactive_prompt'
+                : latestInteraction.interactionKind === 'plan_approval'
+                  ? 'plan_approval'
+                  : 'permission_request'
+            ).title,
             toolName: latestInteraction.toolName,
             message: latestInteraction.text,
             input: latestInteraction.toolInput,

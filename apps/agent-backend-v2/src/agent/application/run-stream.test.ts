@@ -109,6 +109,7 @@ test('agent service starts a session run through runtime query stream', async ()
     prompt: string;
     options: {
       allowedTools?: string[];
+      agents?: Record<string, unknown>;
       mcpServers: Record<string, unknown>;
       settingSources?: string[];
       skills?: string[] | 'all';
@@ -143,6 +144,11 @@ test('agent service starts a session run through runtime query stream', async ()
     'mcp__browser_extension__list_extension_tools',
     'mcp__browser_extension__call_website_tool',
     'mcp__browser_extension__call_extension_tool',
+  ]);
+  assert.deepEqual(Object.keys(queryInput.options.agents || {}).sort(), [
+    'repo-analyzer',
+    'test-runner',
+    'web-researcher',
   ]);
   assert.deepEqual(queryInput.options.settingSources, ['project', 'local']);
   assert.equal(queryInput.options.skills, undefined);
@@ -404,6 +410,133 @@ test('agent service applies configured MCP tool permissions to SDK options', asy
     'mcp__browser_extension__call_extension_tool',
   ]);
   assert.deepEqual(queryInput.options.settingSources, ['project', 'local']);
+});
+
+test('agent service preserves dangerous permission bypass in SDK options', async () => {
+  const queryInputs: unknown[] = [];
+  const service = createAgentService({
+    env: {
+      host: '127.0.0.1',
+      port: 8792,
+      workdir: '/tmp/project',
+      model: null,
+      claudeCodeExecutablePath: null,
+      enableBrowserExtensionMcp: true,
+      browserExtensionMcpUrl: 'http://127.0.0.1:12306/mcp',
+    },
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        queryInputs.push(input);
+        return {
+          async interrupt() {},
+          async *[Symbol.asyncIterator]() {},
+        };
+      },
+      registerActiveRun() {},
+      completeRun() {},
+      async abortRun() {
+        return { aborted: false as const, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: 'hello',
+    projectPath: '/tmp/project',
+    permissionMode: 'bypassPermissions',
+  });
+  for await (const _event of stream) {
+    // drain
+  }
+
+  const queryInput = queryInputs[0] as {
+    options: {
+      permissionMode?: string;
+      allowDangerouslySkipPermissions?: boolean;
+    };
+  };
+  assert.equal(queryInput.options.permissionMode, 'bypassPermissions');
+  assert.equal(queryInput.options.allowDangerouslySkipPermissions, true);
+});
+
+test('plan approval switches the remaining run to bypassPermissions for later tool uses', async () => {
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input: unknown) {
+        capturedCanUseTool = (input as { options: { canUseTool: typeof capturedCanUseTool } }).options
+          .canUseTool;
+        return {
+          async interrupt() {},
+          async *[Symbol.asyncIterator]() {
+            // idle
+          },
+        };
+      },
+      registerActiveRun() {},
+      completeRun() {},
+      async abortRun() {
+        return { aborted: false as const, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '先出计划，再继续执行写入',
+    projectPath: '/tmp/project-plan-bypass',
+    permissionMode: 'plan',
+  });
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+
+  const exitPromise = capturedCanUseTool!(
+    'ExitPlanMode',
+    {},
+    {
+      toolUseID: 'toolu-exit-plan-1',
+      title: '计划确认',
+    }
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  service.resolveInteraction?.({
+    runId: stream.runId,
+    requestId: 'toolu-exit-plan-1',
+    decision: {
+      allow: true,
+      nextPermissionMode: 'bypassPermissions',
+    },
+  });
+  const exitDecision = await exitPromise;
+  assert.equal(exitDecision.behavior, 'allow');
+
+  const writeDecision = await capturedCanUseTool!(
+    'Write',
+    { file_path: '/tmp/project-plan-bypass/report.md', content: 'hello' },
+    { toolUseID: 'toolu-write-1' }
+  );
+  assert.equal(writeDecision.behavior, 'allow');
+
+  for await (const _event of stream) {
+    // drain
+    break;
+  }
 });
 
 test('agent service does not apply default allowed tools when enabled managed plugins are injected', async () => {

@@ -1018,6 +1018,279 @@ test('plan 模式仍然要求审批写入类工具', async () => {
   await consumeStream;
 });
 
+test('plan 模式会将 ExitPlanMode 识别为计划确认交互', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '先规划再执行',
+    projectPath: '/tmp/project-plan-exit',
+    permissionMode: 'plan',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-plan-exit',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const decisionPromise = capturedCanUseTool!(
+    'ExitPlanMode',
+    { plan: '1. 调整后端\n2. 调整前端' },
+    { toolUseID: 'toolu-plan-exit-1' }
+  );
+  await flushAsyncWork();
+
+  const requiredEvent = events.find((event) => event.type === 'interaction.required');
+  assert.ok(requiredEvent);
+  assert.equal(requiredEvent.sessionId, 'claude-session-plan-exit');
+  assert.equal((requiredEvent.payload as { kind?: unknown }).kind, 'plan_approval');
+  assert.equal(
+    (requiredEvent.payload as { runPhase?: unknown }).runPhase,
+    'awaiting_plan_approval'
+  );
+  assert.equal(
+    (requiredEvent.payload as { toolName?: unknown }).toolName,
+    'ExitPlanMode'
+  );
+
+  assert.equal(
+    service.resolveInteraction({
+      runId: stream.runId,
+      requestId: String(getInteractionRequestId(requiredEvent) || ''),
+      decision: { allow: false, message: '先继续调整计划' },
+    }).resolved,
+    true
+  );
+
+  const decision = await decisionPromise;
+  assert.equal(decision.behavior, 'deny');
+  assert.match(String(decision.message || ''), /先继续调整计划/);
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-plan-exit',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('计划确认允许携带 nextPermissionMode 继续执行', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '先规划再执行',
+    projectPath: '/tmp/project-plan-next-mode',
+    permissionMode: 'plan',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-plan-next-mode',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const decisionPromise = capturedCanUseTool!(
+    'ExitPlanMode',
+    { plan: '1. 更新后端\n2. 更新前端' },
+    { toolUseID: 'toolu-plan-next-mode-1' }
+  );
+  await flushAsyncWork();
+
+  const requiredEvent = events.find((event) => event.type === 'interaction.required');
+  assert.ok(requiredEvent);
+  assert.equal(
+    service.resolveInteraction({
+      runId: stream.runId,
+      requestId: String(getInteractionRequestId(requiredEvent) || ''),
+      decision: { allow: true, nextPermissionMode: 'acceptEdits' },
+    }).resolved,
+    true
+  );
+
+  const decision = await decisionPromise;
+  assert.equal(decision.behavior, 'allow');
+  assert.deepEqual(decision.updatedInput, {
+    plan: '1. 更新后端\n2. 更新前端',
+    nextPermissionMode: 'acceptEdits',
+  });
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-plan-next-mode',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
+test('计划确认允许同时携带 clearContext 与 nextPermissionMode', async () => {
+  const controlledRun = createControlledQueryRun();
+  let capturedCanUseTool:
+    | ((
+        toolName: string,
+        toolInput: Record<string, unknown>,
+        context?: Record<string, unknown>
+      ) => Promise<Record<string, unknown>>)
+    | undefined;
+
+  const service = createAgentService({
+    historyReader: {
+      async readSessionHistory() {
+        return [];
+      },
+    },
+    runtime: {
+      query(input) {
+        capturedCanUseTool = (
+          input.options as { canUseTool?: typeof capturedCanUseTool } | undefined
+        )?.canUseTool;
+        return controlledRun.run;
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+  });
+
+  const stream = await service.startSessionRun({
+    prompt: '先规划再执行',
+    projectPath: '/tmp/project-plan-clear-context',
+    permissionMode: 'plan',
+  });
+
+  const events: Array<Record<string, unknown>> = [];
+  const consumeStream = (async () => {
+    for await (const event of stream) {
+      events.push(event as unknown as Record<string, unknown>);
+    }
+  })();
+
+  controlledRun.push({
+    type: 'stream_event',
+    session_id: 'claude-session-plan-clear-context',
+    event: {
+      type: 'unknown',
+    },
+  });
+  await flushAsyncWork();
+
+  assert.equal(typeof capturedCanUseTool, 'function');
+  const decisionPromise = capturedCanUseTool!(
+    'ExitPlanMode',
+    { plan: '1. 更新后端\n2. 更新前端' },
+    { toolUseID: 'toolu-plan-clear-context-1' }
+  );
+  await flushAsyncWork();
+
+  const requiredEvent = events.find((event) => event.type === 'interaction.required');
+  assert.ok(requiredEvent);
+  assert.equal(
+    service.resolveInteraction({
+      runId: stream.runId,
+      requestId: String(getInteractionRequestId(requiredEvent) || ''),
+      decision: { allow: true, nextPermissionMode: 'acceptEdits', clearContext: true },
+    }).resolved,
+    true
+  );
+
+  const decision = await decisionPromise;
+  assert.equal(decision.behavior, 'allow');
+  assert.deepEqual(decision.updatedInput, {
+    plan: '1. 更新后端\n2. 更新前端',
+    nextPermissionMode: 'acceptEdits',
+    clearContext: true,
+  });
+
+  controlledRun.push({
+    type: 'result',
+    session_id: 'claude-session-plan-clear-context',
+    subtype: 'success',
+    is_error: false,
+    result: 'done',
+  });
+  controlledRun.finish();
+  await consumeStream;
+});
+
 test('Agent 工具会继承父代理权限上下文并注入到子代理 prompt', async () => {
   let capturedCanUseTool:
     | ((

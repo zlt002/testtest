@@ -43,6 +43,7 @@ type MockConversationItem = {
         | 'tool_result'
         | 'interactive_prompt'
         | 'permission_request'
+        | 'plan_approval'
         | 'session_status'
         | 'notice';
       title: string;
@@ -60,6 +61,7 @@ type MockConversationItem = {
         | 'tool_result'
         | 'interactive_prompt'
         | 'permission_request'
+        | 'plan_approval'
         | 'session_status'
         | 'notice';
       title: string;
@@ -69,7 +71,16 @@ type MockConversationItem = {
     }>;
     todos: unknown[];
     files: unknown[];
-    activeInteraction: null;
+    activeInteraction:
+      | null
+      | {
+          requestId: string;
+          kind: 'interactive_prompt' | 'permission_request' | 'plan_approval';
+          title: string;
+          toolName?: string | null;
+          message?: string | null;
+          input?: unknown;
+        };
     startedAt: string | null;
     updatedAt: string | null;
     source: 'sdk-live' | 'official-history';
@@ -453,6 +464,7 @@ vi.mock('@/entrypoints/sidepanel/components/agent-composer/AgentComposer', () =>
     onSend,
     onStop,
     status,
+    permissionMode = 'bypassPermissions',
     isDecisionBlocked,
     attachments = [],
     onAttachmentsChange,
@@ -462,6 +474,7 @@ vi.mock('@/entrypoints/sidepanel/components/agent-composer/AgentComposer', () =>
     onSend?: () => void;
     onStop?: () => void;
     status?: 'idle' | 'connecting' | 'streaming' | 'error';
+    permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions';
     isDecisionBlocked?: boolean;
     attachments?: Array<{ id: string }>;
     onAttachmentsChange?: (
@@ -469,6 +482,20 @@ vi.mock('@/entrypoints/sidepanel/components/agent-composer/AgentComposer', () =>
     ) => void;
   }) => (
     <div>
+      <button
+        type="button"
+        aria-label={`权限等级：${
+          permissionMode === 'acceptEdits'
+            ? '允许编辑'
+            : permissionMode === 'bypassPermissions'
+              ? '允许所有'
+              : permissionMode === 'plan'
+                ? '计划'
+                : '默认'
+        }`}
+      >
+        权限等级
+      </button>
       <textarea
         aria-label="对话输入框"
         value={value}
@@ -906,6 +933,196 @@ describe('Chat chat selection quote interaction', () => {
       return 1;
     });
     HTMLElement.prototype.scrollTo = vi.fn();
+  });
+
+  it('submits nextPermissionMode when the user accepts a generated plan', async () => {
+    mockStreamState.resolveInteraction = vi.fn();
+    mockStreamState.conversationItems = [
+      {
+        type: 'run',
+        card: {
+          id: 'run-card-1',
+          sessionId: 'session-1',
+          runId: 'run-1',
+          anchorMessageId: null,
+          cardStatus: 'waiting_for_input',
+          headline: '等待处理',
+          finalResponse: '',
+          responseMessages: [],
+          processItems: [],
+          processItemCount: 0,
+          previewItems: [],
+          todos: [],
+          files: [],
+          activeInteraction: {
+            requestId: 'interaction-1',
+            kind: 'plan_approval',
+            title: '计划确认',
+            toolName: 'ExitPlanMode',
+            message: 'Claude 已完成计划，等待你确认后继续执行',
+            input: { plan: '1. 更新后端\n2. 更新前端' },
+          },
+          startedAt: '2026-05-19T10:00:00.000Z',
+          updatedAt: '2026-05-19T10:00:01.000Z',
+          source: 'sdk-live',
+          subagents: [],
+        },
+      },
+    ];
+
+    const view = render(<Chat />);
+    fireEvent.click(await view.findByRole('button', { name: '按计划继续并允许编辑' }));
+
+    await waitFor(() => {
+      expect(mockStreamState.resolveInteraction).toHaveBeenCalledWith({
+        runId: 'run-1',
+        requestId: 'interaction-1',
+        decision: {
+          allow: true,
+          nextPermissionMode: 'acceptEdits',
+          updatedInput: { plan: '1. 更新后端\n2. 更新前端' },
+        },
+      });
+    });
+    expect(view.getByRole('button', { name: '权限等级：允许编辑' })).toBeTruthy();
+  });
+
+  it('switches the composer permission badge to allow-all when the user accepts allow-all plan execution', async () => {
+    mockStreamState.resolveInteraction = vi.fn();
+    mockStreamState.conversationItems = [
+      {
+        type: 'run',
+        card: {
+          id: 'run-card-bypass',
+          sessionId: 'session-1',
+          runId: 'run-bypass',
+          anchorMessageId: null,
+          cardStatus: 'waiting_for_input',
+          headline: '等待处理',
+          finalResponse: '',
+          responseMessages: [],
+          processItems: [],
+          processItemCount: 0,
+          previewItems: [],
+          todos: [],
+          files: [],
+          activeInteraction: {
+            requestId: 'interaction-bypass',
+            kind: 'plan_approval',
+            title: '计划确认',
+            toolName: 'ExitPlanMode',
+            message: 'Claude 已完成计划，等待你确认后继续执行',
+            input: { plan: '1. 写文件\n2. 输出结果' },
+          },
+          startedAt: '2026-05-19T10:00:00.000Z',
+          updatedAt: '2026-05-19T10:00:01.000Z',
+          source: 'sdk-live',
+          subagents: [],
+        },
+      },
+    ];
+
+    const view = render(<Chat />);
+    fireEvent.click(await view.findByRole('button', { name: '按计划继续并允许所有' }));
+
+    await waitFor(() => {
+      expect(mockStreamState.resolveInteraction).toHaveBeenCalledWith({
+        runId: 'run-bypass',
+        requestId: 'interaction-bypass',
+        decision: {
+          allow: true,
+          nextPermissionMode: 'bypassPermissions',
+          updatedInput: { plan: '1. 写文件\n2. 输出结果' },
+        },
+      });
+    });
+    expect(view.getByRole('button', { name: '权限等级：允许所有' })).toBeTruthy();
+  });
+
+  it('clears current conversation and auto-sends continuation prompt after plan approval', async () => {
+    mockStreamState.resolveInteraction = vi.fn();
+    mockStreamState.stop = vi.fn(async () => {
+      mockStreamState.activeRunId = null;
+      mockStreamState.sessionId = null;
+      mockStreamState.status = 'idle';
+    });
+    mockStreamState.reset = vi.fn();
+    mockStreamState.sendMessage = vi.fn();
+    mockStreamState.activeRunId = 'run-2';
+    mockStreamState.conversationItems = [
+      {
+        type: 'user',
+        message: {
+          id: 'user-1',
+          sessionId: 'session-1',
+          role: 'user',
+          kind: 'text',
+          text: '修复计划模式并补测试',
+          timestamp: '2026-05-19T10:00:00.000Z',
+          runId: 'run-2',
+        },
+      },
+      {
+        type: 'run',
+        card: {
+          id: 'run-card-2',
+          sessionId: 'session-1',
+          runId: 'run-2',
+          anchorMessageId: null,
+          cardStatus: 'waiting_for_input',
+          headline: '等待处理',
+          finalResponse: '',
+          responseMessages: [],
+          processItems: [],
+          processItemCount: 0,
+          previewItems: [],
+          todos: [],
+          files: [],
+          activeInteraction: {
+            requestId: 'interaction-2',
+            kind: 'plan_approval',
+            title: '计划确认',
+            toolName: 'ExitPlanMode',
+            message: 'Claude 已完成计划，等待你确认后继续执行',
+            input: { plan: '1. 更新后端\n2. 更新前端' },
+          },
+          startedAt: '2026-05-19T10:00:00.000Z',
+          updatedAt: '2026-05-19T10:00:01.000Z',
+          source: 'sdk-live',
+          subagents: [],
+        },
+      },
+    ];
+
+    const view = render(<Chat />);
+    fireEvent.click(await view.findByRole('button', { name: '清空上下文并允许编辑后继续' }));
+
+    await waitFor(() => {
+      expect(mockStreamState.resolveInteraction).toHaveBeenCalledWith({
+        runId: 'run-2',
+        requestId: 'interaction-2',
+        decision: {
+          allow: true,
+          nextPermissionMode: 'acceptEdits',
+          clearContext: true,
+          updatedInput: { plan: '1. 更新后端\n2. 更新前端' },
+        },
+      });
+      expect(mockStreamState.stop).toHaveBeenCalledWith('user_stop');
+      expect(mockStreamState.reset).toHaveBeenCalled();
+      expect(mockStreamState.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('<original_user_goal>\n修复计划模式并补测试'),
+        expect.objectContaining({
+          permissionMode: 'acceptEdits',
+          attachments: [],
+        })
+      );
+      expect(mockStreamState.sendMessage).toHaveBeenCalledWith(
+        expect.stringContaining('<approved_plan>\n1. 更新后端\n2. 更新前端'),
+        expect.any(Object)
+      );
+    });
+    expect(view.getByRole('button', { name: '权限等级：允许编辑' })).toBeTruthy();
   });
 
   it('对话流内选中文本后显示“添加到对话”按钮', async () => {

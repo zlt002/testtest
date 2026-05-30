@@ -97,6 +97,21 @@ test('loadEnv uses explicit CLAUDE_CODE_EXECUTABLE_PATH before any fallback', ()
   assert.equal(env.claudeCodeExecutablePath, '/custom/bin/claude');
 });
 
+test('loadEnv forces SDK built-in Claude runtime when CLAUDE_CODE_USE_SDK_BUILTIN is enabled', () => {
+  const env = loadEnv(
+    {
+      CLAUDE_CODE_USE_SDK_BUILTIN: ' true ',
+      CLAUDE_CODE_EXECUTABLE_PATH: '/custom/bin/claude',
+    },
+    {
+      exists: () => true,
+      resolveFromPath: () => '/usr/local/bin/claude',
+    }
+  );
+
+  assert.equal(env.claudeCodeExecutablePath, null);
+});
+
 test('loadEnv falls back to bundled vendor cli before PATH lookup', () => {
   const env = loadEnv(
     {},

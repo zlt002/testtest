@@ -66,14 +66,10 @@ export function resolveInjectionPlan(url: string): InjectionPlan | null {
       };
     }
   } catch {
-    // Fall back to the existing WPS injection route for unparseable URLs.
+    // Ignore malformed URLs instead of injecting into unknown pages.
   }
 
-  return {
-    polyfillTarget: 'main-frame',
-    scripts: ['wps-mcp-server.js'],
-    scriptTarget: 'all-frames',
-  };
+  return null;
 }
 
 function createInjectionTarget(

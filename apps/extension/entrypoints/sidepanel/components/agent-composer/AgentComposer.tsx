@@ -32,6 +32,7 @@ import { createAgentV2Client } from '../../lib/agent-v2/client';
 import type {
   CommandCatalogEntry,
   FileTreeEntry,
+  AgentV2StopReason,
   PermissionMode,
   SessionAttachment,
   ThinkingMode,
@@ -55,7 +56,7 @@ type AgentComposerProps = {
   onThinkingModeChange: (mode: ThinkingMode) => void;
   onChange: (value: string) => void;
   onSend: () => void;
-  onStop: (reason?: 'user_stop' | 'window_takeover_user_left') => void | Promise<void>;
+  onStop: (reason?: AgentV2StopReason) => void | Promise<void>;
   onLocalCommand: (command: CommandCatalogEntry) => void;
   attachments: SessionAttachment[];
   onAttachmentsChange: Dispatch<SetStateAction<SessionAttachment[]>>;
@@ -119,6 +120,13 @@ const PERMISSION_MODE_BUTTON_CLASSES: Record<PermissionMode, string> = {
   acceptEdits: '',
   bypassPermissions:
     'border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200 dark:border-amber-400 dark:bg-amber-500/20 dark:text-amber-50 dark:hover:bg-amber-500/30',
+};
+
+const PERMISSION_MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
+  default: '按默认策略请求工具与权限。',
+  plan: '先研究并给出计划，默认不直接执行修改。',
+  acceptEdits: '允许执行编辑，但仍保留其余安全确认。',
+  bypassPermissions: '跳过大部分权限确认，仅适合明确授权场景。',
 };
 
 const FALLBACK_COMMANDS: CommandCatalogEntry[] = [
@@ -1220,7 +1228,12 @@ export function AgentComposer({
                     />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>权限等级：{PERMISSION_LABELS[permissionMode]}</TooltipContent>
+                <TooltipContent>
+                  <div>权限等级：{PERMISSION_LABELS[permissionMode]}</div>
+                  <div className="mt-1 max-w-56 text-[11px] leading-4 text-muted-foreground">
+                    {PERMISSION_MODE_DESCRIPTIONS[permissionMode]}
+                  </div>
+                </TooltipContent>
               </Tooltip>
               {hasText || hasAttachments ? (
                 <Button

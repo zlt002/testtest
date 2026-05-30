@@ -79,12 +79,9 @@ describe('resolveInjectionPlan', () => {
     });
   });
 
-  it('为其他页面保持现有 WPS server 路线', () => {
-    expect(resolveInjectionPlan('https://www.kdocs.cn/l/abcdef')).toEqual({
-      polyfillTarget: 'main-frame',
-      scripts: ['wps-mcp-server.js'],
-      scriptTarget: 'all-frames',
-    });
+  it('不为普通第三方页面注入脚本', () => {
+    expect(resolveInjectionPlan('https://docs.bigmodel.cn/cn/guide/start/model-overview')).toBeNull();
+    expect(resolveInjectionPlan('https://www.kdocs.cn/l/abcdef')).toBeNull();
   });
 
   it('跳过浏览器内部页面', () => {
@@ -92,11 +89,7 @@ describe('resolveInjectionPlan', () => {
     expect(resolveInjectionPlan('edge://settings')).toBeNull();
   });
 
-  it('无法解析的地址回退到现有 WPS server 路线', () => {
-    expect(resolveInjectionPlan('not-a-valid-url')).toEqual({
-      polyfillTarget: 'main-frame',
-      scripts: ['wps-mcp-server.js'],
-      scriptTarget: 'all-frames',
-    });
+  it('无法解析的地址不做注入', () => {
+    expect(resolveInjectionPlan('not-a-valid-url')).toBeNull();
   });
 });

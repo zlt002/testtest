@@ -1,3 +1,4 @@
+import type { AgentDefinition } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentBackendV2Env } from '../../config/env.ts';
 import { normalizePermissionMode } from './permissions.ts';
 
@@ -83,6 +84,7 @@ export function buildClaudeRequestOptions(input: {
   projectPath?: string;
   model?: string | null;
   mcpServers?: Record<string, unknown>;
+  agents?: Record<string, AgentDefinition>;
   allowedTools?: string[];
   useDefaultAllowedTools?: boolean;
   disallowedTools?: string[];
@@ -116,6 +118,7 @@ export function buildClaudeRequestOptions(input: {
     resume: input.resume,
     mcpServers: input.mcpServers,
     pathToClaudeCodeExecutable: input.env.claudeCodeExecutablePath || undefined,
+    agents: input.agents,
     allowedTools,
     disallowedTools: input.disallowedTools,
     includePartialMessages: true,

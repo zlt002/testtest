@@ -21,7 +21,12 @@ import {
   type PolicyDecision,
 } from '../runtime/interaction-policy-router.ts';
 import { createPolicyAuditLog } from '../runtime/policy-audit.ts';
+import { classifyPlanModeToolUse } from '../runtime/plan-mode.ts';
 import { selectSessionSkillPlan } from '../runtime/skill-selection.ts';
+import {
+  buildProgrammaticSubagents,
+  buildSubagentRoutingPrompt,
+} from '../runtime/subagent-definitions.ts';
 import {
   type SessionSubagentSnapshot,
   readSessionSubagentSnapshots,
@@ -57,6 +62,8 @@ type InteractionDecision = {
   message?: string;
   updatedInput?: unknown;
   answers?: Record<string, unknown>;
+  nextPermissionMode?: 'acceptEdits' | 'bypassPermissions';
+  clearContext?: boolean;
 };
 
 type PendingInteraction = {
@@ -862,6 +869,16 @@ export function createAgentService(deps: AgentServiceDeps) {
       skillPlanPlugins: skillPlan?.plugins,
       managedPlugins,
     });
+    const programmaticAgents = buildProgrammaticSubagents({
+      allowedTools: toolPermissions?.allowedTools,
+      disallowedTools: toolPermissions?.disallowedTools,
+      permissionMode: input.permissionMode,
+      mcpServers,
+    });
+    const subagentRoutingPrompt = buildSubagentRoutingPrompt(programmaticAgents);
+    const appendSystemPrompt = subagentRoutingPrompt
+      ? `${CHINESE_USER_SYSTEM_PROMPT}\n\n${subagentRoutingPrompt}`
+      : CHINESE_USER_SYSTEM_PROMPT;
     const useDefaultAllowedTools = shouldUseDefaultAllowedTools({
       runtimeCapabilities,
       explicitAllowedTools: toolPermissions?.allowedTools,
@@ -903,6 +920,7 @@ export function createAgentService(deps: AgentServiceDeps) {
     const manualEvents = new AsyncEventQueue<AgentEvent>();
     let manualSequence = 10000;
     let currentSessionId = input.sessionId;
+    let currentPermissionMode = input.permissionMode;
     const nextManualEvent = (type: AgentEvent['type'], payload: Record<string, unknown>) =>
       createAgentEvent({
         runId: input.runId,
@@ -918,6 +936,7 @@ export function createAgentService(deps: AgentServiceDeps) {
           resume: input.sessionId ?? undefined,
           model: requestModel,
           mcpServers,
+          agents: programmaticAgents,
           allowedTools: toolPermissions?.allowedTools,
           useDefaultAllowedTools,
           disallowedTools: toolPermissions?.disallowedTools,
@@ -928,13 +947,14 @@ export function createAgentService(deps: AgentServiceDeps) {
           plugins: runtimePlugins,
           sdkEnv,
           systemPrompt: skillPlan?.systemPrompt,
-          appendSystemPrompt: CHINESE_USER_SYSTEM_PROMPT,
+          appendSystemPrompt,
         })
       : {
           cwd: input.projectPath,
           resume: input.sessionId ?? undefined,
           model: requestModel,
           mcpServers,
+          agents: programmaticAgents,
           allowedTools: toolPermissions?.allowedTools,
           disallowedTools: toolPermissions?.disallowedTools,
           settingSources,
@@ -947,8 +967,8 @@ export function createAgentService(deps: AgentServiceDeps) {
         type: 'preset',
         preset: 'claude_code',
         append: skillPlan?.systemPrompt?.append
-          ? `${CHINESE_USER_SYSTEM_PROMPT}\n\n${skillPlan.systemPrompt.append}`
-          : CHINESE_USER_SYSTEM_PROMPT,
+          ? `${appendSystemPrompt}\n\n${skillPlan.systemPrompt.append}`
+          : appendSystemPrompt,
       };
     }
     (options as Record<string, unknown>).attachments = (input.attachments || []).map(
@@ -962,7 +982,7 @@ export function createAgentService(deps: AgentServiceDeps) {
       const effectiveToolInput = inheritParentPermissionsForAgentTool({
         toolName,
         toolInput,
-        permissionMode: input.permissionMode,
+        permissionMode: currentPermissionMode,
         allowedTools: toolPermissions?.allowedTools,
         disallowedTools: toolPermissions?.disallowedTools,
       });
@@ -998,7 +1018,14 @@ export function createAgentService(deps: AgentServiceDeps) {
         };
       }
 
-      if (input.permissionMode === 'bypassPermissions' && !isInteractivePrompt) {
+      const planModeDecision = classifyPlanModeToolUse({
+        permissionMode: currentPermissionMode,
+        toolName,
+        toolInput: effectiveToolInput,
+        requiresApprovalForSideEffects,
+      });
+
+      if (planModeDecision?.behavior === 'allow') {
         allowedToolUses.set(requestId, toolName);
         return {
           behavior: 'allow',
@@ -1007,7 +1034,24 @@ export function createAgentService(deps: AgentServiceDeps) {
         };
       }
 
-      if (!isInteractivePrompt && !requiresApprovalForSideEffects(toolName, effectiveToolInput)) {
+      if (
+        currentPermissionMode === 'bypassPermissions' &&
+        !isInteractivePrompt &&
+        planModeDecision?.behavior !== 'ask'
+      ) {
+        allowedToolUses.set(requestId, toolName);
+        return {
+          behavior: 'allow',
+          updatedInput: effectiveToolInput,
+          toolUseID: requestId,
+        };
+      }
+
+      if (
+        !isInteractivePrompt &&
+        !requiresApprovalForSideEffects(toolName, effectiveToolInput) &&
+        planModeDecision?.behavior !== 'ask'
+      ) {
         allowedToolUses.set(requestId, toolName);
         return {
           behavior: 'allow',
@@ -1019,10 +1063,25 @@ export function createAgentService(deps: AgentServiceDeps) {
       manualEvents.push(
         nextManualEvent('interaction.required', {
           requestId,
-          kind: isInteractivePrompt ? 'interactive_prompt' : 'permission_request',
+          kind:
+            planModeDecision?.behavior === 'ask'
+              ? planModeDecision.interactionKind
+              : isInteractivePrompt
+                ? 'interactive_prompt'
+                : 'permission_request',
+          ...(currentPermissionMode === 'plan'
+            ? {
+                runPhase:
+                  planModeDecision?.behavior === 'ask'
+                    ? planModeDecision.nextPhase
+                    : 'planning',
+              }
+            : {}),
           toolName,
           message:
-            typeof context.title === 'string'
+            planModeDecision?.behavior === 'ask' && planModeDecision.title
+              ? planModeDecision.title
+              : typeof context.title === 'string'
               ? context.title
               : isInteractivePrompt
                 ? 'Claude 需要向你确认一个问题。'
@@ -1068,8 +1127,18 @@ export function createAgentService(deps: AgentServiceDeps) {
         };
       }
 
+      if (decision.nextPermissionMode) {
+        currentPermissionMode = decision.nextPermissionMode;
+      }
+
       const updatedInput =
-        decision.updatedInput && typeof decision.updatedInput === 'object'
+        decision.nextPermissionMode && toolName === 'ExitPlanMode'
+          ? {
+              ...effectiveToolInput,
+              nextPermissionMode: decision.nextPermissionMode,
+              ...(decision.clearContext === true ? { clearContext: true } : {}),
+            }
+          : decision.updatedInput && typeof decision.updatedInput === 'object'
           ? (decision.updatedInput as Record<string, unknown>)
           : decision.answers
             ? { ...effectiveToolInput, answers: decision.answers }
@@ -1081,7 +1150,6 @@ export function createAgentService(deps: AgentServiceDeps) {
         toolUseID: requestId,
       };
     };
-    (options as Record<string, unknown>).allowDangerouslySkipPermissions = false;
     if (!deps.runtime.query) {
       throw new Error('Claude runtime query is not configured');
     }

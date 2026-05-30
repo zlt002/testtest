@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clearAgentV2ActiveRunSession, publishAgentV2ActiveRunSession } from './active-run-session';
 import { createAgentV2Client, normalizeRunAttachmentsForRequest } from './client';
 import { projectAgentEventsToMessages, projectToolDisplayRecords } from './project-events';
-import { attachSubagentsToConversationItems, projectConversationRunItems } from './run-cards';
+import {
+  attachSubagentsToConversationItems,
+  projectConversationRunItems,
+  summarizeSubagentWaitingState,
+} from './run-cards';
 import { localizeUserFacingError, localizeUserFacingMessage } from '../user-facing-error';
 import {
   buildWebEditWorkflowInstruction,
@@ -10,6 +14,7 @@ import {
   resolveWebEditPromptMode,
 } from './webeditPrompt';
 import type {
+  AgentV2StopReason,
   AgentEvent,
   BrowserContext,
   DisplayMessage,
@@ -95,6 +100,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
   const [activeRunStartedAt, setActiveRunStartedAt] = useState<string | null>(null);
   const [subagents, setSubagents] = useState<SessionSubagentSnapshot[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const autoStoppedRunIdRef = useRef<string | null>(null);
 
   const eventMessages = useMemo(() => projectAgentEventsToMessages(events), [events]);
   const allMessages = useMemo(
@@ -129,6 +135,21 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
       }),
     [allMessages, subagentRunId, subagents]
   );
+  const activeRunLastActivityAt = useMemo(() => {
+    if (!activeRunId) {
+      return null;
+    }
+
+    let latest = 0;
+    for (const event of events) {
+      if (event.runId !== activeRunId || isTerminalRunEvent(event)) {
+        continue;
+      }
+      latest = Math.max(latest, new Date(event.timestamp).getTime());
+    }
+
+    return latest > 0 ? new Date(latest).toISOString() : activeRunStartedAt;
+  }, [activeRunId, activeRunStartedAt, events]);
   const contextPercent = useMemo(() => {
     const tokenTotal = events.reduce((total, event) => {
       if (event.type !== 'run.completed' && event.type !== 'usage.updated') {
@@ -152,6 +173,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setActiveProjectPath(null);
     setActiveRunStartedAt(null);
     setSubagents([]);
+    autoStoppedRunIdRef.current = null;
   }, []);
 
   const loadHistory = useCallback((history: SessionHistoryResponse) => {
@@ -167,12 +189,14 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setActiveProjectPath(null);
     setSubagents([]);
     setActiveRunStartedAt(null);
+    autoStoppedRunIdRef.current = null;
   }, []);
 
   const restoreSessionRunState = useCallback((runState: SessionRunStateRecord | null) => {
     if (!runState?.hasActiveStream) {
       setActiveRunId(null);
       setStatus('idle');
+      autoStoppedRunIdRef.current = null;
       void clearAgentV2ActiveRunSession();
       return;
     }
@@ -183,6 +207,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setActiveProjectPath(runState.projectPath || null);
     setActiveRunStartedAt(runState.startedAt);
     setError(null);
+    autoStoppedRunIdRef.current = null;
     const activeStatus = runState.status === 'connecting' ? 'connecting' : 'streaming';
     setStatus(activeStatus);
     void publishAgentV2ActiveRunSession({
@@ -282,6 +307,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
       setActiveRunStartedAt(new Date().toISOString());
       setSubagents([]);
       setSubagentRunId(null);
+      autoStoppedRunIdRef.current = null;
       const localUserId = `local-user-${crypto.randomUUID()}`;
       const localAssistantId = `local-assistant-${crypto.randomUUID()}`;
       let hasReceivedEvent = false;
@@ -354,11 +380,13 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         if (event.type === 'run.completed' || event.type === 'run.aborted') {
           setStatus('idle');
           setActiveRunId(null);
+          autoStoppedRunIdRef.current = null;
           void clearAgentV2ActiveRunSession();
         }
         if (event.type === 'run.failed') {
           setStatus('error');
           setActiveRunId(null);
+          autoStoppedRunIdRef.current = null;
           void clearAgentV2ActiveRunSession();
           const authGuidance =
             typeof event.payload.authGuidance === 'string' ? event.payload.authGuidance : null;
@@ -479,7 +507,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
   }, [activeProjectPath, activeRunId, activeRunStartedAt, client, sessionId]);
 
   const stop = useCallback(
-    async (reason?: 'user_stop' | 'window_takeover_user_left') => {
+    async (reason?: AgentV2StopReason) => {
       abortControllerRef.current?.abort();
       if (activeRunId) {
         await Promise.resolve(client.abortRun(activeRunId)).catch((abortError) => {
@@ -493,10 +521,31 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
       });
       if (reason === 'window_takeover_user_left') {
         setError('当前运行因离开目标页面而中断');
+      } else if (reason === 'subagent_timeout') {
+        setError('检测到子代理持续失联，系统已自动停止当前运行，避免你继续空等。');
       }
     },
     [activeRunId, client]
   );
+
+  useEffect(() => {
+    if (!activeRunId || (status !== 'connecting' && status !== 'streaming')) {
+      return;
+    }
+
+    const waitingSummary = summarizeSubagentWaitingState(subagents, Date.now(), {
+      parentLastActivityAt: activeRunLastActivityAt,
+    });
+    if (!waitingSummary.shouldAutoStop) {
+      return;
+    }
+    if (autoStoppedRunIdRef.current === activeRunId) {
+      return;
+    }
+
+    autoStoppedRunIdRef.current = activeRunId;
+    void stop('subagent_timeout');
+  }, [activeRunId, activeRunLastActivityAt, status, stop, subagents]);
 
   const resolveInteraction = useCallback(
     async (input: { runId: string; requestId: string; decision: InteractionDecision }) => {

@@ -19,6 +19,8 @@ type InteractionDecisionBody = {
   message?: unknown;
   updatedInput?: unknown;
   answers?: unknown;
+  nextPermissionMode?: unknown;
+  clearContext?: unknown;
 };
 
 type WorkspaceBody = {
@@ -200,6 +202,8 @@ export function createAgentV2Route(agentService: {
       message?: string;
       updatedInput?: unknown;
       answers?: Record<string, unknown>;
+      nextPermissionMode?: 'acceptEdits' | 'bypassPermissions';
+      clearContext?: boolean;
     };
   }): Promise<unknown> | unknown;
   startSessionRun?(input: RunInput): Promise<AsyncIterable<AgentEvent>>;
@@ -427,6 +431,12 @@ export function createAgentV2Route(agentService: {
               message: typeof body.message === 'string' ? body.message : undefined,
               updatedInput: body.updatedInput,
               answers,
+              nextPermissionMode:
+                body.nextPermissionMode === 'acceptEdits' ||
+                body.nextPermissionMode === 'bypassPermissions'
+                  ? body.nextPermissionMode
+                  : undefined,
+              clearContext: body.clearContext === true ? true : undefined,
             },
           })
         );

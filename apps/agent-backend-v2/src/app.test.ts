@@ -313,6 +313,163 @@ test('streaming session errors do not crash the server after SSE has started', a
   }
 });
 
+test('interaction resolve route forwards nextPermissionMode to agent service', async () => {
+  const decisions: Array<Record<string, unknown>> = [];
+  const app = createApp({
+    agentService: {
+      async resolveInteraction(input: {
+        runId: string;
+        requestId: string;
+        decision: Record<string, unknown>;
+      }) {
+        decisions.push({
+          runId: input.runId,
+          requestId: input.requestId,
+          decision: input.decision,
+        });
+        return { resolved: true as const };
+      },
+      async getSessionHistory() {
+        return { messages: [] };
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+    fileService: {
+      async listTree() {
+        return { entries: [] };
+      },
+      async readTextFile() {
+        return { content: '' };
+      },
+      async writeTextFile() {
+        return { ok: true as const };
+      },
+    },
+    mcpService: {
+      async listServers() {
+        return {};
+      },
+      async upsertServer() {
+        return {};
+      },
+      async deleteServer() {
+        return {};
+      },
+    },
+  });
+  const { server, url } = await listen(app);
+  try {
+    const response = await fetch(`${url}/api/agent-v2/runs/run-1/interactions/request-1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        allow: true,
+        nextPermissionMode: 'acceptEdits',
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { resolved: true });
+    assert.deepEqual(decisions, [
+      {
+        runId: 'run-1',
+        requestId: 'request-1',
+        decision: {
+          allow: true,
+          message: undefined,
+          updatedInput: undefined,
+          answers: undefined,
+          nextPermissionMode: 'acceptEdits',
+          clearContext: undefined,
+        },
+      },
+    ]);
+  } finally {
+    server.close();
+  }
+});
+
+test('interaction resolve route forwards clearContext to agent service', async () => {
+  const decisions: Array<Record<string, unknown>> = [];
+  const app = createApp({
+    agentService: {
+      async resolveInteraction(input: {
+        runId: string;
+        requestId: string;
+        decision: Record<string, unknown>;
+      }) {
+        decisions.push({
+          runId: input.runId,
+          requestId: input.requestId,
+          decision: input.decision,
+        });
+        return { resolved: true as const };
+      },
+      async getSessionHistory() {
+        return { messages: [] };
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+    fileService: {
+      async listTree() {
+        return { entries: [] };
+      },
+      async readTextFile() {
+        return { content: '' };
+      },
+      async writeTextFile() {
+        return { ok: true as const };
+      },
+    },
+    mcpService: {
+      async listServers() {
+        return {};
+      },
+      async upsertServer() {
+        return {};
+      },
+      async deleteServer() {
+        return {};
+      },
+    },
+  });
+  const { server, url } = await listen(app);
+  try {
+    const response = await fetch(`${url}/api/agent-v2/runs/run-1/interactions/request-1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        allow: true,
+        nextPermissionMode: 'acceptEdits',
+        clearContext: true,
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { resolved: true });
+    assert.deepEqual(decisions, [
+      {
+        runId: 'run-1',
+        requestId: 'request-1',
+        decision: {
+          allow: true,
+          message: undefined,
+          updatedInput: undefined,
+          answers: undefined,
+          nextPermissionMode: 'acceptEdits',
+          clearContext: true,
+        },
+      },
+    ]);
+  } finally {
+    server.close();
+  }
+});
+
 test('session run route forwards attachments metadata to agent service', async () => {
   const runInputs: Array<Record<string, unknown>> = [];
   const app = createApp({

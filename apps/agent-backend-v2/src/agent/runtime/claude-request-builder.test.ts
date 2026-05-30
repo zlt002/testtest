@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildClaudeRequestOptions } from './claude-request-builder.ts';
+import { buildProgrammaticSubagents } from './subagent-definitions.ts';
 
 const BASE_ENV = {
   host: '127.0.0.1',
@@ -40,6 +41,22 @@ test('keeps effort for official anthropic api', () => {
   assert.equal(options.effort, 'high');
 });
 
+test('enables dangerous permission bypass only for bypassPermissions mode', () => {
+  const bypassOptions = buildClaudeRequestOptions({
+    env: BASE_ENV,
+    permissionMode: 'bypassPermissions',
+  });
+  const planOptions = buildClaudeRequestOptions({
+    env: BASE_ENV,
+    permissionMode: 'plan',
+  });
+
+  assert.equal(bypassOptions.permissionMode, 'bypassPermissions');
+  assert.equal(bypassOptions.allowDangerouslySkipPermissions, true);
+  assert.equal(planOptions.permissionMode, 'plan');
+  assert.equal(planOptions.allowDangerouslySkipPermissions, false);
+});
+
 test('injects default chinese system prompt when none is provided', () => {
   const options = buildClaudeRequestOptions({
     env: BASE_ENV,
@@ -70,4 +87,37 @@ test('merges default chinese system prompt with preset append prompts', () => {
     append:
       '你正在服务中文用户，所有面向用户的可见内容必须以简体中文输出。\n\n当前是 WebEdit 扩展内置办公会话。',
   });
+});
+
+test('透传程序化子代理定义到 Claude request options', () => {
+  const agents = buildProgrammaticSubagents({
+    allowedTools: ['Read', 'Grep', 'Glob', 'Bash', 'WebSearch', 'Agent'],
+    disallowedTools: ['Write'],
+    permissionMode: 'bypassPermissions',
+  });
+
+  const options = buildClaudeRequestOptions({
+    env: BASE_ENV,
+    agents,
+  });
+
+  assert.deepEqual(options.agents, agents);
+  assert.ok(options.agents);
+  assert.deepEqual(Object.keys(options.agents || {}).sort(), [
+    'repo-analyzer',
+    'test-runner',
+    'web-researcher',
+  ]);
+});
+
+test('程序化子代理会根据工具权限裁剪能力', () => {
+  const agents = buildProgrammaticSubagents({
+    allowedTools: ['Read', 'Grep', 'Glob', 'Agent'],
+    disallowedTools: ['Bash', 'WebSearch'],
+    permissionMode: 'default',
+  });
+
+  assert.ok(agents);
+  assert.deepEqual(Object.keys(agents || {}), ['repo-analyzer']);
+  assert.equal(agents?.['repo-analyzer']?.permissionMode, 'default');
 });

@@ -19,6 +19,10 @@ export type AgentBackendV2Env = {
 const defaultWorkdir = resolve(fileURLToPath(new URL('../../../../', import.meta.url)));
 const defaultLiteClaudeCliPath = resolve(defaultWorkdir, 'vendor', 'claude-agent-sdk', 'cli.js');
 
+function shouldUseSdkBuiltInClaudeRuntime(source: NodeJS.ProcessEnv): boolean {
+  return parseBoolean(source.CLAUDE_CODE_USE_SDK_BUILTIN, false);
+}
+
 function parsePort(value: string | undefined): number {
   if (!value) {
     return 8792;
@@ -125,14 +129,16 @@ export function loadEnv(
   const resolveFromPath = deps.resolveFromPath ?? resolveClaudeExecutableFromPath;
   const currentPlatform = deps.platform ?? process.platform;
   const claudeCodeExecutablePath =
-    source.CLAUDE_CODE_EXECUTABLE_PATH?.trim() ||
-    (fileExists(defaultLiteClaudeCliPath)
-      ? defaultLiteClaudeCliPath
-      : normalizeClaudeExecutablePath(
-          resolveFromPath(source, currentPlatform),
-          currentPlatform,
-          fileExists
-        ));
+    shouldUseSdkBuiltInClaudeRuntime(source)
+      ? null
+      : source.CLAUDE_CODE_EXECUTABLE_PATH?.trim() ||
+        (fileExists(defaultLiteClaudeCliPath)
+          ? defaultLiteClaudeCliPath
+          : normalizeClaudeExecutablePath(
+              resolveFromPath(source, currentPlatform),
+              currentPlatform,
+              fileExists
+            ));
 
   return {
     host: source.CLAUDE_AGENT_V2_HOST || '127.0.0.1',

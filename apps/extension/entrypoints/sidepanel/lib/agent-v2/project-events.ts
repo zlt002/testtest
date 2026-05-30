@@ -134,7 +134,11 @@ export function projectAgentEventsToMessages(events: AgentEvent[]): DisplayMessa
     if (event.type === 'interaction.required') {
       const requestId = stringValue(event.payload.requestId) || event.eventId;
       const kind =
-        event.payload.kind === 'interactive_prompt' ? 'interactive_prompt' : 'permission_request';
+        event.payload.kind === 'interactive_prompt'
+          ? 'interactive_prompt'
+          : event.payload.kind === 'plan_approval'
+            ? 'plan_approval'
+            : 'permission_request';
       messages.push({
         id: `${requestId}-interaction`,
         sessionId: sessionIdOf(event),
@@ -143,6 +147,14 @@ export function projectAgentEventsToMessages(events: AgentEvent[]): DisplayMessa
         kind: 'interaction',
         requestId,
         interactionKind: kind,
+        runPhase:
+          event.payload.runPhase === 'planning' ||
+          event.payload.runPhase === 'awaiting_plan_approval' ||
+          event.payload.runPhase === 'executing' ||
+          event.payload.runPhase === 'completed' ||
+          event.payload.runPhase === 'aborted'
+            ? event.payload.runPhase
+            : null,
         toolName: stringValue(event.payload.toolName),
         toolInput: event.payload.input,
         text: stringValue(event.payload.message),
