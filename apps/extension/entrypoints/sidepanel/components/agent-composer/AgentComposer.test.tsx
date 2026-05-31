@@ -2,13 +2,8 @@
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAttachment } from '../../lib/agent-v2/types';
-import { formatPickedElementContext } from '../../lib/page-picker';
 import { AgentComposer } from './AgentComposer';
 
-const mutateAsync = vi.fn();
-const pageCaptureMutateAsync = vi.fn();
-let pagePickerIsPending = false;
-const triggerWorkspacePageCapture = vi.fn();
 const listCommandsMock = vi.fn();
 
 vi.mock('../../lib/agent-v2/client', () => ({
@@ -16,30 +11,6 @@ vi.mock('../../lib/agent-v2/client', () => ({
     listCommands: listCommandsMock,
     listFiles: vi.fn().mockResolvedValue([]),
   }),
-}));
-
-vi.mock('../../lib/trpc_client', () => ({
-  trpc: {
-    pagePicker: {
-      pickElement: {
-        useMutation: () => ({
-          mutateAsync,
-          isPending: pagePickerIsPending,
-        }),
-      },
-    },
-    pageCapture: {
-      capture: {
-        useMutation: () => ({
-          mutateAsync: pageCaptureMutateAsync,
-        }),
-      },
-    },
-  },
-}));
-
-vi.mock('../../lib/page-capture', () => ({
-  triggerWorkspacePageCapture,
 }));
 
 const defaultProps = {
@@ -170,9 +141,6 @@ function renderUploadComposer(
 
 describe('AgentComposer', () => {
   beforeEach(() => {
-    mutateAsync.mockReset();
-    pageCaptureMutateAsync.mockReset();
-    triggerWorkspacePageCapture.mockReset();
     listCommandsMock.mockReset();
     listCommandsMock.mockResolvedValue({
       skills: [
@@ -190,43 +158,12 @@ describe('AgentComposer', () => {
     });
   });
 
-  it('starts page capture from composer toolbar and shows saved path', async () => {
-    const user = userEvent.setup();
-    triggerWorkspacePageCapture.mockResolvedValueOnce({
-      entryPath: 'captures/2026-05-12-example',
-    });
-
-    renderComposer();
-    await user.click(screen.getByRole('button', { name: '閲囬泦鏁撮〉' }));
-
-    expect(screen.getByText('姝ｅ湪閲囬泦鏁撮〉骞跺啓鍏ュ綋鍓嶅伐浣滃尯...')).toBeTruthy();
-    expect(await screen.findByText('缃戦〉宸蹭繚瀛樺埌')).toBeTruthy();
-    expect(screen.getByText('captures/2026-05-12-example')).toBeTruthy();
-    expect(triggerWorkspacePageCapture).toHaveBeenCalledWith({
-      mode: 'page',
-      projectPath: '/tmp/project',
-    });
-  });
-
-  it('capture 鎴愬姛鎻愮ず涓殑璺緞淇濇寔鍗曡鎴柇灞曠ず', async () => {
-    const user = userEvent.setup();
-    triggerWorkspacePageCapture.mockResolvedValueOnce({
-      entryPath: 'captures/2026-05-12-example',
-    });
-
-    renderComposer();
-    await user.click(screen.getByRole('button', { name: '閲囬泦鏁撮〉' }));
-
-    const pathText = await screen.findByText('captures/2026-05-12-example');
-    expect(pathText.className).toContain('truncate');
-    expect(pathText.className).toContain('whitespace-nowrap');
-    expect(pathText.className).toContain('min-w-0');
-  });
-
-  it('renders the DOM analysis toolbar above the composer input', async () => {
+  it('does not render legacy page capture or picker actions in the compact composer toolbar', () => {
     renderComposer();
 
-    expect(await screen.findByRole('button', { name: '寮€濮?DOM 鍒嗘瀽' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '采集整页' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '选择元素' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '开始 DOM 分析' })).toBeNull();
   });
 
   it('does not render a top divider on the composer dock surface', () => {
@@ -235,79 +172,11 @@ describe('AgentComposer', () => {
     expect(container.firstElementChild?.className).not.toContain('border-t');
   });
 
-  it('shows a clear message when capture starts without a workspace', async () => {
-    const user = userEvent.setup();
-    triggerWorkspacePageCapture.mockRejectedValueOnce(new Error('请先选择当前工作区后再采集网页'));
-    mutateAsync.mockResolvedValueOnce({
-      url: 'https://example.com',
-      selector: '#hero',
-      xpath: '//*[@id="hero"]',
-      tagName: 'section',
-      id: 'hero',
-      classList: ['hero'],
-      dataAttributes: { role: 'banner' },
-      text: 'Hero',
-      rect: { x: 10, y: 20, width: 300, height: 40 },
-      outerHTMLSnippet: '<section id="hero">Hero</section>',
-      ancestors: [],
-      siblings: { previous: null, next: null },
-    });
-
-    render(<AgentComposer {...defaultProps} projectPath={undefined} value="" onChange={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' }));
-    await user.click(await screen.findByRole('button', { name: '閲囬泦鍒板伐浣滃尯' }));
-
-    expect(await screen.findByText('请先选择当前工作区后再采集网页')).toBeTruthy();
-  });
-
-  it('shows an action area instead of inserting picked content immediately', async () => {
-    const pickedElement = {
-      url: 'https://example.com',
-      selector: '#hero',
-      xpath: '//*[@id="hero"]',
-      tagName: 'section',
-      id: 'hero',
-      classList: ['hero'],
-      dataAttributes: { role: 'banner' },
-      text: 'Hero',
-      rect: { x: 10, y: 20, width: 300, height: 40 },
-      outerHTMLSnippet: '<section id="hero">Hero</section>',
-      ancestors: [],
-      siblings: { previous: null, next: null },
-    };
-    mutateAsync.mockResolvedValueOnce(pickedElement);
-
-    renderComposer('璇峰府鎴戞敼杩欎釜鍖哄煙');
-    fireEvent.click(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' }));
-
-    expect(await screen.findByText('宸查€夋嫨鍏冪礌')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '发送到输入框' })).toBeTruthy();
-    expect(screen.getByRole('textbox')).toHaveValue('璇峰府鎴戞敼杩欎釜鍖哄煙');
-  });
-
-  it('shows an error when page picking fails', async () => {
-    mutateAsync.mockRejectedValueOnce(new Error('当前页面不支持拾取'));
-
-    renderComposer();
-    fireEvent.click(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' }));
-
-    expect(await screen.findByText('当前页面不支持拾取')).toBeTruthy();
-  });
-
   it('does not show the read current selection toolbar button', () => {
     renderComposer('请继续分析');
 
-    expect(screen.queryByRole('button', { name: '璇诲彇褰撳墠閫夊尯' })).toBeNull();
-    expect(screen.queryByRole('button', { name: '璇诲彇閫夊尯' })).toBeNull();
-  });
-
-  it('disables the picker button while a pick request is pending', () => {
-    pagePickerIsPending = true;
-
-    renderComposer();
-
-    expect(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' })).toBeDisabled();
-    pagePickerIsPending = false;
+    expect(screen.queryByRole('button', { name: '读取当前选区' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '读取选区' })).toBeNull();
   });
 
   it('shows takeover notice in the top notice slot and hides bypass-permission notice', () => {
@@ -321,9 +190,7 @@ describe('AgentComposer', () => {
       />
     );
 
-    expect(
-      screen.getByText('当前会话正在托管这个浏览器窗口，手动离开目标页会中断本次运行。')
-    ).toBeTruthy();
+    expect(screen.getByText('会话正在托管这个浏览器窗口，离开会中断本次运行。')).toBeTruthy();
     expect(screen.queryByText('允许所有操作会跳过工具确认，仅建议在可信项目中使用。')).toBeNull();
   });
 
@@ -369,134 +236,29 @@ describe('AgentComposer', () => {
     expect(maxIcon?.className.baseVal ?? maxIcon?.getAttribute('class')).toContain('text-amber-600');
   });
 
-  it('appends the picked block only after explicitly clicking send to input', async () => {
-    let resolvePick: ((value: unknown) => void) | undefined;
-    mutateAsync.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolvePick = resolve;
-        })
-    );
-
-    renderComposer('鍒濆鍐呭');
-    fireEvent.click(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' }));
-    fireEvent.change(screen.getByRole('textbox'), {
-      target: { value: '初始内容，后来又补了一句' },
-    });
-
-    const pickedElement = {
-      url: 'https://example.com',
-      selector: '#target',
-      xpath: '//*[@id="target"]',
-      tagName: 'div',
-      id: 'target',
-      classList: ['picked'],
-      dataAttributes: {},
-      text: 'Target',
-      rect: { x: 1, y: 2, width: 3, height: 4 },
-      outerHTMLSnippet: '<div id="target">Target</div>',
-      ancestors: [],
-      siblings: { previous: null, next: null },
-    };
-
-    resolvePick?.(pickedElement);
-
-    await screen.findByRole('button', { name: '发送到输入框' });
-    fireEvent.click(screen.getByRole('button', { name: '发送到输入框' }));
-
-    await waitFor(() => {
-      expect(screen.getByRole('textbox')).toHaveValue(
-        `鍒濆鍐呭锛屽悗鏉ュ張琛ヤ簡涓€鍙n\n${formatPickedElementContext(pickedElement)}`
-      );
-    });
-  });
-
-  it('sends picked element to workspace capture explicitly', async () => {
-    const user = userEvent.setup();
-    const pickedElement = {
-      url: 'https://example.com',
-      selector: '#target',
-      xpath: '//*[@id="target"]',
-      tagName: 'div',
-      id: 'target',
-      classList: ['picked'],
-      dataAttributes: {},
-      text: 'Target',
-      rect: { x: 1, y: 2, width: 3, height: 4 },
-      outerHTMLSnippet: '<div id="target">Target</div>',
-      ancestors: [],
-      siblings: { previous: null, next: null },
-    };
-    mutateAsync.mockResolvedValueOnce(pickedElement);
-    triggerWorkspacePageCapture.mockResolvedValueOnce({
-      entryPath: 'captures/2026-05-12-target',
-    });
-
-    renderComposer();
-    await user.click(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' }));
-    await user.click(await screen.findByRole('button', { name: '閲囬泦鍒板伐浣滃尯' }));
-
-    expect(triggerWorkspacePageCapture).toHaveBeenCalledWith(
-      {
-        mode: 'element',
-        projectPath: '/tmp/project',
-        target: pickedElement,
-      },
-      expect.any(Function)
-    );
-    expect(await screen.findByText('缃戦〉宸蹭繚瀛樺埌')).toBeTruthy();
-    expect(screen.getByText('captures/2026-05-12-target')).toBeTruthy();
-  });
-
-  it('cancels the pending picked element actions', async () => {
-    const user = userEvent.setup();
-    mutateAsync.mockResolvedValueOnce({
-      url: 'https://example.com',
-      selector: '#hero',
-      xpath: '//*[@id="hero"]',
-      tagName: 'section',
-      id: 'hero',
-      classList: ['hero'],
-      dataAttributes: { role: 'banner' },
-      text: 'Hero',
-      rect: { x: 10, y: 20, width: 300, height: 40 },
-      outerHTMLSnippet: '<section id="hero">Hero</section>',
-      ancestors: [],
-      siblings: { previous: null, next: null },
-    });
-
-    renderComposer();
-    await user.click(screen.getByRole('button', { name: '閫夋嫨鍏冪礌' }));
-    await user.click(await screen.findByRole('button', { name: '鍙栨秷' }));
-
-    await waitFor(() => {
-      expect(screen.queryByText('宸查€夋嫨鍏冪礌')).toBeNull();
-    });
-  });
-
   it('hides command menu when clicking outside the composer', async () => {
     renderComposer();
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '/' } });
-    expect(await screen.findByText('Slash 鍛戒护')).toBeTruthy();
+    expect(await screen.findByText('Slash 命令')).toBeTruthy();
 
     fireEvent.pointerDown(document.body);
 
     await waitFor(() => {
-      expect(screen.queryByText('Slash 鍛戒护')).toBeNull();
+      expect(screen.queryByText('Slash 命令')).toBeNull();
     });
   });
 
   it('hides command menu opened from command button when clicking outside', async () => {
     renderComposer();
 
-    fireEvent.click(screen.getByTitle('鏄剧ず鍛戒护'));
-    expect(await screen.findByText('Slash 鍛戒护')).toBeTruthy();
+    fireEvent.click(screen.getByTitle('显示命令'));
+    expect(await screen.findByText('Slash 命令')).toBeTruthy();
 
     fireEvent.pointerDown(document.body);
 
     await waitFor(() => {
-      expect(screen.queryByText('Slash 鍛戒护')).toBeNull();
+      expect(screen.queryByText('Slash 命令')).toBeNull();
     });
   });
 
@@ -507,7 +269,7 @@ describe('AgentComposer', () => {
     fireEvent.keyDown(screen.getByRole('textbox'), {
       key: 'Enter',
       code: 'Enter',
-      nativeEvent: { isComposing: true },
+      keyCode: 229,
     });
 
     expect(onSend).not.toHaveBeenCalled();
@@ -682,7 +444,7 @@ describe('AgentComposer', () => {
     ];
 
     renderComposer('', attachments);
-    await user.click(screen.getByRole('button', { name: '绉婚櫎闄勪欢锛歴pec.md' }));
+    await user.click(screen.getByRole('button', { name: '移除附件：spec.md' }));
 
     await waitFor(() => {
       expect(screen.queryByText('spec.md')).toBeNull();
@@ -836,16 +598,18 @@ describe('AgentComposer', () => {
     inputs[0].click = clickSpies[0];
     inputs[1].click = clickSpies[1];
 
-    const buttons = screen.getAllByRole('button', { name: '娣诲姞闄勪欢' });
+    const buttons = screen.getAllByRole('button', { name: '添加附件' });
     await user.click(buttons[1]);
 
     expect(clickSpies[0]).not.toHaveBeenCalled();
     expect(clickSpies[1]).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps slash commands matched when the context continues on the next lines', async () => {
+  it('shows slash commands after manually opening the menu for multiline slash drafts', async () => {
+    const user = userEvent.setup();
     renderComposer('/\nquery\nthe graph');
 
+    await user.click(screen.getByRole('button', { name: '显示命令' }));
     expect(await screen.findByText('/fast-nexus-cypher')).toBeTruthy();
   });
 
@@ -853,7 +617,7 @@ describe('AgentComposer', () => {
     const user = userEvent.setup();
 
     renderComposer('/\nquery\nthe graph');
-    await user.click(screen.getByRole('button', { name: '鏄剧ず鍛戒护' }));
+    await user.click(screen.getByRole('button', { name: '显示命令' }));
     await user.click(await screen.findByText('/fast-nexus-cypher'));
 
     expect(screen.getByRole('textbox')).toHaveValue('/fast-nexus-cypher \nquery\nthe graph');
@@ -877,7 +641,7 @@ describe('AgentComposer', () => {
     });
 
     renderComposer('/');
-    await user.click(screen.getByRole('button', { name: '鏄剧ず鍛戒护' }));
+    await user.click(screen.getByRole('button', { name: '显示命令' }));
 
     expect(await screen.findByText('/demo-plugin:release/publish')).toBeTruthy();
     expect(screen.getByText('Plugin')).toBeTruthy();
@@ -941,12 +705,12 @@ describe('AgentComposer', () => {
     expect(screen.queryByText('允许所有操作会跳过工具确认，仅建议在可信项目中使用。')).toBeNull();
     expect(
       screen.getByPlaceholderText('请先选择工作区，然后就可以开始提问、附加文件和调用工具。')
-    ).toBeDisabled();
-    expect(screen.getByRole('button', { name: '閫夋嫨鏂囦欢' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '娣诲姞闄勪欢' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '鏄剧ず鍛戒护' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '鎬濊€冪瓑绾э細Medium' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '权限等级：默认' })).toBeDisabled();
+    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: '选择文件' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '添加附件' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '显示命令' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '思考等级：Medium' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '权限等级：允许所有' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled();
   });
   it('renders the session tab trigger in the bottom toolbar and forwards toggles', async () => {
@@ -970,7 +734,7 @@ describe('AgentComposer', () => {
     expect(screen.getByTestId('session-tab-strip-trigger')).toBeTruthy();
     expect(screen.getByLabelText('已选标签页 Baidu，共 1 个')).toBeTruthy();
 
-    await user.hover(screen.getByTestId('session-tab-strip-trigger'));
+    await user.click(screen.getByRole('button', { name: '已选标签页 Baidu，共 1 个' }));
     await user.click(await screen.findByText('GitHub'));
 
     expect(onToggleSelectedTab).toHaveBeenCalledWith(12);

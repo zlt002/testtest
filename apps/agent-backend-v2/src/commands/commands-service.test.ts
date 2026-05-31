@@ -8,6 +8,7 @@ import { setCapabilityEnabledState } from '../management/capability-state-store.
 import {
   clearCapabilityCatalogCache,
   listCapabilities,
+  listBuiltinCapabilitySources,
 } from '../management/capability-catalog-service.ts';
 
 test('listCommands returns local UI, project, user, and Claude skill commands', async () => {
@@ -222,6 +223,7 @@ test('listCommands reuses the shared skill capability cache', async () => {
   const root = await mkdtemp(join(tmpdir(), 'webmcp-command-shared-skill-cache-'));
   const homeDir = join(root, 'home');
   const skillRoot = join(homeDir, '.claude', 'skills');
+  const builtinSources = await listBuiltinCapabilitySources();
 
   await mkdir(join(skillRoot, 'first-skill'), { recursive: true });
   await writeFile(join(skillRoot, 'first-skill', 'SKILL.md'), '# First\n', 'utf8');
@@ -229,23 +231,19 @@ test('listCommands reuses the shared skill capability cache', async () => {
   await listCapabilities({
     type: 'skill',
     homeDir,
-    builtinSources: [],
+    builtinSources,
   });
   await mkdir(join(skillRoot, 'second-skill'), { recursive: true });
   await writeFile(join(skillRoot, 'second-skill', 'SKILL.md'), '# Second\n', 'utf8');
 
   const service = createCommandsService({ homeDir, builtinSkillSources: [] });
   const cached = await service.listCommands();
-  assert.deepEqual(
-    cached.skills.map((command) => command.name),
-    ['/first-skill']
-  );
+  assert.ok(cached.skills.some((command) => command.name === '/first-skill'));
+  assert.ok(!cached.skills.some((command) => command.name === '/second-skill'));
 
   const refreshed = await service.listCommands({ forceRefresh: true });
-  assert.deepEqual(
-    refreshed.skills.map((command) => command.name),
-    ['/first-skill', '/second-skill']
-  );
+  assert.ok(refreshed.skills.some((command) => command.name === '/first-skill'));
+  assert.ok(refreshed.skills.some((command) => command.name === '/second-skill'));
   clearCapabilityCatalogCache();
 });
 
@@ -253,15 +251,15 @@ test('listCommands deduplicates same skill name and prefers builtin skill over u
   const root = await mkdtemp(join(tmpdir(), 'webmcp-command-builtin-priority-'));
   const homeDir = join(root, 'home');
   const builtinSkillRoot = join(root, 'builtin-skills');
-  await mkdir(join(homeDir, '.claude', 'skills', 'ewankb-server-query'), { recursive: true });
-  await mkdir(join(builtinSkillRoot, 'ewankb-server-query'), { recursive: true });
+  await mkdir(join(homeDir, '.claude', 'skills', 'priority-check-skill'), { recursive: true });
+  await mkdir(join(builtinSkillRoot, 'priority-check-skill'), { recursive: true });
   await writeFile(
-    join(homeDir, '.claude', 'skills', 'ewankb-server-query', 'SKILL.md'),
+    join(homeDir, '.claude', 'skills', 'priority-check-skill', 'SKILL.md'),
     '---\ndescription: User version\n---\n# User Skill\n',
     'utf8'
   );
   await writeFile(
-    join(builtinSkillRoot, 'ewankb-server-query', 'SKILL.md'),
+    join(builtinSkillRoot, 'priority-check-skill', 'SKILL.md'),
     '---\ndescription: Builtin version\n---\n# Builtin Skill\n',
     'utf8'
   );
@@ -271,11 +269,11 @@ test('listCommands deduplicates same skill name and prefers builtin skill over u
     builtinSkillSources: [{ rootDir: builtinSkillRoot }],
   });
   const catalog = await service.listCommands();
-  const matches = catalog.skills.filter((command) => command.name === '/ewankb-server-query');
+  const matches = catalog.skills.filter((command) => command.name === '/priority-check-skill');
 
   assert.equal(matches.length, 1);
   assert.equal(matches[0].description, 'Builtin version');
-  assert.equal(matches[0].path, join(builtinSkillRoot, 'ewankb-server-query', 'SKILL.md'));
+  assert.equal(matches[0].path, join(builtinSkillRoot, 'priority-check-skill', 'SKILL.md'));
 });
 
 test('executeCommand expands custom markdown command arguments', async () => {

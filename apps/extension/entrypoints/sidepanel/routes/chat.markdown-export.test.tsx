@@ -488,6 +488,7 @@ function runCard(overrides: Partial<RunCard> = {}): RunCard {
     startedAt: overrides.startedAt || '2026-05-28T04:00:00.000Z',
     updatedAt: overrides.updatedAt || '2026-05-28T04:00:10.000Z',
     source: overrides.source || 'sdk-live',
+    subagents: overrides.subagents || [],
   };
 }
 

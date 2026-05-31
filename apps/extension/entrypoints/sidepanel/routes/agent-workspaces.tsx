@@ -2335,6 +2335,7 @@ export function AgentWorkspacesContent({
             <div className="min-w-0 truncate text-sm font-semibold">工作区</div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => void addWorkspace()}>
+                <span className="sr-only">新增工作区</span>
                 <PlusIcon className="h-4 w-4" />
               </Button>
               {embedded ? (
@@ -2423,6 +2424,8 @@ export function AgentWorkspacesContent({
                 size="sm"
                 disabled={!activeProject}
                 onClick={() => void startNewSession()}
+                title="新建会话"
+                aria-label="新建会话"
               >
                 <PlusIcon className="h-4 w-4" />
               </Button>

@@ -744,9 +744,11 @@ export function AgentComposer({
         return;
       }
 
-      const acceptedAttachments = onUploadAttachment
+      const uploadedAttachments = onUploadAttachment
         ? await onUploadAttachment(filesToProcess)
         : await buildInlineImageAttachments(filesToProcess);
+      const acceptedAttachments = uploadedAttachments.slice(0, availableSlots);
+      const overflowedAcceptedCount = Math.max(0, uploadedAttachments.length - acceptedAttachments.length);
       if (!acceptedAttachments.length) {
         return;
       }
@@ -756,13 +758,14 @@ export function AgentComposer({
         onAttachmentsChange((current) => [...current, ...acceptedAttachments]);
       }
 
-      if (droppedCount > 0) {
+      if (droppedCount > 0 || overflowedAcceptedCount > 0) {
+        const totalDroppedCount = droppedCount + overflowedAcceptedCount;
         setSelectionFeedback({
           kind: 'warning',
           message:
             acceptedAttachments.length > 0
-              ? `最多保留 ${MAX_ATTACHMENTS} 个附件。已保留原有 ${effectiveCurrentCount} 个，并新增 ${acceptedAttachments.length} 个；其余 ${droppedCount} 个未添加。`
-              : `最多保留 ${MAX_ATTACHMENTS} 个附件，当前附件已满；本次选择的 ${droppedCount} 个附件未添加。`,
+              ? `最多保留 ${MAX_ATTACHMENTS} 个附件。已保留原有 ${effectiveCurrentCount} 个，并新增 ${acceptedAttachments.length} 个；其余 ${totalDroppedCount} 个未添加。`
+              : `最多保留 ${MAX_ATTACHMENTS} 个附件，当前附件已满；本次选择的 ${totalDroppedCount} 个附件未添加。`,
         });
       } else {
         setSelectionFeedback(null);

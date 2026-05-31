@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, resolve, win32 as win32Path } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
@@ -96,7 +96,8 @@ function normalizeClaudeExecutablePath(
     return candidatePath;
   }
 
-  const normalizedBaseName = basename(candidatePath).toLowerCase();
+  const pathApi = platform === 'win32' ? win32Path : { basename, dirname, resolve };
+  const normalizedBaseName = pathApi.basename(candidatePath).toLowerCase();
   if (
     normalizedBaseName !== 'claude' &&
     normalizedBaseName !== 'claude.cmd' &&
@@ -105,8 +106,8 @@ function normalizeClaudeExecutablePath(
     return candidatePath;
   }
 
-  const nativeExecutablePath = resolve(
-    dirname(candidatePath),
+  const nativeExecutablePath = pathApi.resolve(
+    pathApi.dirname(candidatePath),
     'node_modules',
     '@anthropic-ai',
     'claude-code',

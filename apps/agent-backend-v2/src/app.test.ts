@@ -1286,6 +1286,7 @@ test('frontend attachment request normalization strips local preview-only fields
       kind: 'image',
       storage: 'session-temp',
       absolutePath: '/tmp/session-temp-1/file-1.png',
+      previewUrl: 'blob:preview-1',
     },
   ]);
 });
@@ -4371,6 +4372,12 @@ test('model config routes expose config and runtime source', async () => {
         hasProjectModelConfig: true,
         reason: '当前未使用用户级 Claude settings，已使用项目模型配置作为运行时认证来源。',
       },
+      detectedCliConfig: null,
+      userClaudeSettings: {
+        path: '',
+        exists: false,
+        rawJson: null,
+      },
     });
 
     const patchResponse = await fetch(`${url}/api/agent-v2/model-config`, {
@@ -4410,6 +4417,7 @@ test('model config routes expose config and runtime source', async () => {
         input: {
           configMode: 'official',
           modelProvider: 'anthropic',
+          providerVariant: undefined,
           openaiModelName: undefined,
           openaiApiKey: undefined,
           openaiBaseUrl: undefined,
@@ -4540,6 +4548,7 @@ test('model config auth test route returns structured diagnostics', async () => 
         input: {
           configMode: 'official',
           modelProvider: 'anthropic',
+          providerVariant: undefined,
           openaiModelName: undefined,
           openaiApiKey: undefined,
           openaiBaseUrl: undefined,

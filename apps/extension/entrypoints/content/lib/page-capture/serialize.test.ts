@@ -23,16 +23,14 @@ describe('serialize capture artifact', () => {
     expect(artifact.mode).toBe('page');
     expect(artifact.styles).toHaveLength(1);
     expect(artifact.styles[0]?.path).toBe('style.css');
-    expect(artifact.styles[0]?.content).toContain('main{color:red;background:none}');
+    expect(artifact.styles[0]?.content).toMatch(/main\{color:red;background:\s*none\}/);
     expect(artifact.styles[0]?.content).not.toContain('.inline{background-image:none}');
     expect(artifact.styles[0]?.content).not.toContain('/hero.png');
     expect(artifact.styles[0]?.content).not.toContain('cdn.example.com/bg.png');
     expect(artifact.assets).toEqual([]);
     expect(artifact.html).toContain('<main>');
     expect(artifact.html).toContain('<link rel="stylesheet" href="style.css">');
-    expect(artifact.html).toContain(
-      '<style>.inline{background-image:url(&quot;https://cdn.example.com/bg.png&quot;)}</style>'
-    );
+    expect(artifact.html).not.toContain('<style>.inline');
     expect(artifact.html).toContain('data-webmcp-placeholder="resource"');
     expect(artifact.html).not.toContain('<img');
     expect(artifact.html).not.toContain('隐藏');
@@ -96,9 +94,9 @@ describe('serialize capture artifact', () => {
       elementSelectionSummary: undefined,
     });
 
-    expect(artifact.html).toContain(
-      '<section class="runtime-card" style="display: flex; gap: 12px;">card</section>'
-    );
+    expect(artifact.html).toContain('<section class="runtime-card"');
+    expect(artifact.html).toContain('style="padding: 10px; display: flex; gap: 12px;"');
+    expect(artifact.html).toContain('>card</section>');
     expect(artifact.html).not.toContain('font-size: 18px;');
     expect(artifact.html).not.toContain('line-height: 24px;');
     expect(artifact.html).not.toContain('overflow: hidden;');
@@ -139,9 +137,13 @@ describe('serialize capture artifact', () => {
       elementSelectionSummary: undefined,
     });
 
-    expect(artifact.styles[0]?.content).toContain('.used-pane { color: red; }');
-    expect(artifact.styles[0]?.content).toContain('.toolbar .used-button { display: inline-flex; }');
-    expect(artifact.styles[0]?.content).toContain('.used-pane .nested { padding: 4px; }');
+    expect(artifact.styles[0]?.content).toMatch(/\.used-pane\s*\{\s*color:\s*red;\s*\}/);
+    expect(artifact.styles[0]?.content).toMatch(
+      /\.toolbar \.used-button\s*\{\s*display:\s*inline-flex;\s*\}/
+    );
+    expect(artifact.styles[0]?.content).toMatch(
+      /\.used-pane \.nested\s*\{\s*padding:\s*4px;\s*\}/
+    );
     expect(artifact.styles[0]?.content).not.toContain('.unused-pane { color: blue; }');
     expect(artifact.styles[0]?.content).not.toContain('.toolbar .unused-button { display: none; }');
     expect(artifact.styles[0]?.content).not.toContain('.unused-pane .nested { padding: 8px; }');

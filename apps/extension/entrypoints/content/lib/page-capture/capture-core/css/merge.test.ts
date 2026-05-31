@@ -3,6 +3,18 @@ import { collectStyleSources } from './collect';
 import { mergeStyleSources } from './merge';
 import { rewriteCssResourceUrls } from './rewrite';
 
+function ensurePerformanceGetEntriesByType(target: Performance): void {
+  if (typeof target.getEntriesByType === 'function') {
+    return;
+  }
+
+  Object.defineProperty(target, 'getEntriesByType', {
+    configurable: true,
+    writable: true,
+    value: () => [],
+  });
+}
+
 describe('capture-core css merge', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -47,13 +59,15 @@ describe('capture-core css merge', () => {
 
     expect(css).toContain('source: https://example.com/a.css');
     expect(css).toContain('.a{font-family:x;src:none}');
-    expect(css).toContain('.imported{background:none}');
+    expect(css).toMatch(/\.imported\{background:\s*none\}/);
     expect(css).toContain('@media print');
     expect(css).not.toContain('.inline { color: blue;');
     expect(css).not.toContain('/bg.png');
     expect(css).not.toContain('/font.woff2');
     expect(document.querySelector('link[rel="stylesheet"]')).toBeNull();
-    expect(document.querySelector('style')?.textContent).toContain('.inline { color: blue;');
+    expect(document.querySelector('style')?.textContent).toMatch(
+      /\.inline\s*\{\s*color:\s*blue;/
+    );
     expect(document.querySelector('style')?.textContent).not.toContain('@font-face');
     expect(warnings).toEqual([]);
   });
@@ -123,7 +137,7 @@ describe('capture-core css merge', () => {
     const css = mergeStyleSources(sources, warnings);
 
     expect(sources).toHaveLength(1);
-    expect(css.match(/\.tk-row\{display:flex\}/g)).toHaveLength(1);
+    expect(css.match(/\.tk-row\s*\{\s*display:\s*flex;?\s*\}/g)).toHaveLength(1);
     expect(css).not.toContain('micro-app[name=otp-tms]');
   });
 
@@ -177,8 +191,8 @@ describe('capture-core css merge', () => {
     const css = mergeStyleSources(sources, warnings);
 
     expect(css).toContain('@media print');
-    expect(css).toContain('.print { color: black; }');
-    expect(css).toContain('.app { color: red; }');
+    expect(css).toMatch(/\.print\s*\{\s*color:\s*black;?\s*\}/);
+    expect(css).toMatch(/\.app\s*\{\s*color:\s*red;?\s*\}/);
     expect(css).not.toContain('/theme.css');
     expect(document.querySelector('link[rel="alternate stylesheet"]')).toBeNull();
   });
@@ -504,6 +518,7 @@ describe('capture-core css merge', () => {
       return [];
     });
 
+    ensurePerformanceGetEntriesByType(frame.contentWindow!.performance);
     vi.spyOn(frame.contentWindow!.performance, 'getEntriesByType').mockImplementation((type: string) => {
       if (type !== 'resource') {
         return [];
@@ -578,6 +593,7 @@ describe('capture-core css merge', () => {
       return [];
     });
 
+    ensurePerformanceGetEntriesByType(frame.contentWindow!.performance);
     vi.spyOn(frame.contentWindow!.performance, 'getEntriesByType').mockImplementation((type: string) => {
       if (type !== 'resource') {
         return [];

@@ -146,9 +146,9 @@ test('interaction policy session uses read-specific message for rendered_read fi
     windowId: 5,
   });
 
-  assert.equal(decision.behavior, 'deny');
-  assert.match(decision.message || '', /当前浏览器扩展工具的读取工具/);
-  assert.doesNotMatch(decision.message || '', /视觉检查/);
+  assert.equal(decision.behavior, 'block');
+  assert.match(decision.message || '', /始终禁止外部浏览器自动化/);
+  assert.doesNotMatch(decision.message || '', /视觉检查|读取工具/);
 });
 
 test('detectBrowserContextMismatch allows non-primary authorized tabs from allowedTabIds', () => {

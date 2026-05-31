@@ -332,7 +332,7 @@ test('interaction policy still blocks external browser fallback after extension 
   }
 
   assert.equal(toolDecisions[0]?.behavior, 'allow');
-  assert.equal(toolDecisions[1]?.behavior, 'deny');
+  assert.equal(toolDecisions[1]?.behavior, 'block');
   assert.match(String(toolDecisions[1]?.message || ''), /始终禁止外部浏览器自动化/);
 });
 
@@ -786,7 +786,7 @@ test('runtime capabilities always block external browser automation even when le
     // drain
   }
 
-  assert.equal(toolDecisions[0]?.behavior, 'deny');
+  assert.equal(toolDecisions[0]?.behavior, 'block');
   assert.match(String(toolDecisions[0]?.message || ''), /始终禁止外部浏览器自动化|默认禁止外部浏览器自动化/);
 });
 

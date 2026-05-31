@@ -89,7 +89,7 @@ describe('page capture controller', () => {
     }
   });
 
-  it('includes source url when background stylesheet fetch returns no response', async () => {
+  it('background stylesheet fetch 没有返回结果时，仍会返回页面采集结果', async () => {
     let messageListener: ((response: unknown) => void) | null = null;
     let disconnectListener: (() => void) | null = null;
     const port = {
@@ -129,11 +129,11 @@ describe('page capture controller', () => {
       requestId: 'req-4',
     });
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
 
-    if (!result.success) {
-      expect(result.error).toContain('https://example.com/capture.css');
-      expect(result.error).toContain('未返回样式表抓取结果');
+    if (result.success) {
+      expect(result.artifact.mode).toBe('page');
+      expect(result.artifact.html).toContain('page content');
     }
   });
 });

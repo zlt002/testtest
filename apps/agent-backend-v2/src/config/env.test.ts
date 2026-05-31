@@ -9,7 +9,7 @@ test('loadEnv returns defaults for local backend v2 development', () => {
   assert.equal(env.host, '127.0.0.1');
   assert.equal(env.port, 8792);
   assert.equal(
-    normalize(env.workdir).toLowerCase().endsWith(normalize('webmcp').toLowerCase()),
+    normalize(env.workdir).toLowerCase().endsWith(normalize('accr-ui').toLowerCase()),
     true
   );
   assert.equal(env.enableBrowserExtensionMcp, true);

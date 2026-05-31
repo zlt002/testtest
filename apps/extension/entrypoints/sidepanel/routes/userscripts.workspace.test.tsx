@@ -231,10 +231,10 @@ beforeAll(() => {
       ).toBeTruthy();
       expect(view.getByText('请打开：扩展程序 -> 本扩展的详情页。')).toBeTruthy();
       expect(
-        view.getByText('如果你使用较新的 Chrome，请开启“Allow User Scripts”。')
+        view.getByText('如果你使用较新的 Chrome，请开启“允许用户脚本”。')
       ).toBeTruthy();
       expect(
-        view.getByText('如果你使用较老版本的 Chrome，请开启“开发者模式（Developer mode）”。')
+        view.getByText('如果你使用较老版本的 Chrome，请开启“开发者模式”。')
       ).toBeTruthy();
     });
   });
@@ -756,7 +756,7 @@ describe('UserScriptsWorkspace', () => {
 
     fireEvent.click(view.getAllByRole('button', { name: '编辑' })[0]);
     await waitFor(() => {
-      expect(view.getByDisplayValue('document_start')).toBeTruthy();
+      expect((view.getByLabelText('执行时机') as HTMLSelectElement).value).toBe('document_start');
     });
 
     const runAtSelect = view.getByLabelText('执行时机') as HTMLSelectElement;

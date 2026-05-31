@@ -94,7 +94,7 @@ function trimTabEvidence(state: TabCaptureState) {
 export function createDomAnalysisCdpService(
   options: CreateDomAnalysisCdpServiceOptions = {}
 ) {
-  const debuggerApi = options.debuggerApi ?? chrome.debugger;
+  const debuggerApi = options.debuggerApi ?? globalThis.chrome?.debugger;
   const now = options.now ?? (() => Date.now());
   const activeTabs = new Set<number>();
   const tabStates = new Map<number, TabCaptureState>();

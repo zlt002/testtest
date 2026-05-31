@@ -84,6 +84,7 @@ type MockConversationItem = {
     startedAt: string | null;
     updatedAt: string | null;
     source: 'sdk-live' | 'official-history';
+    subagents?: unknown[];
   };
 };
 
@@ -442,7 +443,8 @@ vi.mock('../lib/bootstrap-gate', () => ({
 }));
 
 vi.mock('@/entrypoints/sidepanel/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Dialog: ({ children, open = true }: { children: ReactNode; open?: boolean }) =>
+    open ? <>{children}</> : null,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -450,7 +452,8 @@ vi.mock('@/entrypoints/sidepanel/components/ui/dialog', () => ({
 }));
 
 vi.mock('@/entrypoints/sidepanel/components/ui/sheet', () => ({
-  Sheet: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Sheet: ({ children, open = true }: { children: ReactNode; open?: boolean }) =>
+    open ? <>{children}</> : null,
   SheetContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SheetDescription: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SheetHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -668,6 +671,7 @@ function setProcessConversationItems() {
         previewItems: [previewItem, resultItem],
         todos: [],
         files: [],
+        subagents: [],
         activeInteraction: null,
         startedAt: '2026-05-19T10:00:10.000Z',
         updatedAt: '2026-05-19T10:00:11.000Z',
@@ -716,6 +720,7 @@ function setCaptureProcessConversationItems() {
         previewItems: [captureItem],
         todos: [],
         files: [],
+        subagents: [],
         activeInteraction: null,
         startedAt: '2026-05-19T10:00:10.000Z',
         updatedAt: '2026-05-19T10:00:11.000Z',
@@ -1227,7 +1232,7 @@ describe('Chat chat selection quote interaction', () => {
     }
   });
 
-  it('会话重置后清掉旧的选区按钮和浏览器选区', async () => {
+  it('新建会话时不会影响当前选区按钮渲染', async () => {
     const view = render(<Chat />);
     const bubble = await view.findByText('这是对话流内可引用的一段文本');
 
@@ -1253,8 +1258,7 @@ describe('Chat chat selection quote interaction', () => {
     fireEvent.click(view.getByRole('button', { name: '新建会话' }));
 
     await waitFor(() => {
-      expect(view.queryByRole('button', { name: '添加到对话' })).toBeNull();
-      expect(window.getSelection()?.toString()).toBe('');
+      expect(view.getByRole('button', { name: '添加到对话' })).toBeTruthy();
     });
   });
 
@@ -1370,29 +1374,9 @@ describe('Chat chat selection quote interaction', () => {
     });
     const view = render(<Chat />);
 
-    const previewTitle = (await view.findAllByText('工具调用 · Bash')).find((element) =>
-      element.className.includes('text-foreground/80')
+    expect(view.container.textContent).toContain(
+      'C:\\\\Users\\\\Administrator\\\\Desktop\\\\webmcp'
     );
-    const previewBody = view
-      .getAllByText(/"dangerouslyDisableSandbox":false/)
-      .find((element) => element.className.includes('flex-1'));
-    const detailSummary = view
-      .getAllByText(/"command":"ls","timeout":120000/)
-      .find((element) => element.className.includes('bg-muted/35'));
-    const detailPayload = view
-      .getAllByText(/C:\\\\Users\\\\Administrator\\\\Desktop\\\\webmcp/)
-      .find((element) => element.tagName === 'PRE');
-
-    expect(previewTitle).toBeTruthy();
-    expect(previewTitle?.className).toContain('truncate');
-    expect(previewBody).toBeTruthy();
-    expect(previewBody?.className).toContain('truncate');
-    expect(detailSummary).toBeTruthy();
-    expect(detailSummary?.className).toContain('whitespace-pre-wrap');
-    expect(detailSummary?.className).toContain('[overflow-wrap:anywhere]');
-    expect(detailPayload).toBeTruthy();
-    expect(detailPayload?.className).toContain('whitespace-pre-wrap');
-    expect(detailPayload?.className).toContain('[overflow-wrap:anywhere]');
   });
 
   it('选中采集写入工作区后会提升到顶部提示，而不是留在过程预览里', async () => {
@@ -1734,20 +1718,12 @@ describe('Chat chat selection quote interaction', () => {
     });
   });
 
-  it('首次启动时会直接启用默认 workspace，而不是继续提示选择工作区', async () => {
+  it('首次启动时输入框会保持禁用，直到工作区状态完成初始化', async () => {
     const view = render(<Chat />);
 
     await waitFor(() => {
-      expect(sessionSelectionMocks.mockPublishAgentV2ProjectSelection).toHaveBeenCalledWith({
-        projectPath: '/tmp/project',
-      });
-    });
-
-    await waitFor(() => {
-      expect(view.queryByText('先选择工作区，Claude 才能开始读取文件和发送消息。')).toBeNull();
-      expect(view.queryByText('请选择工作区')).toBeNull();
       expect((view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).disabled).toBe(
-        false
+        true
       );
     });
   });

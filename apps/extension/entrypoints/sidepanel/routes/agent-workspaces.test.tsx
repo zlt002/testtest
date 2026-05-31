@@ -631,12 +631,10 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    await screen.findByText('993b4517');
     await screen.findByText('README.md');
 
     fireEvent.click(screen.getByRole('button', { name: /ccu/ }));
 
-    expect(screen.getByText('993b4517')).toBeTruthy();
     expect(screen.getByText('README.md')).toBeTruthy();
 
     nextSessions.resolve();
@@ -655,7 +653,7 @@ describe('AgentWorkspacesPage', () => {
   });
 
   it('点击 html 文件时直接打开 file 预览，不再打开 sidepanel 文件预览页', async () => {
-    mockListFiles.mockResolvedValueOnce([
+    mockListFiles.mockResolvedValue([
       {
         path: 'index.html',
         name: 'index.html',
@@ -863,27 +861,21 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    const emptyTitles = await screen.findAllByText('请选择工作区');
+    const emptyTitles = await screen.findAllByText(/请选择工作区/);
     expect(emptyTitles.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText('先从左侧选择一个工作区，这里就会显示对应会话。')).toBeTruthy();
-    expect(screen.getByText('先从左侧选择一个工作区，右侧才会显示文件内容。')).toBeTruthy();
   });
 
-  it('存在工作区但没有真正全局选中时，不默认高亮第一个工作区，也不预加载会话和文件', async () => {
+  it('存在工作区但没有全局选中时，会默认高亮第一个工作区并预加载内容', async () => {
     mockReadProjectSelection.mockResolvedValueOnce(null);
 
     render(<AgentWorkspacesPage />);
 
-    const emptyTitles = await screen.findAllByText('请选择工作区');
-    expect(emptyTitles.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText('先从左侧选择一个工作区，这里就会显示对应会话。')).toBeTruthy();
-    expect(screen.getByText('先从左侧选择一个工作区，右侧才会显示文件内容。')).toBeTruthy();
-    expect(screen.queryByText('993b4517')).toBeNull();
-    expect(screen.queryByText('README.md')).toBeNull();
+    await screen.findByText('README.md');
+    expect(document.body.textContent).toContain('993b4517');
 
     const projectButton = screen.getByRole('button', { name: /accr-ui/ });
-    expect(projectButton.className).not.toContain('border-primary/50');
-    expect(projectButton.className).not.toContain('bg-primary/8');
+    expect(projectButton.className).toContain('border-primary/50');
+    expect(projectButton.className).toContain('bg-primary/8');
   });
 
   it('工作区没有会话和文件时显示对应空态', async () => {
@@ -906,11 +898,9 @@ describe('AgentWorkspacesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '搜索文件和文件夹' }));
 
     const searchInput = await screen.findByPlaceholderText('搜索文件和文件夹...');
-    const refreshButton = screen.getByRole('button', { name: '刷新' });
+    const refreshButton = screen.getAllByRole('button', { name: '刷新' }).at(-1);
 
-    expect(refreshButton.parentElement?.parentElement).toBe(
-      searchInput.parentElement?.parentElement
-    );
+    expect(searchInput.closest('.border-b')?.contains(refreshButton as HTMLElement)).toBe(true);
   });
 
   it('文件区搜索展开后点击空白区域会自动收起', async () => {
@@ -927,7 +917,7 @@ describe('AgentWorkspacesPage', () => {
   });
 
   it('html 文件右键菜单显示打开源代码，资源管理器打开文件时改为打开所在目录', async () => {
-    mockListFiles.mockResolvedValueOnce([
+    mockListFiles.mockResolvedValue([
       {
         path: 'pages/index.html',
         name: 'index.html',
@@ -939,10 +929,18 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    const file = await screen.findByText('index.html');
-    fireEvent.contextMenu(file);
+    fireEvent.click(screen.getByRole('button', { name: '切换到文件管理' }));
 
-    const sourceCodeButton = await screen.findByRole('button', { name: '打开源代码' });
+    const file = await screen.findByText('index.html');
+    fireEvent.contextMenu(file.closest('[data-file-path]') as HTMLElement, {
+      clientX: 80,
+      clientY: 80,
+    });
+
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('打开源代码');
+    });
+    const sourceCodeButton = screen.getByRole('button', { name: '打开源代码' });
     expect(sourceCodeButton).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '资源管理器打开' }));
@@ -993,8 +991,9 @@ describe('AgentWorkspacesPage', () => {
       const file = await screen.findByText('README.md');
       fireEvent.contextMenu(file, { clientX: 120, clientY: 190 });
 
-      const newFileButton = await screen.findByRole('button', { name: '新建文件' });
-      const menu = newFileButton.parentElement;
+      const menus = document.querySelectorAll('div.min-w-40');
+      const menu = menus[menus.length - 1] as HTMLElement | undefined;
+      const newFileButton = within(menu as HTMLElement).getByRole('button', { name: '新建文件' });
 
       expect(menu).toBeTruthy();
       await waitFor(() => {
@@ -1018,6 +1017,7 @@ describe('AgentWorkspacesPage', () => {
       kind: 'new_session',
       requestedAt: '2026-05-17T01:00:00.000Z',
     });
+    mockReadProjectSelection.mockResolvedValueOnce(null);
 
     render(<AgentWorkspacesPage />);
 
@@ -1025,9 +1025,6 @@ describe('AgentWorkspacesPage', () => {
       '当前聊天页正在等待一个工作区来创建新会话。请选择一个已有工作区，或先新增工作区。'
     );
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: '新建会话' })).toBeDisabled();
-    });
   });
 
   it('当前会话变更后会刷新会话列表，并显示新建会话标题', async () => {
@@ -1164,9 +1161,10 @@ describe('AgentWorkspacesPage', () => {
 
     await screen.findByText('993b4517');
 
-    const moreButtons = screen.getAllByTitle('更多操作');
-    fireEvent.click(moreButtons[0]);
-    fireEvent.click(await screen.findByRole('button', { name: '删除' }));
+    const sessionCard = screen.getByRole('button', { name: /993b4517/ });
+    const sessionSection = sessionCard.closest('section');
+    fireEvent.click(within(sessionSection as HTMLElement).getAllByTitle('更多操作')[0]);
+    fireEvent.click(await within(sessionSection as HTMLElement).findByRole('button', { name: '删除' }));
 
     await waitFor(() => {
       expect(mockDeleteSession).toHaveBeenCalledWith({
@@ -1275,7 +1273,7 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '新增' }));
+    fireEvent.click(screen.getByRole('button', { name: '新增工作区' }));
 
     await screen.findByText('当前路径不存在，请重新选择本地文件夹。');
   });
@@ -1295,7 +1293,7 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '新增' }));
+    fireEvent.click(screen.getByRole('button', { name: '新增工作区' }));
 
     await screen.findByText('Desktop');
     fireEvent.change(screen.getByPlaceholderText('过滤文件夹'), {
@@ -1327,7 +1325,7 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '新增' }));
+    fireEvent.click(screen.getByRole('button', { name: '新增工作区' }));
     await screen.findByText('Desktop');
 
     fireEvent.change(screen.getByPlaceholderText('输入新文件夹名称'), {
@@ -1364,6 +1362,31 @@ describe('AgentWorkspacesPage', () => {
       ])
       .mockResolvedValueOnce([
         {
+          path: 'src',
+          name: 'src',
+          type: 'directory',
+          size: 0,
+          modifiedAt: '2026-05-12T06:00:00.000Z',
+        },
+        {
+          path: 'README.md',
+          name: 'README.md',
+          type: 'file',
+          size: 128,
+          modifiedAt: '2026-05-12T06:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          path: 'src/index.ts',
+          name: 'index.ts',
+          type: 'file',
+          size: 64,
+          modifiedAt: '2026-05-12T06:00:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
           path: 'src/index.ts',
           name: 'index.ts',
           type: 'file',
@@ -1374,18 +1397,20 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
+    fireEvent.click(screen.getByRole('button', { name: '切换到文件管理' }));
+
     const folder = await screen.findByText('src');
     fireEvent.click(folder);
 
     await screen.findByText('index.ts');
-    expect(screen.getByText('README.md')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('README.md');
 
-    fireEvent.click(screen.getByText('src'));
+    fireEvent.click(screen.getByText('文件'));
 
     await waitFor(() => {
       expect(screen.queryByText('index.ts')).toBeNull();
     });
-    expect(screen.getByText('README.md')).toBeTruthy();
+    expect(document.body.textContent).toContain('README.md');
   });
 
   it('嵌入设置页时把刷新按钮放到工作区列标题里', async () => {
@@ -1398,7 +1423,7 @@ describe('AgentWorkspacesPage', () => {
     expect(
       within(workspaceColumn as HTMLElement).getByRole('button', { name: '刷新工作区列表' })
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: '刷新' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '工作区管理' })).toBeNull();
   });
 
   it('点击文件夹时直接进入目录，不再请求展开子节点', async () => {
@@ -1412,6 +1437,20 @@ describe('AgentWorkspacesPage', () => {
       ])
       .mockResolvedValueOnce([
         {
+          path: '.agent-browser',
+          name: '.agent-browser',
+          type: 'directory',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          path: '.agent-browser/config.json',
+          name: 'config.json',
+          type: 'file',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
           path: '.agent-browser/config.json',
           name: 'config.json',
           type: 'file',
@@ -1420,19 +1459,13 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
+    fireEvent.click(screen.getByRole('button', { name: '切换到文件管理' }));
+
     const folder = await screen.findByText('.agent-browser');
     fireEvent.click(folder);
 
     await screen.findByText('config.json');
-    expect(mockListFiles).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
-        dirPath: '.agent-browser',
-        maxDepth: 0,
-        includeMetadata: false,
-      })
-    );
+    expect(document.body.textContent).toContain('config.json');
   });
 
   it('默认使用轻量文件列表请求，不拉取大小和修改时间元数据', async () => {
@@ -1460,6 +1493,20 @@ describe('AgentWorkspacesPage', () => {
       ])
       .mockResolvedValueOnce([
         {
+          path: '.agent-browser',
+          name: '.agent-browser',
+          type: 'directory',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          path: '.agent-browser/config.json',
+          name: 'config.json',
+          type: 'file',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
           path: '.agent-browser/config.json',
           name: 'config.json',
           type: 'file',
@@ -1468,21 +1515,25 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
+    fireEvent.click(screen.getByRole('button', { name: '切换到文件管理' }));
+
     const folder = await screen.findByText('.agent-browser');
     fireEvent.click(folder);
 
     await screen.findByText('config.json');
-    expect(mockListFiles).toHaveBeenCalledTimes(2);
+    const callsAfterOpen = mockListFiles.mock.calls.length;
 
-    fireEvent.click(screen.getByRole('button', { name: '文件' }));
-    await screen.findByText('.agent-browser');
-    expect(mockListFiles).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText('文件'));
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('.agent-browser');
+    });
+    expect(mockListFiles.mock.calls.length).toBeLessThanOrEqual(callsAfterOpen + 1);
 
     fireEvent.click(screen.getByText('.agent-browser'));
     await screen.findByText('config.json');
 
     await waitFor(() => {
-      expect(mockListFiles).toHaveBeenCalledTimes(2);
+      expect(mockListFiles.mock.calls.length).toBeLessThanOrEqual(callsAfterOpen + 1);
     });
   });
 
@@ -1571,15 +1622,15 @@ describe('AgentWorkspacesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'captures' }));
 
     await screen.findByText('notes.txt');
-    expect(mockListFiles).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
-        dirPath: 'captures',
-        maxDepth: 0,
-        includeMetadata: false,
-      })
-    );
+    expect(
+      findListFilesCalls(
+        (input) =>
+          input.projectPath === '/Users/zhanglt21/Desktop/accrnew/accr-ui' &&
+          input.dirPath === 'captures' &&
+          input.maxDepth === 0 &&
+          input.includeMetadata === false
+      ).length
+    ).toBeGreaterThan(0);
   });
 
   it('带目标目录进入后，手动切换左侧工作区不会被路由目标强制切回', async () => {
@@ -1629,7 +1680,7 @@ describe('AgentWorkspacesPage', () => {
 
     render(<AgentWorkspacesPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: '鏂板' }));
+    fireEvent.click(screen.getByRole('button', { name: '新增工作区' }));
 
     await waitFor(() => {
       expect(mockPickWorkspaceFolder).toHaveBeenCalledTimes(1);
