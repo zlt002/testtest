@@ -101,6 +101,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
   const [subagents, setSubagents] = useState<SessionSubagentSnapshot[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const autoStoppedRunIdRef = useRef<string | null>(null);
+  const eventsRef = useRef<AgentEvent[]>([]);
 
   const eventMessages = useMemo(() => projectAgentEventsToMessages(events), [events]);
   const allMessages = useMemo(
@@ -160,6 +161,10 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     return Math.min(100, (tokenTotal / DEFAULT_CONTEXT_WINDOW) * 100);
   }, [events]);
 
+  useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
+
   const reset = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -167,6 +172,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setError(null);
     setLocalMessages([]);
     setEvents([]);
+    eventsRef.current = [];
     setSessionId(null);
     setActiveRunId(null);
     setSubagentRunId(null);
@@ -183,6 +189,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     setError(null);
     setLocalMessages(history.messages);
     setEvents([]);
+    eventsRef.current = [];
     setSessionId(history.sessionId);
     setActiveRunId(null);
     setSubagentRunId(null);
@@ -218,6 +225,85 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
       updatedAt: new Date().toISOString(),
     });
   }, []);
+
+  const processIncomingEvent = useCallback(
+    (
+      event: AgentEvent,
+      input?: {
+        projectPath?: string;
+        localAssistantId?: string;
+        localUserId?: string;
+      }
+    ) => {
+      if (input?.localAssistantId) {
+        setLocalMessages((current) =>
+          current.filter((message) => message.id !== input.localAssistantId)
+        );
+      }
+      setStatus(activeRunStatusFromEvent(event));
+      setEvents((current) => {
+        if (current.some((existing) => existing.eventId === event.eventId)) {
+          return current;
+        }
+        const next = [...current, event];
+        eventsRef.current = next;
+        return next;
+      });
+      if (event.runId && event.sessionId && !isTerminalRunEvent(event)) {
+        void publishAgentV2ActiveRunSession({
+          sessionId: event.sessionId,
+          projectPath: input?.projectPath,
+          runId: event.runId,
+          status: activeRunStatusFromEvent(event),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (event.runId) {
+        setActiveRunId(event.runId);
+        setSubagentRunId(event.runId);
+        if (event.type === 'run.started') {
+          setActiveRunStartedAt(event.timestamp);
+        }
+        if (input?.localUserId) {
+          setLocalMessages((current) =>
+            current.map((message) =>
+              message.id === input.localUserId && !message.runId
+                ? {
+                    ...message,
+                    runId: event.runId,
+                    sessionId: event.sessionId || message.sessionId,
+                  }
+                : message
+            )
+          );
+        }
+      }
+      if (event.sessionId) {
+        setSessionId(event.sessionId);
+      }
+      if (event.type === 'run.completed' || event.type === 'run.aborted') {
+        setStatus('idle');
+        setActiveRunId(null);
+        autoStoppedRunIdRef.current = null;
+        void clearAgentV2ActiveRunSession();
+      }
+      if (event.type === 'run.failed') {
+        setStatus('error');
+        setActiveRunId(null);
+        autoStoppedRunIdRef.current = null;
+        void clearAgentV2ActiveRunSession();
+        const authGuidance =
+          typeof event.payload.authGuidance === 'string' ? event.payload.authGuidance : null;
+        setError(
+          authGuidance ||
+            localizeUserFacingMessage(
+              typeof event.payload.error === 'string' ? event.payload.error : 'Agent run failed'
+            )
+        );
+      }
+    },
+    []
+  );
 
   const appendAssistantMessage = useCallback(
     (text: string) => {
@@ -340,63 +426,11 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         }
 
         hasReceivedEvent = true;
-        setLocalMessages((current) => current.filter((message) => message.id !== localAssistantId));
-        setStatus(activeRunStatusFromEvent(event));
-        setEvents((current) =>
-          current.some((existing) => existing.eventId === event.eventId)
-            ? current
-            : [...current, event]
-        );
-        if (event.runId && event.sessionId && !isTerminalRunEvent(event)) {
-          void publishAgentV2ActiveRunSession({
-            sessionId: event.sessionId,
-            projectPath: input?.projectPath,
-            runId: event.runId,
-            status: activeRunStatusFromEvent(event),
-            updatedAt: new Date().toISOString(),
-          });
-        }
-        if (event.runId) {
-          setActiveRunId(event.runId);
-          setSubagentRunId(event.runId);
-          if (event.type === 'run.started') {
-            setActiveRunStartedAt(event.timestamp);
-          }
-          setLocalMessages((current) =>
-            current.map((message) =>
-              message.id === localUserId && !message.runId
-                ? {
-                    ...message,
-                    runId: event.runId,
-                    sessionId: event.sessionId || message.sessionId,
-                  }
-                : message
-            )
-          );
-        }
-        if (event.sessionId) {
-          setSessionId(event.sessionId);
-        }
-        if (event.type === 'run.completed' || event.type === 'run.aborted') {
-          setStatus('idle');
-          setActiveRunId(null);
-          autoStoppedRunIdRef.current = null;
-          void clearAgentV2ActiveRunSession();
-        }
-        if (event.type === 'run.failed') {
-          setStatus('error');
-          setActiveRunId(null);
-          autoStoppedRunIdRef.current = null;
-          void clearAgentV2ActiveRunSession();
-          const authGuidance =
-            typeof event.payload.authGuidance === 'string' ? event.payload.authGuidance : null;
-          setError(
-            authGuidance ||
-              localizeUserFacingMessage(
-                typeof event.payload.error === 'string' ? event.payload.error : 'Agent run failed'
-              )
-          );
-        }
+        processIncomingEvent(event, {
+          projectPath: input?.projectPath,
+          localAssistantId,
+          localUserId,
+        });
       };
 
       try {
@@ -455,7 +489,59 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
         }
       }
     },
-    [client, sessionId, status]
+    [client, processIncomingEvent, sessionId, status]
+  );
+
+  const resumeRun = useCallback(
+    async (runState: SessionRunStateRecord | null) => {
+      if (!runState?.hasActiveStream) {
+        return;
+      }
+
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      setError(null);
+
+      const afterSequence = eventsRef.current
+        .filter((event) => event.runId === runState.runId)
+        .reduce((maxSequence, event) => Math.max(maxSequence, event.sequence), 0);
+
+      try {
+        await client.resumeRunStream(
+          runState.runId,
+          {
+            afterSequence,
+            signal: controller.signal,
+          },
+          (event) => {
+            if (controller.signal.aborted) {
+              return;
+            }
+            processIncomingEvent(event, {
+              projectPath: runState.projectPath,
+            });
+          }
+        );
+        setStatus((current) => (current === 'error' ? current : 'idle'));
+      } catch (runError) {
+        if (controller.signal.aborted) {
+          setActiveRunId(null);
+          setStatus('idle');
+          await clearAgentV2ActiveRunSession().catch((clearError) => {
+            console.debug('[agent-v2] failed to clear active run session after resume abort:', clearError);
+          });
+          return;
+        }
+        setStatus('error');
+        setError(localizeUserFacingError(runError));
+      } finally {
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
+      }
+    },
+    [client, processIncomingEvent]
   );
 
   useEffect(() => {
@@ -569,6 +655,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
     reset,
     loadHistory,
     restoreSessionRunState,
+    resumeRun,
     appendAssistantMessage,
   };
 }

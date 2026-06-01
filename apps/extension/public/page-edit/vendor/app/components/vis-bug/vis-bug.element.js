@@ -1487,7 +1487,7 @@ export default class VisBug extends HTMLElement {
               ${Icons.toggle_actions}
             </button>
           </li>
-          ${this.isFilePage() ? `
+          ${this.isLocalSnapshotWorkbench() ? `
             <li class="toolbar-action">
               <button type="button" data-action="save-file" aria-label="保存当前文件" title="保存当前文件">
                 ${Icons.save}
@@ -1960,7 +1960,7 @@ export default class VisBug extends HTMLElement {
   }
 
   saveCurrentFile() {
-    if (!this.isFilePage() || !this.#selectionBridgeNonce) return
+    if (!this.isLocalSnapshotWorkbench() || !this.#selectionBridgeNonce) return
 
     const confirmed = window.confirm('将覆盖原始 HTML 文件，是否继续保存？')
     if (!confirmed) return

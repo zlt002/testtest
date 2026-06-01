@@ -566,6 +566,76 @@ describe('projectConversationRunItems', () => {
     ]);
   });
 
+  it('anchors a restored live run to the nearest later user message when backend timestamps drift earlier', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'user-1',
+        role: 'user',
+        kind: 'text',
+        text: '帮我派两个子代理',
+        timestamp: '2026-05-11T00:00:05.000Z',
+      }),
+      message({
+        id: 'history-assistant-1',
+        role: 'assistant',
+        kind: 'text',
+        text: '好的，我来并行派两个子代理。',
+        timestamp: '2026-05-11T00:00:06.000Z',
+      }),
+      message({
+        id: 'live-assistant-1',
+        runId: 'run-1',
+        role: 'assistant',
+        kind: 'text',
+        text: '好的，我来并行派两个子代理。',
+        timestamp: '2026-05-11T00:00:00.000Z',
+      }),
+    ]);
+
+    expect(items.map((item) => (item.type === 'user' ? item.message.id : item.card.id))).toEqual([
+      'user-1',
+      'run-1',
+    ]);
+    const runCards = items.filter((item) => item.type === 'run');
+    expect(runCards).toHaveLength(1);
+    if (runCards[0]?.type !== 'run') return;
+    expect(runCards[0].card.anchorMessageId).toBe('user-1');
+    expect(runCards[0].card.source).toBe('sdk-live');
+  });
+
+  it('prefers the restored live run card over duplicated official history under the same user anchor', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'user-1',
+        role: 'user',
+        kind: 'text',
+        text: '帮我派两个子代理',
+        timestamp: '2026-05-11T00:00:00.000Z',
+      }),
+      message({
+        id: 'history-assistant-1',
+        role: 'assistant',
+        kind: 'text',
+        text: '好的，我来并行派两个子代理。',
+        timestamp: '2026-05-11T00:00:01.000Z',
+      }),
+      message({
+        id: 'live-assistant-1',
+        runId: 'run-1',
+        role: 'assistant',
+        kind: 'text',
+        text: '好的，我来并行派两个子代理。',
+        timestamp: '2026-05-11T00:00:01.000Z',
+      }),
+    ]);
+
+    const runCards = items.filter((item) => item.type === 'run');
+    expect(runCards).toHaveLength(1);
+    if (runCards[0]?.type !== 'run') return;
+    expect(runCards[0].card.id).toBe('run-1');
+    expect(runCards[0].card.source).toBe('sdk-live');
+  });
+
   it('attaches subagent snapshots to the matching live run card', () => {
     const items = projectConversationRunItems([
       message({

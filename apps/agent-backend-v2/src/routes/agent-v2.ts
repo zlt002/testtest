@@ -191,6 +191,11 @@ export function createAgentV2Route(agentService: {
   listProjectSessionRuns?(input: { projectPath: string }): Promise<unknown>;
   listSessions?(): Promise<unknown>;
   getSessionRunState?(input: { sessionId: string }): Promise<unknown>;
+  streamRunEvents?(input: {
+    runId: string;
+    afterSequence?: number;
+    signal?: AbortSignal;
+  }): Promise<AsyncIterable<AgentEvent>> | AsyncIterable<AgentEvent>;
   getSessionHistory(input: { sessionId: string; projectPath?: string }): Promise<unknown>;
   getSessionSubagents?(input: { sessionId: string; projectPath?: string }): Promise<unknown>;
   abortRun(input: { runId: string }): Promise<unknown>;
@@ -341,6 +346,21 @@ export function createAgentV2Route(agentService: {
             ? await agentService.getSessionRunState({ sessionId: sessionRunParams.sessionId })
             : null
         );
+        return true;
+      }
+
+      const runStreamParams = matchPath('/api/agent-v2/runs/:runId/stream', pathname);
+      if (runStreamParams) {
+        if (!agentService.streamRunEvents) {
+          throw new Error('Agent run event stream service is not configured');
+        }
+        const afterSequenceParam = requestUrl.searchParams.get('afterSequence');
+        const parsedAfterSequence = afterSequenceParam ? Number.parseInt(afterSequenceParam, 10) : 0;
+        const stream = await agentService.streamRunEvents({
+          runId: runStreamParams.runId,
+          afterSequence: Number.isFinite(parsedAfterSequence) ? parsedAfterSequence : 0,
+        });
+        await writeRunStream(res, stream);
         return true;
       }
     }

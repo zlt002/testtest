@@ -58,6 +58,7 @@ const FAILED_ACTION_MAP: Record<string, string> = {
   'Failed to archive session': '归档会话失败',
   'Failed to mark session interrupted': '标记会话中断失败',
   'Failed to load Agent V2 session history': '加载会话历史失败',
+  'Failed to resume Agent V2 run stream': '恢复进行中的会话失败，请重启本地服务或稍后重试',
   'Failed to abort Agent V2 run': '停止智能体运行失败',
   'Failed to resolve Agent V2 interaction': '处理交互请求失败',
   'Failed to load files': '加载文件列表失败',

@@ -39,6 +39,7 @@ import {
   type SessionRunStateStatus,
   type SessionRunStateStore,
 } from './session-run-state.ts';
+import { createRunEventStore, type RunEventStore } from './run-event-store.ts';
 import type { RunStream } from './start-session-run.ts';
 
 type QueryRun = AsyncIterable<Record<string, unknown>> & {
@@ -272,6 +273,7 @@ export type AgentServiceDeps = {
     getConfig(): Promise<ModelConfig>;
   };
   runStateStore?: SessionRunStateStore;
+  runEventStore?: RunEventStore;
   firstEventTimeoutMs?: number;
 };
 
@@ -669,6 +671,7 @@ function formatRuntimeAuthSummary(input: {
 export function createAgentService(deps: AgentServiceDeps) {
   const pendingInteractions = new Map<string, PendingInteraction>();
   const runStateStore = deps.runStateStore ?? createSessionRunStateStore();
+  const runEventStore = deps.runEventStore ?? createRunEventStore();
   const firstEventTimeoutMs = deps.firstEventTimeoutMs ?? DEFAULT_FIRST_EVENT_TIMEOUT_MS;
 
   function normalizeRunAttachments(input: {
@@ -1267,6 +1270,7 @@ export function createAgentService(deps: AgentServiceDeps) {
         },
       });
       upsertRunState(startedEvent);
+      runEventStore.append(startedEvent);
       yield startedEvent;
 
       let failureSequence = 2;
@@ -1306,6 +1310,7 @@ export function createAgentService(deps: AgentServiceDeps) {
               } else {
                 upsertRunState(nextItem.event);
               }
+              runEventStore.append(nextItem.event);
               yield nextItem.event;
             }
             continue;
@@ -1382,6 +1387,7 @@ export function createAgentService(deps: AgentServiceDeps) {
             } else {
               upsertRunState(nextEvent);
             }
+            runEventStore.append(nextEvent);
             yield nextEvent;
           }
           sdkNext = loadNextSdkEvent();
@@ -1396,6 +1402,7 @@ export function createAgentService(deps: AgentServiceDeps) {
             payload: auditEvents.length > 0 ? { policyAudit: auditEvents } : {},
           });
           markRunFinished(abortedEvent, 'aborted');
+          runEventStore.append(abortedEvent);
           yield abortedEvent;
         }
       } catch (error) {
@@ -1420,6 +1427,7 @@ export function createAgentService(deps: AgentServiceDeps) {
           },
         });
         markRunFinished(terminalEvent, aborted ? 'aborted' : 'failed');
+        runEventStore.append(terminalEvent);
         yield terminalEvent;
       } finally {
         manualEvents.close();
@@ -1474,6 +1482,13 @@ export function createAgentService(deps: AgentServiceDeps) {
     async getSessionRunState(input: { sessionId: string }) {
       runStateStore.pruneExpired();
       return runStateStore.get(input.sessionId);
+    },
+
+    streamRunEvents(input: { runId: string; afterSequence?: number; signal?: AbortSignal }) {
+      return runEventStore.stream(input.runId, {
+        afterSequence: input.afterSequence,
+        signal: input.signal,
+      });
     },
 
     getSessionHistory(input: { sessionId: string; projectPath?: string }) {

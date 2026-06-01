@@ -31,6 +31,7 @@ const mockStreamState = {
   reset: vi.fn(),
   loadHistory: vi.fn(),
   restoreSessionRunState: vi.fn(),
+  resumeRun: vi.fn(),
   appendAssistantMessage: vi.fn(),
   resolveInteraction: vi.fn(),
 };
@@ -532,6 +533,7 @@ describe('Chat markdown export', () => {
     mockStreamState.reset = vi.fn();
     mockStreamState.loadHistory = vi.fn();
     mockStreamState.restoreSessionRunState = vi.fn();
+    mockStreamState.resumeRun = vi.fn();
     mockStreamState.appendAssistantMessage = vi.fn();
     mockStreamState.resolveInteraction = vi.fn();
     toastMocks.mockToastSuccess.mockReset();

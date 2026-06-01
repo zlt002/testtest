@@ -939,7 +939,7 @@ function buildRunCard(input: {
   };
 }
 
-function nearestUserBefore(users: DisplayMessage[], timestamp: string): DisplayMessage | null {
+function nearestUserAround(users: DisplayMessage[], timestamp: string): DisplayMessage | null {
   const target = timeOf(timestamp);
   let selected: DisplayMessage | null = null;
   for (const user of users) {
@@ -947,7 +947,17 @@ function nearestUserBefore(users: DisplayMessage[], timestamp: string): DisplayM
       selected = user;
     }
   }
-  return selected;
+  if (selected) {
+    return selected;
+  }
+
+  for (const user of users) {
+    if (timeOf(user.timestamp) >= target) {
+      return user;
+    }
+  }
+
+  return null;
 }
 
 export function projectConversationRunItems(messages: DisplayMessage[]): ConversationRunItem[] {
@@ -973,7 +983,7 @@ export function projectConversationRunItems(messages: DisplayMessage[]): Convers
     const firstTimestamp = group[0]?.timestamp || '';
     const anchor =
       group.find((message) => message.role === 'user' && message.kind === 'text') ||
-      nearestUserBefore(users, firstTimestamp);
+      nearestUserAround(users, firstTimestamp);
     cards.push(
       buildRunCard({
         id: runId,
@@ -1034,7 +1044,12 @@ export function projectConversationRunItems(messages: DisplayMessage[]): Convers
   const items: ConversationRunItem[] = [];
   for (const user of users) {
     items.push({ type: 'user', message: user });
-    for (const card of cardsByAnchor.get(user.id) || []) {
+    const anchoredCards = cardsByAnchor.get(user.id) || [];
+    const hasLiveCard = anchoredCards.some((card) => card.source === 'sdk-live');
+    const visibleCards = hasLiveCard
+      ? anchoredCards.filter((card) => card.source === 'sdk-live')
+      : anchoredCards;
+    for (const card of visibleCards) {
       items.push({ type: 'run', card });
     }
   }

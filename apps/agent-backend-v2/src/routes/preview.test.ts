@@ -143,6 +143,41 @@ test('GET /api/preview/assets/:previewId/* returns injected HTML', async () => {
   }
 });
 
+test('GET /api/preview/resolve returns preview source file location', async () => {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'preview-route-'));
+  await mkdir(join(projectRoot, 'captures', 'demo'), { recursive: true });
+  await writeFile(
+    join(projectRoot, 'captures', 'demo', 'index.html'),
+    '<!doctype html><html><body><h1>Hello</h1></body></html>',
+    'utf8'
+  );
+
+  const app = createApp(baseDeps() as Parameters<typeof createApp>[0]);
+  const { server, url } = await listen(app);
+  try {
+    const redirect = await fetch(
+      `${url}/api/preview/file?projectPath=${encodeURIComponent(projectRoot)}&filePath=${encodeURIComponent('captures/demo/index.html')}`,
+      { redirect: 'manual' }
+    );
+    const location = redirect.headers.get('location') || '';
+    const match = location.match(/^\/api\/preview\/assets\/([^/]+)\/(.+)$/);
+    assert.ok(match);
+    const [, previewId, filePath] = match;
+
+    const response = await fetch(
+      `${url}/api/preview/resolve?previewId=${encodeURIComponent(previewId)}&filePath=${encodeURIComponent(decodeURIComponent(filePath))}`
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      projectPath: projectRoot,
+      filePath: 'captures/demo/index.html',
+    });
+  } finally {
+    server.close();
+  }
+});
+
 test('GET /api/preview/assets/:previewId/* returns placeholder html when entry file is not on disk yet', async () => {
   const projectRoot = await mkdtemp(join(tmpdir(), 'preview-route-'));
   await mkdir(join(projectRoot, 'pages', 'demo'), { recursive: true });

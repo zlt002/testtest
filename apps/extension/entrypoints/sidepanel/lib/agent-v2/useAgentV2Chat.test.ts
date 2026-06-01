@@ -8,6 +8,7 @@ import type { AgentEvent } from './types';
 const clientMocks = vi.hoisted(() => ({
   startRun: vi.fn(),
   continueRun: vi.fn(),
+  resumeRunStream: vi.fn(),
   getSessionSubagents: vi.fn(async () => ({ sessionId: 'session-1', subagents: [] })),
   abortRun: vi.fn(async () => undefined),
 }));
@@ -24,6 +25,7 @@ vi.mock('./client', async () => {
     createAgentV2Client: () => ({
       startRun: clientMocks.startRun,
       continueRun: clientMocks.continueRun,
+      resumeRunStream: clientMocks.resumeRunStream,
       getSessionSubagents: clientMocks.getSessionSubagents,
       abortRun: clientMocks.abortRun,
     }),
@@ -52,6 +54,7 @@ describe('useAgentV2Chat', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clientMocks.resumeRunStream.mockReset();
     clientMocks.getSessionSubagents.mockResolvedValue({ sessionId: 'session-1', subagents: [] });
   });
 
@@ -240,6 +243,118 @@ describe('useAgentV2Chat', () => {
         status: 'connecting',
       })
     );
+  });
+
+  it('resumeRun replays buffered events and continues streaming until completion', async () => {
+    const runState = {
+      sessionId: 'session-restore',
+      projectPath: '/tmp/project-restore',
+      runId: 'run-restore',
+      status: 'streaming' as const,
+      startedAt: '2026-05-22T10:00:00.000Z',
+      lastEventAt: '2026-05-22T10:00:01.000Z',
+      latestSequence: 2,
+      hasActiveStream: true,
+    };
+
+    clientMocks.resumeRunStream.mockImplementationOnce(
+      async (
+        runId: string,
+        input: { afterSequence?: number },
+        onEvent: (event: AgentEvent) => void
+      ) => {
+        expect(runId).toBe('run-restore');
+        expect(input.afterSequence).toBe(0);
+        onEvent({
+          eventId: 'event-restore-1',
+          runId: 'run-restore',
+          sessionId: 'session-restore',
+          sequence: 1,
+          type: 'run.started',
+          timestamp: '2026-05-22T10:00:00.000Z',
+          payload: {},
+        });
+        onEvent({
+          eventId: 'event-restore-2',
+          runId: 'run-restore',
+          sessionId: 'session-restore',
+          sequence: 2,
+          type: 'assistant.message.delta',
+          timestamp: '2026-05-22T10:00:01.000Z',
+          payload: { text: '恢复中的输出' },
+        });
+        onEvent({
+          eventId: 'event-restore-3',
+          runId: 'run-restore',
+          sessionId: 'session-restore',
+          sequence: 3,
+          type: 'run.completed',
+          timestamp: '2026-05-22T10:00:02.000Z',
+          payload: {},
+        });
+      }
+    );
+
+    const { result } = renderHook(() =>
+      useAgentV2Chat({ baseUrl: 'http://localhost:3000', endpoint: '/api/agent-v2' })
+    );
+
+    act(() => {
+      result.current.restoreSessionRunState(runState);
+    });
+
+    await act(async () => {
+      await result.current.resumeRun(runState);
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('idle');
+    });
+    expect(clientMocks.resumeRunStream).toHaveBeenCalledWith(
+      'run-restore',
+      expect.objectContaining({
+        afterSequence: 0,
+      }),
+      expect.any(Function)
+    );
+    expect(result.current.messages.some((message) => message.text?.includes('恢复中的输出'))).toBe(
+      true
+    );
+    expect(activeRunSessionMocks.clearAgentV2ActiveRunSession).toHaveBeenCalled();
+  });
+
+  it('resumeRun shows a localized message when the backend does not support resume streaming', async () => {
+    const runState = {
+      sessionId: 'session-restore',
+      projectPath: '/tmp/project-restore',
+      runId: 'run-restore',
+      status: 'streaming' as const,
+      startedAt: '2026-05-22T10:00:00.000Z',
+      lastEventAt: '2026-05-22T10:00:01.000Z',
+      latestSequence: 2,
+      hasActiveStream: true,
+    };
+
+    clientMocks.resumeRunStream.mockRejectedValueOnce(
+      new Error('Failed to resume Agent V2 run stream: 404')
+    );
+
+    const { result } = renderHook(() =>
+      useAgentV2Chat({ baseUrl: 'http://localhost:3000', endpoint: '/api/agent-v2' })
+    );
+
+    act(() => {
+      result.current.restoreSessionRunState(runState);
+    });
+
+    await act(async () => {
+      await result.current.resumeRun(runState);
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('error');
+    });
+    expect(result.current.error).toBe('恢复进行中的会话失败，请重启本地服务或稍后重试（状态码 404）。');
   });
 
   it('restoreSessionRunState clears active run session when no stream exists', async () => {

@@ -42,6 +42,17 @@ export function createPreviewRoute(service = createPreviewService()) {
       return true;
     }
 
+    if (url.pathname === '/api/preview/resolve') {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return true;
+      }
+      const previewId = url.searchParams.get('previewId') || '';
+      const filePath = url.searchParams.get('filePath') || '';
+      sendJson(res, 200, service.resolveAsset(previewId, filePath));
+      return true;
+    }
+
     if (url.pathname.startsWith('/api/preview/events/')) {
       if (req.method !== 'GET') {
         sendJson(res, 405, { error: 'Method not allowed' });

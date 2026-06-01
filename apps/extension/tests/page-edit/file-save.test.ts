@@ -341,6 +341,37 @@ describe('page-edit file save action', () => {
     visbug.remove();
   });
 
+  it('本地快照预览页也允许点击保存并发送保存消息', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+    dom.reconfigure({ url: 'http://127.0.0.1:8792/api/preview/assets/demo-preview/captures/demo/index.html' });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const postMessageSpy = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined);
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+    const visbug = new VisBug();
+
+    visbug.setSelectionBridgeNonce('nonce-preview');
+    const expectedHtml = visbug.serializeCurrentDocument();
+    visbug.saveCurrentFile();
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      {
+        type: 'page_edit_save_file',
+        payload: {
+          nonce: 'nonce-preview',
+          pageUrl: 'http://127.0.0.1:8792/api/preview/assets/demo-preview/captures/demo/index.html',
+          html: expectedHtml,
+        },
+      },
+      '*',
+    );
+  });
+
   it('inspector 模式会同时激活 position 拖动能力', async () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'

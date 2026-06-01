@@ -1239,6 +1239,53 @@ describe('createPageEditService', () => {
     expect(saveFile).not.toHaveBeenCalled();
   });
 
+  it('accepts save requests for local snapshot preview asset urls', async () => {
+    const previewUrl = 'http://127.0.0.1:8792/api/preview/assets/demo-preview/captures/demo/index.html';
+    const getActiveTab = vi.fn().mockResolvedValue({
+      id: 7,
+      windowId: 7,
+      url: previewUrl,
+    });
+    const getPageEditState = vi.fn().mockReturnValue({
+      tabId: 7,
+      windowId: 7,
+      url: previewUrl,
+      status: 'active',
+      pageMode: 'local-snapshot',
+      selectionSessionNonce: 'nonce-7',
+    });
+    const saveFile = vi.fn().mockResolvedValue(undefined);
+    const listener = createPageEditFileSaveMessageListener({
+      getActiveTab,
+      getPageEditState,
+      saveFile,
+    });
+
+    const result = await listener(
+      {
+        type: 'page_edit_save_file',
+        payload: {
+          nonce: 'nonce-7',
+          pageUrl: previewUrl,
+          html: '<!DOCTYPE html><html><body>saved</body></html>',
+        },
+      },
+      {
+        tab: {
+          id: 7,
+          windowId: 7,
+          url: previewUrl,
+        },
+      } as chrome.runtime.MessageSender
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(saveFile).toHaveBeenCalledWith({
+      pageUrl: previewUrl,
+      html: '<!DOCTYPE html><html><body>saved</body></html>',
+    });
+  });
+
   it('returns the write failure error when saving the file fails', async () => {
     const getActiveTab = vi.fn().mockResolvedValue({
       id: 7,

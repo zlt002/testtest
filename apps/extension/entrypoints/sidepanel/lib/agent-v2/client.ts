@@ -519,6 +519,33 @@ export function createAgentV2Client(options: AgentV2ClientOptions) {
       await readAgentEventStream(response, onEvent);
     },
 
+    async resumeRunStream(
+      runId: string,
+      input: {
+        afterSequence?: number;
+        signal?: AbortSignal;
+      },
+      onEvent: (event: AgentEvent) => void
+    ): Promise<void> {
+      const params = new URLSearchParams();
+      if (typeof input.afterSequence === 'number' && Number.isFinite(input.afterSequence)) {
+        params.set('afterSequence', String(input.afterSequence));
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
+      const response = await fetch(
+        createApiUrl(options, `/runs/${encodeURIComponent(runId)}/stream${query}`),
+        {
+          signal: input.signal,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to resume Agent V2 run stream: ${response.status}`);
+      }
+
+      await readAgentEventStream(response, onEvent);
+    },
+
     async uploadSessionFile(input: {
       sessionId: string;
       fileName: string;

@@ -1176,6 +1176,61 @@ test('agent v2 continue route streams agent events as SSE', async () => {
   }
 });
 
+test('agent v2 run resume route replays buffered events as SSE', async () => {
+  const route = createAgentV2Route({
+    async getSessionHistory() {
+      return { messages: [] };
+    },
+    async abortRun() {
+      return { aborted: false as const, reason: 'not_active' as const };
+    },
+    async streamRunEvents({ runId, afterSequence }) {
+      assert.equal(runId, 'run-restore');
+      assert.equal(afterSequence, 1);
+      return Object.assign(
+        (async function* () {
+          yield createAgentEvent({
+            runId,
+            sessionId: 'session-1',
+            sequence: 2,
+            type: 'assistant.message.delta',
+            payload: { text: 'resumed event' },
+          });
+          yield createAgentEvent({
+            runId,
+            sessionId: 'session-1',
+            sequence: 3,
+            type: 'run.completed',
+          });
+        })(),
+        { runId, sessionId: 'session-1' }
+      );
+    },
+  });
+  const server = createServer(async (req, res) => {
+    await route(req, res, req.url || '/');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.equal(typeof address, 'object');
+
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${address && typeof address === 'object' ? address.port : 0}/api/agent-v2/runs/run-restore/stream?afterSequence=1`
+    );
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') || '', /text\/event-stream/);
+    assert.match(body, /"sequence":2/);
+    assert.match(body, /"text":"resumed event"/);
+    assert.match(body, /"type":"run.completed"/);
+  } finally {
+    server.close();
+  }
+});
+
 test('agent v2 abort route returns abort result', async () => {
   const route = createAgentV2Route({
     async getSessionHistory() {

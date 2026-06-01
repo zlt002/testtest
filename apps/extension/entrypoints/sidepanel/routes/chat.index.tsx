@@ -139,6 +139,10 @@ import { useAgentV2Chat } from '../lib/agent-v2/useAgentV2Chat';
 import { useAgentV2Sessions } from '../lib/agent-v2/useAgentV2Sessions';
 import { getBrowserContext } from '../lib/browser-context';
 import { hasScrollableContentBelow } from '../lib/chat-scroll';
+import {
+  getActiveConversationSelection,
+  shouldAutoScrollToLatest,
+} from '../lib/chat-selection-guard';
 import { appendChatSelectionQuote } from '../lib/chat-selection-quote';
 import { config } from '../lib/config';
 import {
@@ -585,15 +589,6 @@ type ChatSelectionQuoteState = {
   top: number;
   left: number;
 };
-
-function isNodeWithinConversationItem(container: HTMLElement, node: Node | null) {
-  if (!node || !container.contains(node)) {
-    return false;
-  }
-
-  const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-  return Boolean(element?.closest('[data-chat-conversation-item="true"]'));
-}
 
 function ChatMarkdownPre({ children }: { children?: ReactNode }) {
   const firstChild = Children.toArray(children)[0];
@@ -2345,6 +2340,10 @@ export function Chat() {
   const [isFullConversationVisible, setIsFullConversationVisible] = useState(false);
   const [input, setInput] = useState('');
   const [selectionQuote, setSelectionQuote] = useState<ChatSelectionQuoteState | null>(null);
+  const [selectionLockedConversationItems, setSelectionLockedConversationItems] = useState<
+    ConversationRunItem[] | null
+  >(null);
+  const [selectionLockedHiddenCount, setSelectionLockedHiddenCount] = useState<number | null>(null);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('bypassPermissions');
   const [thinkingMode, setThinkingMode] = useState<ThinkingMode>('high');
   const [attachments, setAttachments] = useState<SessionAttachment[]>([]);
@@ -2478,8 +2477,9 @@ export function Chat() {
     activatePageEditMutation.isPending ||
     deactivatePageEditMutation.isPending;
   const quickPageEditLabel = getPageEditToggleLabel(effectivePageEditState);
-  const quickProjectPath = activeProjectPath || backendWorkdir;
   const isWorkspaceSelectionRequired = !activeProjectPath && !stream.sessionId;
+  const isBootstrapGateBlocking = bootstrapGate.status !== 'ready';
+  const quickProjectPath = activeProjectPath || backendWorkdir;
   const tabSelectionScopeKey = useMemo(
     () =>
       getSessionTabSelectionScopeKey({
@@ -2695,7 +2695,11 @@ export function Chat() {
   const isModelInteractionDisabled =
     modelAccessViewState.overallStatus === 'needs_config' ||
     modelAccessViewState.overallStatus === 'unavailable';
-  const isBootstrapGateBlocking = bootstrapGate.status !== 'ready';
+  const isQuickPageEditDisabled =
+    isWorkspaceSelectionRequired ||
+    isQuickPageEditPending ||
+    isBootstrapGateBlocking ||
+    (!isPageEditActive(effectivePageEditState) && isModelInteractionDisabled);
   const shouldShowOfficialApiKeyForm =
     bootstrapGate.status === 'blocked' ||
     (bootstrapGate.status === 'ready' &&
@@ -3093,6 +3097,10 @@ export function Chat() {
   const hiddenConversationItemCount = isFullConversationVisible
     ? 0
     : collapsedConversation.hiddenCount;
+  const displayedConversationItems =
+    selectionLockedConversationItems ?? visibleConversationItems;
+  const displayedHiddenConversationItemCount =
+    selectionLockedHiddenCount ?? hiddenConversationItemCount;
   const latestCaptureFeedback = useMemo(
     () => findLatestCaptureQuickActionFeedback(stream.conversationItems),
     [stream.conversationItems]
@@ -3189,37 +3197,25 @@ export function Chat() {
   }, []);
   const hideSelectionQuote = useCallback(() => {
     setSelectionQuote(null);
+    setSelectionLockedConversationItems(null);
+    setSelectionLockedHiddenCount(null);
   }, []);
   const updateSelectionQuote = useCallback(() => {
     const container = scrollRef.current;
     const overlay = selectionOverlayRef.current;
     const selection = window.getSelection();
-    if (
-      !container ||
-      !overlay ||
-      !selection ||
-      selection.rangeCount === 0 ||
-      selection.isCollapsed
-    ) {
+    if (!container || !overlay || !selection) {
       hideSelectionQuote();
       return;
     }
 
-    const range = selection.getRangeAt(0);
-    const selectedText = selection.toString().trim();
+    const selectedText = getActiveConversationSelection(container, selection);
     if (!selectedText) {
       hideSelectionQuote();
       return;
     }
 
-    if (
-      !isNodeWithinConversationItem(container, range.startContainer) ||
-      !isNodeWithinConversationItem(container, range.endContainer)
-    ) {
-      hideSelectionQuote();
-      return;
-    }
-
+    const range = selection.getRangeAt(0);
     const overlayRect = overlay.getBoundingClientRect();
     const fallbackRect = {
       top: overlayRect.top,
@@ -3234,6 +3230,8 @@ export function Chat() {
     const relativeTop = rangeRect.top - overlayRect.top - 40;
     const relativeLeft = (rangeRect.left + rangeRect.right) / 2 - overlayRect.left;
 
+    setSelectionLockedConversationItems((current) => current ?? visibleConversationItems);
+    setSelectionLockedHiddenCount((current) => current ?? hiddenConversationItemCount);
     setSelectionQuote({
       text: selectedText,
       top: Math.max(relativeTop, 8),
@@ -3242,7 +3240,7 @@ export function Chat() {
         Math.max(overlay.clientWidth - estimatedButtonWidth, 8)
       ),
     });
-  }, [hideSelectionQuote]);
+  }, [hiddenConversationItemCount, hideSelectionQuote, visibleConversationItems]);
   const clearSelectionQuote = useCallback(() => {
     hideSelectionQuote();
     window.getSelection()?.removeAllRanges();
@@ -3400,10 +3398,15 @@ export function Chat() {
       setHasContentBelow(false);
       return;
     }
-    if (hasContentBelow) {
+
+    const hasActiveSelection = Boolean(
+      getActiveConversationSelection(scrollRef.current, window.getSelection())
+    );
+    if (!shouldAutoScrollToLatest({ hasContentBelow, hasActiveSelection })) {
       updateScrollAffordance();
       return;
     }
+
     scrollToConversationBottom();
   }, [
     hasContentBelow,
@@ -3961,6 +3964,9 @@ export function Chat() {
         }
         stream.restoreSessionRunState(runState);
         const hasActiveStream = Boolean(runState?.hasActiveStream);
+        if (hasActiveStream) {
+          void stream.resumeRun(runState);
+        }
         if (!hasActiveStream) {
           await clearAgentV2ActiveRunSession().catch((error) => {
             console.debug('[chat] failed to clear stale active Agent V2 session:', error);
@@ -4559,12 +4565,7 @@ export function Chat() {
               onClick={() => void handleQuickTogglePageEdit()}
               title={quickPageEditLabel}
               aria-label={quickPageEditLabel}
-              disabled={
-                isWorkspaceSelectionRequired ||
-                isQuickPageEditPending ||
-                isModelInteractionDisabled ||
-                isBootstrapGateBlocking
-              }
+              disabled={isQuickPageEditDisabled}
             >
               <PencilIcon className="h-4 w-4" />
             </Button>
@@ -4756,9 +4757,9 @@ export function Chat() {
             </div>
           ) : (
             <ConversationTimeline
-              items={visibleConversationItems}
+              items={displayedConversationItems}
               projectPath={activeProjectPath || backendWorkdir}
-              hiddenCount={hiddenConversationItemCount}
+              hiddenCount={displayedHiddenConversationItemCount}
               isFullConversationVisible={isFullConversationVisible}
               onShowFullConversation={showFullConversation}
               onCollapseConversation={collapseConversation}

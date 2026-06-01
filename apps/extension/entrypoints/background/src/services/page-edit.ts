@@ -320,6 +320,10 @@ function isPageEditFileUrl(url: string | undefined): boolean {
   return typeof url === 'string' && url.startsWith('file://');
 }
 
+function isLocalSnapshotPageEditUrl(url: string | undefined): boolean {
+  return getPageModeForUrl(url) === 'local-snapshot';
+}
+
 type PageEditRuntimeState = {
   active: boolean;
   pageMode: PageMode;
@@ -388,9 +392,13 @@ function getProjectPathFromPageUrl(pageUrl: string): string {
 async function defaultSavePageEditFile(input: PageEditFileSaveInput): Promise<void> {
   const discovery = await ensureCompanionReady();
   const client = createPageEditFileSaveClient(discovery.agentBaseUrl);
+  const pageMode = getPageModeForUrl(input.pageUrl);
 
   await savePageEditHtmlToFile(client, {
-    projectPath: getProjectPathFromPageUrl(input.pageUrl),
+    projectPath:
+      pageMode === 'local-snapshot' && /^file:/i.test(input.pageUrl)
+        ? getProjectPathFromPageUrl(input.pageUrl)
+        : undefined,
     pageUrl: input.pageUrl,
     html: input.html,
   });
@@ -1590,6 +1598,7 @@ export function createPageEditFileSaveMessageListener(input: {
     }
 
     const currentState = getPageEditState(tabId);
+    const currentPageMode = currentState?.pageMode ?? getPageModeForUrl(currentState?.url);
     if (
       currentState?.status !== 'active' ||
       typeof currentState.selectionSessionNonce !== 'string' ||
@@ -1602,8 +1611,9 @@ export function createPageEditFileSaveMessageListener(input: {
     if (
       activeTab?.id !== tabId ||
       activeTab.windowId !== windowId ||
-      !isPageEditFileUrl(payload.pageUrl) ||
-      !isPageEditFileUrl(activeTab.url) ||
+      currentPageMode !== 'local-snapshot' ||
+      !isLocalSnapshotPageEditUrl(payload.pageUrl) ||
+      !isLocalSnapshotPageEditUrl(activeTab.url) ||
       currentState.url !== payload.pageUrl ||
       activeTab.url !== payload.pageUrl ||
       (typeof sender?.tab?.url === 'string' && sender.tab.url !== payload.pageUrl)
@@ -1713,7 +1723,3 @@ export function initPageEditListeners() {
 
   pageEditListenersInitialized = true;
 }
-
-
-
-

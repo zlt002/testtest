@@ -19,6 +19,7 @@ const mockStreamState = {
   reset: vi.fn(),
   loadHistory: vi.fn(),
   restoreSessionRunState: vi.fn(),
+  resumeRun: vi.fn(),
   appendAssistantMessage: vi.fn(),
   resolveInteraction: vi.fn(),
 };
@@ -381,6 +382,7 @@ describe('Chat active run restore', () => {
     mockStreamState.reset = vi.fn();
     mockStreamState.loadHistory = vi.fn();
     mockStreamState.restoreSessionRunState = vi.fn();
+    mockStreamState.resumeRun = vi.fn();
     mockStreamState.appendAssistantMessage = vi.fn();
     mockStreamState.resolveInteraction = vi.fn();
     mockSessionsState.clearSessions.mockReset();
@@ -539,6 +541,13 @@ describe('Chat active run restore', () => {
         projectPath: '/tmp/project-active',
         runId: 'run-1',
         status: 'streaming',
+        hasActiveStream: true,
+      })
+    );
+    expect(mockStreamState.resumeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'session-active',
+        runId: 'run-1',
         hasActiveStream: true,
       })
     );

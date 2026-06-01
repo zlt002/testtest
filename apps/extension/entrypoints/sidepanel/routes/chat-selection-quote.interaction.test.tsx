@@ -101,13 +101,24 @@ const mockStreamState = {
   reset: vi.fn(),
   loadHistory: vi.fn(),
   restoreSessionRunState: vi.fn(
-    (runState: { sessionId: string; runId: string; status: 'connecting' | 'streaming' }) => {
+    (
+      runState:
+        | { sessionId: string; runId: string; status: 'connecting' | 'streaming' }
+        | null
+    ) => {
+      if (!runState) {
+        mockStreamState.sessionId = null;
+        mockStreamState.activeRunId = null;
+        mockStreamState.status = 'idle';
+        return;
+      }
       mockStreamState.sessionId = runState.sessionId;
       mockStreamState.activeRunId = runState.runId;
       mockStreamState.status = runState.status;
       mockStreamState.error = null;
     }
   ),
+  resumeRun: vi.fn(),
   appendAssistantMessage: vi.fn(),
   resolveInteraction: vi.fn(),
 };
@@ -136,6 +147,22 @@ const sessionSelectionMocks = vi.hoisted(() => ({
 
 const sidepanelMenuMocks = vi.hoisted(() => ({
   mockOpenSidepanelRoute: vi.fn(async () => undefined),
+}));
+
+const pageEditMocks = vi.hoisted(() => ({
+  mockGetPageEditActivationSuccessMessage: vi.fn(() => '进入编辑成功'),
+  mockGetPageEditSuccessMessage: vi.fn(() => '退出编辑成功'),
+  mockGetPageEditToggleLabel: vi.fn(() => '页面编辑'),
+  mockIsPageEditActive: vi.fn(() => false),
+  mockResolvePageEditTabId: vi.fn(async () => null),
+  mockPageEditStateRefetch: vi.fn(async () => ({ data: null })),
+  mockPageEditGetStateUseQuery: vi.fn(() => ({
+    data: null,
+    isLoading: false,
+    refetch: pageEditMocks.mockPageEditStateRefetch,
+  })),
+  mockPageEditActivateMutateAsync: vi.fn(async () => null),
+  mockPageEditDeactivateMutateAsync: vi.fn(async () => null),
 }));
 
 const bootstrapGateMocks = vi.hoisted(() => {
@@ -371,11 +398,11 @@ vi.mock('@/entrypoints/background/src/services/page-picker', () => ({
 }));
 
 vi.mock('../lib/page-edit', () => ({
-  getPageEditActivationSuccessMessage: vi.fn(() => '进入编辑成功'),
-  getPageEditSuccessMessage: vi.fn(() => '退出编辑成功'),
-  getPageEditToggleLabel: vi.fn(() => '页面编辑'),
-  isPageEditActive: vi.fn(() => false),
-  resolvePageEditTabId: vi.fn(async () => null),
+  getPageEditActivationSuccessMessage: pageEditMocks.mockGetPageEditActivationSuccessMessage,
+  getPageEditSuccessMessage: pageEditMocks.mockGetPageEditSuccessMessage,
+  getPageEditToggleLabel: pageEditMocks.mockGetPageEditToggleLabel,
+  isPageEditActive: pageEditMocks.mockIsPageEditActive,
+  resolvePageEditTabId: pageEditMocks.mockResolvePageEditTabId,
 }));
 
 vi.mock('../lib/sidepanel-menu', () => ({
@@ -406,21 +433,17 @@ vi.mock('../lib/trpc_client', () => ({
     },
     pageEdit: {
       getState: {
-        useQuery: () => ({
-          data: null,
-          isLoading: false,
-          refetch: vi.fn(async () => ({ data: null })),
-        }),
+        useQuery: pageEditMocks.mockPageEditGetStateUseQuery,
       },
       activate: {
         useMutation: () => ({
-          mutateAsync: vi.fn(async () => null),
+          mutateAsync: pageEditMocks.mockPageEditActivateMutateAsync,
           isPending: false,
         }),
       },
       deactivate: {
         useMutation: () => ({
-          mutateAsync: vi.fn(async () => null),
+          mutateAsync: pageEditMocks.mockPageEditDeactivateMutateAsync,
           isPending: false,
         }),
       },
@@ -817,13 +840,24 @@ describe('Chat chat selection quote interaction', () => {
     mockStreamState.reset = vi.fn();
     mockStreamState.loadHistory = vi.fn();
     mockStreamState.restoreSessionRunState = vi.fn(
-      (runState: { sessionId: string; runId: string; status: 'connecting' | 'streaming' }) => {
+      (
+        runState:
+          | { sessionId: string; runId: string; status: 'connecting' | 'streaming' }
+          | null
+      ) => {
+        if (!runState) {
+          mockStreamState.sessionId = null;
+          mockStreamState.activeRunId = null;
+          mockStreamState.status = 'idle';
+          return;
+        }
         mockStreamState.sessionId = runState.sessionId;
         mockStreamState.activeRunId = runState.runId;
         mockStreamState.status = runState.status;
         mockStreamState.error = null;
       }
     );
+    mockStreamState.resumeRun = vi.fn();
     mockStreamState.appendAssistantMessage = vi.fn();
     mockStreamState.resolveInteraction = vi.fn();
     mockSessionsState.clearSessions.mockReset();
@@ -916,6 +950,28 @@ describe('Chat chat selection quote interaction', () => {
     clientMocks.mockGetSystemUpdateInfo.mockReset();
     clientMocks.mockGetSystemUpdateInfo.mockResolvedValue({ updateAvailable: false });
     sidepanelMenuMocks.mockOpenSidepanelRoute.mockReset();
+    pageEditMocks.mockGetPageEditActivationSuccessMessage.mockReset();
+    pageEditMocks.mockGetPageEditActivationSuccessMessage.mockReturnValue('进入编辑成功');
+    pageEditMocks.mockGetPageEditSuccessMessage.mockReset();
+    pageEditMocks.mockGetPageEditSuccessMessage.mockReturnValue('退出编辑成功');
+    pageEditMocks.mockGetPageEditToggleLabel.mockReset();
+    pageEditMocks.mockGetPageEditToggleLabel.mockReturnValue('页面编辑');
+    pageEditMocks.mockIsPageEditActive.mockReset();
+    pageEditMocks.mockIsPageEditActive.mockReturnValue(false);
+    pageEditMocks.mockResolvePageEditTabId.mockReset();
+    pageEditMocks.mockResolvePageEditTabId.mockResolvedValue(null);
+    pageEditMocks.mockPageEditStateRefetch.mockReset();
+    pageEditMocks.mockPageEditStateRefetch.mockResolvedValue({ data: null });
+    pageEditMocks.mockPageEditGetStateUseQuery.mockReset();
+    pageEditMocks.mockPageEditGetStateUseQuery.mockImplementation(() => ({
+      data: null,
+      isLoading: false,
+      refetch: pageEditMocks.mockPageEditStateRefetch,
+    }));
+    pageEditMocks.mockPageEditActivateMutateAsync.mockReset();
+    pageEditMocks.mockPageEditActivateMutateAsync.mockResolvedValue(null);
+    pageEditMocks.mockPageEditDeactivateMutateAsync.mockReset();
+    pageEditMocks.mockPageEditDeactivateMutateAsync.mockResolvedValue(null);
     bootstrapGateMocks.mockUseBootstrapGateState.mockReset();
     bootstrapGateMocks.mockUseBootstrapGateState.mockReturnValue({
       status: 'ready',
@@ -1230,6 +1286,25 @@ describe('Chat chat selection quote interaction', () => {
           .getBoundingClientRect;
       }
     }
+  });
+
+  it('选区激活时，会话内容刷新不会立刻清掉当前选区', async () => {
+    setConversationItems();
+    const view = render(<Chat />);
+
+    const bubble = await view.findByText('这是对话流内可引用的一段文本');
+    selectText(bubble, '可引用的一段文本');
+
+    expect(await view.findByRole('button', { name: '添加到对话' })).toBeTruthy();
+    expect(window.getSelection()?.toString()).toBe('可引用的一段文本');
+
+    setConversationItems('这是对话流内可引用的一段文本，后面又补充了一句。');
+    view.rerender(<Chat />);
+
+    await waitFor(() => {
+      expect(window.getSelection()?.toString()).toBe('可引用的一段文本');
+      expect(view.getByRole('button', { name: '添加到对话' })).toBeTruthy();
+    });
   });
 
   it('新建会话时不会影响当前选区按钮渲染', async () => {
@@ -1625,6 +1700,81 @@ describe('Chat chat selection quote interaction', () => {
       true
     );
     expect((view.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('模型不可交互时，若页面工作台已开启，仍允许点击按钮关闭', async () => {
+    pageEditMocks.mockResolvePageEditTabId.mockResolvedValue(123);
+    pageEditMocks.mockGetPageEditToggleLabel.mockReturnValue('退出编辑');
+    pageEditMocks.mockIsPageEditActive.mockReturnValue(true);
+    pageEditMocks.mockPageEditGetStateUseQuery.mockImplementation(() => ({
+      data: {
+        tabId: 123,
+        status: 'active',
+        pageMode: 'local-snapshot',
+        capabilities: {},
+      },
+      isLoading: false,
+      refetch: pageEditMocks.mockPageEditStateRefetch,
+    }));
+    bootstrapGateMocks.mockUseBootstrapGateState.mockReturnValue({
+      status: 'ready',
+      result: {
+        ...bootstrapGateMocks.mockBootstrapGateResult,
+        modelAccess: {
+          ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess,
+          localConfig: {
+            ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess.localConfig,
+            anthropicApiKey: '',
+          },
+          runtimeInfo: {
+            ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess.runtimeInfo,
+            available: false,
+            claudeCliAvailable: false,
+            hasProjectModelConfig: false,
+            reason: '缺少可用模型配置',
+          },
+          userClaudeSettingsTestResult: null,
+          projectModelConfigTestResult: null,
+          viewState: {
+            ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess.viewState,
+            overallStatus: 'needs_config',
+            summary: '请先配置模型后再发起对话。',
+            userClaudeSettings: 'unavailable',
+            projectModelConfig: 'needs_config',
+          },
+        },
+      },
+      backgroundSync: {
+        status: 'completed',
+      },
+      retry: vi.fn(async () => undefined),
+      retrySync: vi.fn(async () => undefined),
+    });
+    sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_project_selected'
+    );
+
+    const view = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_project_selected',
+      payload: {
+        projectPath: '/tmp/project',
+      },
+    });
+
+    const pageEditButton = await view.findByRole('button', { name: '退出编辑' });
+    expect((pageEditButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(pageEditButton);
+
+    await waitFor(() => {
+      expect(pageEditMocks.mockPageEditDeactivateMutateAsync).toHaveBeenCalledWith({ tabId: 123 });
+    });
   });
 
   it('保存官方 Key 后不会再次触发实时模型探测', async () => {

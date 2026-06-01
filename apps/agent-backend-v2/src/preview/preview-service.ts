@@ -44,6 +44,11 @@ type LivePreviewFileState = {
   writeId: string;
 };
 
+type ResolvedPreviewAsset = {
+  projectPath: string;
+  filePath: string;
+};
+
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
@@ -490,6 +495,20 @@ export function createPreviewService() {
       return {
         contentType,
         body: injectReloadScript(buffer.toString('utf8'), previewId),
+      };
+    },
+
+    resolveAsset(previewId: string, relativePath: string): ResolvedPreviewAsset {
+      const preview = previews.get(previewId);
+      if (!preview) {
+        throw new HttpError(404, 'Preview not found', 'preview_not_found');
+      }
+
+      const normalizedRelativePath = normalizePreviewScopedPath(preview, relativePath);
+
+      return {
+        projectPath: preview.projectPath,
+        filePath: normalizedRelativePath,
       };
     },
 
