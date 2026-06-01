@@ -2728,7 +2728,6 @@ export function Chat() {
   const isQuickPageEditDisabled =
     isWorkspaceSelectionRequired ||
     isResolvingPageEditTab ||
-    pageEditStateQuery.isLoading ||
     isBootstrapGateBlocking;
   const shouldShowOfficialApiKeyForm =
     bootstrapGate.status === 'blocked' ||

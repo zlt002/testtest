@@ -1841,6 +1841,36 @@ describe('Chat chat selection quote interaction', () => {
     });
   });
 
+  it('顶部铅笔在页面编辑状态回刷中仍保持可点击', async () => {
+    pageEditMocks.mockResolvePageEditTabId.mockResolvedValue(123);
+    pageEditMocks.mockGetPageEditToggleLabel.mockReturnValue('进入编辑');
+    pageEditMocks.mockIsPageEditActive.mockReturnValue(false);
+    pageEditMocks.mockPageEditGetStateUseQuery.mockImplementation(() => ({
+      data: null,
+      isLoading: true,
+      refetch: pageEditMocks.mockPageEditStateRefetch,
+    }));
+    sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_project_selected'
+    );
+
+    const view = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_project_selected',
+      payload: {
+        projectPath: '/tmp/project',
+      },
+    });
+
+    const pageEditButton = await view.findByRole('button', { name: '进入编辑' });
+    expect((pageEditButton as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('顶部铅笔在进入编辑进行中允许再次点击，并在完成后按最后意图退出', async () => {
     const activateDeferred = createDeferred<{
       tabId: number;
