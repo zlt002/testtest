@@ -40,3 +40,35 @@ export function shouldAutoScrollToLatest({
 }) {
   return !hasContentBelow && !hasActiveSelection;
 }
+
+export type SelectionHighlightRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export function collectViewportSelectionRects(range: Range): SelectionHighlightRect[] {
+  const rectList =
+    typeof range.getClientRects === 'function'
+      ? Array.from(range.getClientRects())
+      : typeof range.getBoundingClientRect === 'function'
+        ? [range.getBoundingClientRect()]
+        : [];
+
+  return rectList
+    .filter((rect) => rect.width > 0 && rect.height > 0)
+    .map((rect) => ({
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    }));
+}
+
+export function shouldRenderSelectionOverlayFallback(
+  cssHighlights: unknown,
+  HighlightCtor: unknown
+) {
+  return !(cssHighlights && HighlightCtor);
+}

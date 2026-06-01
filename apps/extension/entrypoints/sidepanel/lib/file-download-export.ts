@@ -20,6 +20,7 @@ import { toString as mdastToString } from 'mdast-util-to-string';
 import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
+import { buildMarkdownPreviewImageUrl } from '../routes/file-preview.image-assets';
 
 type DownloadPayload = {
   fileName: string;
@@ -30,6 +31,9 @@ type DownloadPayload = {
 type DownloadExportParams = {
   content: string;
   fileName: string;
+  projectPath?: string;
+  markdownFilePath?: string;
+  backendBaseUrl?: string;
 };
 
 type MarkdownNode = {
@@ -40,6 +44,15 @@ type MarkdownNode = {
   value?: string;
   children?: MarkdownNode[];
   url?: string;
+  alt?: string | null;
+};
+
+type DocxInlineChild = TextRun | ExternalHyperlink | ImageRun;
+
+type DocxImageExportContext = {
+  projectPath: string;
+  markdownFilePath: string;
+  backendBaseUrl: string;
 };
 
 const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -136,9 +149,140 @@ const createBodyTextRun = (text: string, options: Record<string, unknown> = {}) 
     ...options,
   });
 
-const inlineRunsFromNode = (
+const defaultDocxImageSize = {
+  width: Math.min(DOCX_MAX_IMAGE_WIDTH, 480),
+  height: 320,
+};
+
+const fallbackImageAltRun = (node: MarkdownNode) =>
+  createBodyTextRun(node.alt?.trim() ? `[图片: ${node.alt.trim()}]` : '[图片]');
+
+const hasDocxImageExportContext = (
+  context: DocxImageExportContext | null | undefined
+): context is DocxImageExportContext =>
+  Boolean(context?.projectPath && context?.markdownFilePath && context?.backendBaseUrl);
+
+const blobToUint8Array = async (blob: Blob) => {
+  if (typeof blob.arrayBuffer === 'function') {
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  return new Uint8Array(await new Response(blob).arrayBuffer());
+};
+
+const resolveDocxImageType = (blobType: string, imageUrl?: string): 'png' | 'jpg' | 'gif' => {
+  const normalized = blobType.toLowerCase();
+  if (normalized === 'image/png') {
+    return 'png';
+  }
+  if (normalized === 'image/jpeg' || normalized === 'image/jpg') {
+    return 'jpg';
+  }
+  if (normalized === 'image/gif') {
+    return 'gif';
+  }
+
+  const lowerUrl = imageUrl?.toLowerCase() ?? '';
+  if (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg')) {
+    return 'jpg';
+  }
+  if (lowerUrl.endsWith('.gif')) {
+    return 'gif';
+  }
+  return 'png';
+};
+
+const resolveImageDimensions = async (blob: Blob): Promise<{ width: number; height: number } | null> => {
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(blob);
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+    };
+  }
+
+  if (
+    typeof document !== 'undefined' &&
+    typeof URL !== 'undefined' &&
+    typeof URL.createObjectURL === 'function'
+  ) {
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error('Failed to load image dimensions'));
+        element.src = objectUrl;
+      });
+      return {
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height,
+      };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  return null;
+};
+
+const resolveDocxImageTransformation = async (blob: Blob) => {
+  const dimensions = await resolveImageDimensions(blob);
+  if (!dimensions || !dimensions.width || !dimensions.height) {
+    return defaultDocxImageSize;
+  }
+
+  if (dimensions.width <= DOCX_MAX_IMAGE_WIDTH) {
+    return dimensions;
+  }
+
+  const width = DOCX_MAX_IMAGE_WIDTH;
+  const height = Math.max(1, Math.round((dimensions.height / dimensions.width) * width));
+  return { width, height };
+};
+
+const loadMarkdownImageRun = async (
+  node: MarkdownNode,
+  context: DocxImageExportContext | null | undefined
+): Promise<ImageRun | TextRun> => {
+  if (!node.url || !hasDocxImageExportContext(context)) {
+    return fallbackImageAltRun(node);
+  }
+
+  const imageUrl = buildMarkdownPreviewImageUrl({
+    backendBaseUrl: context.backendBaseUrl,
+    projectPath: context.projectPath,
+    markdownFilePath: context.markdownFilePath,
+    imageSrc: node.url,
+  });
+  if (!imageUrl) {
+    return fallbackImageAltRun(node);
+  }
+
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    return fallbackImageAltRun(node);
+  }
+
+  const blob = await response.blob();
+  return new ImageRun({
+    type: resolveDocxImageType(blob.type, node.url),
+    data: await blobToUint8Array(blob),
+    transformation: await resolveDocxImageTransformation(blob),
+    altText: node.alt?.trim()
+      ? {
+          name: node.alt.trim(),
+          title: node.alt.trim(),
+          description: node.alt.trim(),
+        }
+      : undefined,
+  });
+};
+
+const inlineRunsFromNode = async (
   node: MarkdownNode | null | undefined
-): Array<TextRun | ExternalHyperlink> => {
+,
+  imageContext: DocxImageExportContext | null = null
+): Promise<DocxInlineChild[]> => {
   if (!node) {
     return [];
   }
@@ -196,13 +340,19 @@ const inlineRunsFromNode = (
       ];
     case 'break':
       return [new TextRun({ break: 1 })];
+    case 'image':
+      return [await loadMarkdownImageRun(node, imageContext)];
     default:
-      return (node.children ?? []).flatMap((child) => inlineRunsFromNode(child));
+      return (
+        await Promise.all(
+          (node.children ?? []).map((child) => inlineRunsFromNode(child, imageContext))
+        )
+      ).flat();
   }
 };
 
 const createParagraph = (
-  children: Array<TextRun | ExternalHyperlink>,
+  children: DocxInlineChild[],
   options: Record<string, unknown> = {}
 ) =>
   new Paragraph({
@@ -215,14 +365,18 @@ const createParagraph = (
     children,
   });
 
-const paragraphFromInlineNode = (node: MarkdownNode, options: Record<string, unknown> = {}) =>
-  createParagraph(inlineRunsFromNode(node), options);
+const paragraphFromInlineNode = async (
+  node: MarkdownNode,
+  imageContext: DocxImageExportContext | null = null,
+  options: Record<string, unknown> = {}
+) => createParagraph(await inlineRunsFromNode(node, imageContext), options);
 
 const getListItemContentBlocks = async (
   item: MarkdownNode,
   ordered: boolean,
   index: number,
-  depth: number
+  depth: number,
+  imageContext: DocxImageExportContext | null = null
 ): Promise<Array<Paragraph | Table>> => {
   const itemChildren = item.children ?? [];
   const firstBlock = itemChildren[0];
@@ -230,7 +384,7 @@ const getListItemContentBlocks = async (
   const marker = ordered ? `${index + 1}. ` : '• ';
   const markerIndent = Math.max(1, depth + 1) * 360;
 
-  const firstParagraph = (() => {
+  const firstParagraph = await (async () => {
     if (!firstBlock) {
       return paragraphFromText(marker, {
         indent: {
@@ -242,7 +396,7 @@ const getListItemContentBlocks = async (
 
     if (firstBlock.type === 'paragraph') {
       return createParagraph(
-        [createBodyTextRun(marker, { bold: true }), ...inlineRunsFromNode(firstBlock)],
+        [createBodyTextRun(marker, { bold: true }), ...(await inlineRunsFromNode(firstBlock, imageContext))],
         {
           indent: {
             left: markerIndent,
@@ -269,7 +423,8 @@ const getListItemContentBlocks = async (
     });
   })();
 
-  const trailingBlocks = restBlocks.length > 0 ? await blockNodesToDocx(restBlocks, depth + 1) : [];
+  const trailingBlocks =
+    restBlocks.length > 0 ? await blockNodesToDocx(restBlocks, depth + 1, imageContext) : [];
 
   return [firstParagraph, ...trailingBlocks];
 };
@@ -294,7 +449,7 @@ const tableCellParagraph = (cell: MarkdownNode, rowIndex: number) =>
               bold: true,
             }),
           ]
-        : inlineRunsFromNode(cell),
+        : [createBodyTextRun(mdastToString(cell))],
   });
 
 const DOCX_TABLE_TOTAL_WIDTH = 9000;
@@ -729,7 +884,8 @@ const renderMermaidImageRun = async (chart: string): Promise<Paragraph> => {
 
 const blockNodesToDocx = async (
   nodes: MarkdownNode[],
-  orderedListDepth = 0
+  orderedListDepth = 0,
+  imageContext: DocxImageExportContext | null = null
 ): Promise<Array<Paragraph | Table>> => {
   const blocks = await Promise.all(
     nodes.map(async (node) => {
@@ -750,12 +906,18 @@ const blockNodesToDocx = async (
             }),
           ];
         case 'paragraph':
-          return [paragraphFromInlineNode(node)];
+          return [await paragraphFromInlineNode(node, imageContext)];
         case 'list':
           return (
             await Promise.all(
               (node.children ?? []).map((item, index) =>
-                getListItemContentBlocks(item, Boolean(node.ordered), index, orderedListDepth)
+                getListItemContentBlocks(
+                  item,
+                  Boolean(node.ordered),
+                  index,
+                  orderedListDepth,
+                  imageContext
+                )
               )
             )
           ).flat();
@@ -807,7 +969,7 @@ const blockNodesToDocx = async (
             return text ? [paragraphFromText(text)] : [];
           }
 
-          return blockNodesToDocx(node.children, orderedListDepth);
+          return blockNodesToDocx(node.children, orderedListDepth, imageContext);
       }
     })
   );
@@ -827,9 +989,20 @@ export const buildMarkdownDownloadPayload = ({
 export const buildDocxDownloadPayload = async ({
   content,
   fileName,
+  projectPath,
+  markdownFilePath,
+  backendBaseUrl,
 }: DownloadExportParams): Promise<DownloadPayload> => {
   const tree = parseMarkdown(content);
-  const children = await blockNodesToDocx(tree.children ?? []);
+  const imageContext =
+    projectPath && markdownFilePath && backendBaseUrl
+      ? {
+          projectPath,
+          markdownFilePath,
+          backendBaseUrl,
+        }
+      : null;
+  const children = await blockNodesToDocx(tree.children ?? [], 0, imageContext);
   const document = new Document({
     styles: {
       default: {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  collectViewportSelectionRects,
   getActiveConversationSelection,
+  shouldRenderSelectionOverlayFallback,
   shouldAutoScrollToLatest,
 } from './chat-selection-guard';
 
@@ -78,6 +80,42 @@ describe('shouldAutoScrollToLatest', () => {
         hasContentBelow: false,
         hasActiveSelection: false,
       })
+    ).toBe(true);
+  });
+});
+
+describe('collectViewportSelectionRects', () => {
+  it('collects visible client rects from the range', () => {
+    const range = {
+      getClientRects: () =>
+        [
+          { left: 10, top: 20, width: 80, height: 24 },
+          { left: 12, top: 48, width: 64, height: 24 },
+          { left: 0, top: 0, width: 0, height: 0 },
+        ] as DOMRectList,
+    } as Range;
+
+    expect(collectViewportSelectionRects(range)).toEqual([
+      { left: 10, top: 20, width: 80, height: 24 },
+      { left: 12, top: 48, width: 64, height: 24 },
+    ]);
+  });
+});
+
+describe('shouldRenderSelectionOverlayFallback', () => {
+  it('returns false when CSS highlights are available', () => {
+    expect(
+      shouldRenderSelectionOverlayFallback(
+        { set: () => undefined, delete: () => undefined },
+        function Highlight() {}
+      )
+    ).toBe(false);
+  });
+
+  it('returns true when CSS highlights are unavailable', () => {
+    expect(shouldRenderSelectionOverlayFallback(null, function Highlight() {})).toBe(true);
+    expect(
+      shouldRenderSelectionOverlayFallback({ set: () => undefined, delete: () => undefined }, null)
     ).toBe(true);
   });
 });

@@ -601,9 +601,9 @@ function ChatMarkdownPre({ children }: { children?: ReactNode }) {
     }>(firstChild)
   ) {
     return (
-      <pre className="my-3 max-w-full whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 selection:bg-sky-300 selection:text-slate-950 [overflow-wrap:anywhere]">
+      <pre className="my-3 max-w-full select-text whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 [overflow-wrap:anywhere]">
         <code
-          className={`${firstChild.props.className || ''} whitespace-pre-wrap break-words selection:bg-sky-300 selection:text-slate-950 [overflow-wrap:anywhere]`}
+          className={`${firstChild.props.className || ''} whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}
         >
           {firstChild.props.children}
         </code>
@@ -612,7 +612,7 @@ function ChatMarkdownPre({ children }: { children?: ReactNode }) {
   }
 
   return (
-    <pre className="my-3 max-w-full whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 selection:bg-sky-300 selection:text-slate-950 [overflow-wrap:anywhere]">
+    <pre className="my-3 max-w-full select-text whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 [overflow-wrap:anywhere]">
       {children}
     </pre>
   );
@@ -622,88 +622,103 @@ function ChatMarkdownCode({ className, children }: { className?: string; childre
   const raw = String(children ?? '');
   if (className || /[\r\n]/.test(raw)) {
     return (
-      <code
-        className={`${className || ''} whitespace-pre-wrap break-words selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]`}
-      >
+      <code className={`${className || ''} whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}>
         {children}
       </code>
     );
   }
 
   return (
-    <code className="break-words rounded bg-muted px-1 py-0.5 text-[0.92em] selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]">
+    <code className="break-words rounded bg-muted px-1 py-0.5 text-[0.92em] [overflow-wrap:anywhere]">
       {children}
     </code>
   );
 }
 
-function AssistantMarkdown({ content }: { content: string }) {
+const AssistantMarkdown = memo(function AssistantMarkdown({ content }: { content: string }) {
   const remarkPlugins = useMemo(() => [remarkGfm], []);
+  const markdownComponents = useMemo(
+    () => ({
+      pre: ({ children }: { children?: ReactNode }) => <ChatMarkdownPre>{children}</ChatMarkdownPre>,
+      code: ({ className, children }: { className?: string; children?: ReactNode }) => (
+        <ChatMarkdownCode className={className}>{children}</ChatMarkdownCode>
+      ),
+      h1: ({ children }: { children?: ReactNode }) => (
+        <h1 className="mb-2 mt-3 text-lg font-semibold">{children}</h1>
+      ),
+      h2: ({ children }: { children?: ReactNode }) => (
+        <h2 className="mb-2 mt-3 text-base font-semibold">{children}</h2>
+      ),
+      h3: ({ children }: { children?: ReactNode }) => (
+        <h3 className="mb-1.5 mt-3 text-sm font-semibold">{children}</h3>
+      ),
+      p: ({ children }: { children?: ReactNode }) => (
+        <div className="my-2 select-text whitespace-pre-wrap">{children}</div>
+      ),
+      ul: ({ children }: { children?: ReactNode }) => (
+        <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>
+      ),
+      ol: ({ children }: { children?: ReactNode }) => (
+        <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>
+      ),
+      li: ({ children }: { children?: ReactNode }) => <li className="pl-0.5">{children}</li>,
+      blockquote: ({ children }: { children?: ReactNode }) => (
+        <blockquote className="my-2 select-text border-l-2 border-border pl-3 text-muted-foreground">
+          {children}
+        </blockquote>
+      ),
+      a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-primary underline underline-offset-2"
+        >
+          {children}
+        </a>
+      ),
+      table: ({ children }: { children?: ReactNode }) => (
+        <div className="my-3 max-w-full overflow-x-auto rounded-md border">
+          <table className="w-full table-fixed select-text border-collapse text-xs">{children}</table>
+        </div>
+      ),
+      thead: ({ children }: { children?: ReactNode }) => <thead className="bg-muted/60">{children}</thead>,
+      th: ({ children }: { children?: ReactNode }) => (
+        <th className="select-text break-words border-b border-r px-2 py-1.5 text-left font-semibold last:border-r-0 [overflow-wrap:anywhere]">
+          {children}
+        </th>
+      ),
+      td: ({ children }: { children?: ReactNode }) => (
+        <td className="select-text break-words border-b border-r px-2 py-1.5 align-top last:border-r-0 [overflow-wrap:anywhere]">
+          {children}
+        </td>
+      ),
+      hr: () => <hr className="my-4 border-border" />,
+    }),
+    []
+  );
 
   return (
-    <div className="agent-chat-markdown chat-selection-surface min-w-0 break-words text-sm leading-6 text-foreground selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]">
+    <div className="agent-chat-markdown min-w-0 break-words text-sm leading-6 text-foreground [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         urlTransform={preserveMarkdownHref}
-        components={{
-          pre: ({ children }) => <ChatMarkdownPre>{children}</ChatMarkdownPre>,
-          code: ({ className, children }) => (
-            <ChatMarkdownCode className={className}>{children}</ChatMarkdownCode>
-          ),
-          h1: ({ children }) => <h1 className="mb-2 mt-3 text-lg font-semibold">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-2 mt-3 text-base font-semibold">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-sm font-semibold">{children}</h3>,
-          p: ({ children }) => (
-            <p className="my-2 first:mt-0 last:mb-0 selection:bg-sky-200 selection:text-slate-950">
-              {children}
-            </p>
-          ),
-          ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
-          ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
-          li: ({ children }) => <li className="pl-0.5">{children}</li>,
-          blockquote: ({ children }) => (
-            <blockquote className="my-2 border-l-2 border-border pl-3 text-muted-foreground">
-              {children}
-            </blockquote>
-          ),
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-primary underline underline-offset-2"
-            >
-              {children}
-            </a>
-          ),
-          table: ({ children }) => (
-            <div className="my-3 max-w-full overflow-x-auto rounded-md border selection:bg-sky-200 selection:text-slate-950">
-              <table className="w-full table-fixed border-collapse text-xs">{children}</table>
-            </div>
-          ),
-          thead: ({ children }) => <thead className="bg-muted/60">{children}</thead>,
-          th: ({ children }) => (
-            <th className="break-words border-b border-r px-2 py-1.5 text-left font-semibold last:border-r-0 [overflow-wrap:anywhere]">
-              {children}
-            </th>
-          ),
-          td: ({ children }) => (
-            <td className="break-words border-b border-r px-2 py-1.5 align-top last:border-r-0 [overflow-wrap:anywhere]">
-              {children}
-            </td>
-          ),
-          hr: () => <hr className="my-4 border-border" />,
-        }}
+        components={markdownComponents}
       >
         {content}
       </ReactMarkdown>
     </div>
   );
-}
+});
 
-function TextBlock({ message }: { message: DisplayMessage }) {
+const TextBlock = memo(function TextBlock({ message }: { message: DisplayMessage }) {
   return <AssistantMarkdown content={message.text || ''} />;
-}
+},
+(previousProps, nextProps) =>
+  previousProps.message.id === nextProps.message.id &&
+  previousProps.message.text === nextProps.message.text &&
+  previousProps.message.timestamp === nextProps.message.timestamp
+);
 
 function QuickActionFeedbackBanner({
   feedback,
@@ -2399,7 +2414,6 @@ export function Chat() {
   const [isSavingOfficialApiKey, setIsSavingOfficialApiKey] = useState(false);
   const [officialApiKeyError, setOfficialApiKeyError] = useState<string | null>(null);
   const bootstrapGate = useBootstrapGateState();
-  const selectionOverlayRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const selectionQuoteTimerRef = useRef<number | null>(null);
   const officialApiKeyInputRef = useRef<HTMLInputElement | null>(null);
@@ -2430,6 +2444,10 @@ export function Chat() {
   >(null);
   const isResolvingTakeoverConfirmationRef = useRef(false);
   const handledTakeoverConfirmationRequestIdsRef = useRef<Set<number>>(new Set());
+  const effectivePageEditStateRef = useRef<PageEditState>(null);
+  const pageEditTabIdRef = useRef<number | null>(null);
+  const quickPageEditExecutingTargetRef = useRef<'active' | 'inactive' | null>(null);
+  const quickPageEditQueuedTargetRef = useRef<'active' | 'inactive' | null>(null);
   const takeoverUiDebugSeqRef = useRef(0);
   const logTakeoverUi = useCallback((event: string, payload?: Record<string, unknown>) => {
     const entry = {
@@ -2562,6 +2580,12 @@ export function Chat() {
   useEffect(() => {
     activeProjectPathRef.current = activeProjectPath;
   }, [activeProjectPath]);
+  useEffect(() => {
+    effectivePageEditStateRef.current = effectivePageEditState;
+  }, [effectivePageEditState]);
+  useEffect(() => {
+    pageEditTabIdRef.current = pageEditTabId;
+  }, [pageEditTabId]);
   useEffect(() => {
     selectedTabIdsRef.current = selectedTabIds;
   }, [selectedTabIds]);
@@ -2703,9 +2727,9 @@ export function Chat() {
     modelAccessViewState.overallStatus === 'unavailable';
   const isQuickPageEditDisabled =
     isWorkspaceSelectionRequired ||
-    isQuickPageEditPending ||
-    isBootstrapGateBlocking ||
-    (!isPageEditActive(effectivePageEditState) && isModelInteractionDisabled);
+    isResolvingPageEditTab ||
+    pageEditStateQuery.isLoading ||
+    isBootstrapGateBlocking;
   const shouldShowOfficialApiKeyForm =
     bootstrapGate.status === 'blocked' ||
     (bootstrapGate.status === 'ready' &&
@@ -3212,9 +3236,8 @@ export function Chat() {
   }, []);
   const updateSelectionQuote = useCallback(() => {
     const container = scrollRef.current;
-    const overlay = selectionOverlayRef.current;
     const selection = window.getSelection();
-    if (!container || !overlay || !selection) {
+    if (!container || !selection) {
       hideSelectionQuote();
       return;
     }
@@ -3226,25 +3249,25 @@ export function Chat() {
     }
 
     const range = selection.getRangeAt(0);
-    const overlayRect = overlay.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
     const fallbackRect = {
-      top: overlayRect.top,
-      left: overlayRect.left,
-      right: overlayRect.left,
+      top: 48,
+      left: 48,
+      right: 48,
     };
     const rangeRect =
       typeof range.getBoundingClientRect === 'function'
         ? range.getBoundingClientRect()
         : fallbackRect;
     const estimatedButtonWidth = 120;
-    const viewportTop = rangeRect.top - 40;
-    const viewportLeft = (rangeRect.left + rangeRect.right) / 2;
+    const overlayTop = rangeRect.top - 40;
+    const overlayLeft = (rangeRect.left + rangeRect.right) / 2;
     const nextSelectionQuote = {
       text: selectedText,
-      top: Math.max(viewportTop, 8),
+      top: Math.max(overlayTop, 8),
       left: Math.min(
-        Math.max(viewportLeft, 8),
-        Math.max(window.innerWidth - estimatedButtonWidth, 8)
+        Math.max(overlayLeft, 8),
+        Math.max(viewportWidth - estimatedButtonWidth, 8)
       ),
     };
 
@@ -4390,65 +4413,96 @@ export function Chat() {
     }
   };
 
-  const handleQuickTogglePageEdit = async () => {
-    setQuickActionFeedback(null);
-
-    if (isPageEditActive(effectivePageEditState)) {
-      const tabId = effectivePageEditState?.tabId ?? pageEditTabId;
-      if (tabId == null) {
-        setQuickActionFeedback({
-          kind: 'error',
-          message: '未找到当前页面',
-        });
-        return;
-      }
-
-      const previousState = effectivePageEditState;
+  const runQuickPageEditTransition = useCallback(
+    async (target: 'active' | 'inactive') => {
+      quickPageEditExecutingTargetRef.current = target;
+      quickPageEditQueuedTargetRef.current = null;
+      setQuickActionFeedback(null);
       setIsQuickPageEditActionPending(true);
-      if (previousState) {
-        setPageEditStateOverride({
-          ...previousState,
-          status: 'deactivating',
-        });
-      }
+
+      let actualActiveAfterAttempt = isPageEditActive(effectivePageEditStateRef.current);
 
       try {
-        await deactivatePageEditMutation.mutateAsync({ tabId });
-        setPageEditStateOverride(null);
-        setQuickActionFeedback({
-          kind: 'success',
-          message: getPageEditSuccessMessage(null),
-        });
-        setIsQuickPageEditActionPending(false);
-        void pageEditStateQuery.refetch();
+        if (target === 'inactive') {
+          const currentState = effectivePageEditStateRef.current;
+          const tabId = currentState?.tabId ?? pageEditTabIdRef.current;
+          if (tabId == null) {
+            setQuickActionFeedback({
+              kind: 'error',
+              message: '未找到当前页面',
+            });
+            return;
+          }
+
+          if (currentState) {
+            setPageEditStateOverride({
+              ...currentState,
+              status: 'deactivating',
+            });
+          }
+
+          await deactivatePageEditMutation.mutateAsync({ tabId });
+          actualActiveAfterAttempt = false;
+          setPageEditStateOverride(null);
+          setQuickActionFeedback({
+            kind: 'success',
+            message: getPageEditSuccessMessage(null),
+          });
+        } else {
+          const nextState = await activatePageEditMutation.mutateAsync();
+          actualActiveAfterAttempt = true;
+          setPageEditStateOverride(nextState as PageEditState);
+          setQuickActionFeedback({
+            kind: 'success',
+            message: getPageEditActivationSuccessMessage(nextState as PageEditState),
+          });
+        }
       } catch (error) {
-        setPageEditStateOverride(previousState);
+        if (target === 'inactive') {
+          actualActiveAfterAttempt = true;
+        } else {
+          actualActiveAfterAttempt = false;
+        }
         setQuickActionFeedback({
           kind: 'error',
-          message: error instanceof Error ? error.message : '退出编辑失败',
+          message:
+            error instanceof Error
+              ? error.message
+              : target === 'inactive'
+                ? '退出编辑失败'
+                : '进入编辑失败',
         });
+      } finally {
+        quickPageEditExecutingTargetRef.current = null;
         setIsQuickPageEditActionPending(false);
+        void pageEditStateQuery.refetch();
       }
+
+      const queuedTarget = quickPageEditQueuedTargetRef.current;
+      quickPageEditQueuedTargetRef.current = null;
+      if (queuedTarget && (queuedTarget === 'active') !== actualActiveAfterAttempt) {
+        void runQuickPageEditTransition(queuedTarget);
+      }
+    },
+    [activatePageEditMutation, deactivatePageEditMutation, pageEditStateQuery]
+  );
+
+  const handleQuickTogglePageEdit = async () => {
+    setQuickActionFeedback(null);
+    const pendingTarget =
+      quickPageEditQueuedTargetRef.current ?? quickPageEditExecutingTargetRef.current;
+    const currentlyActive =
+      pendingTarget != null
+        ? pendingTarget === 'active'
+        : isPageEditActive(effectivePageEditStateRef.current);
+    const nextTarget = currentlyActive ? 'inactive' : 'active';
+
+    if (quickPageEditExecutingTargetRef.current) {
+      quickPageEditQueuedTargetRef.current = nextTarget;
       return;
     }
 
-    setIsQuickPageEditActionPending(true);
-    try {
-      const nextState = await activatePageEditMutation.mutateAsync();
-      setPageEditStateOverride(nextState as PageEditState);
-      setQuickActionFeedback({
-        kind: 'success',
-        message: getPageEditActivationSuccessMessage(nextState as PageEditState),
-      });
-      setIsQuickPageEditActionPending(false);
-      void pageEditStateQuery.refetch();
-    } catch (error) {
-      setQuickActionFeedback({
-        kind: 'error',
-        message: error instanceof Error ? error.message : '进入编辑失败',
-      });
-      setIsQuickPageEditActionPending(false);
-    }
+    void runQuickPageEditTransition(nextTarget);
   };
 
   return (
@@ -4693,7 +4747,7 @@ export function Chat() {
         </div>
       ) : null}
 
-      <div ref={selectionOverlayRef} className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
           className="claude-mvp-conversation h-full overflow-y-auto px-3 py-3"

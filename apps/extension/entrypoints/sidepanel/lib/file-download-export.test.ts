@@ -116,7 +116,7 @@ describe('file download export', () => {
       projectPath: '/tmp/project',
       markdownFilePath: 'docs/PRD.md',
       backendBaseUrl: 'http://127.0.0.1:12306',
-    } as never);
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(payload.fileName).toBe('PRD.docx');
@@ -134,5 +134,49 @@ describe('file download export', () => {
       };
     };
     expect(document.options.sections[0].children[0].options.children[0].__type).toBe('ImageRun');
+  });
+
+  it('preserves the original image aspect ratio in exported docx images', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(new Blob([Uint8Array.from([137, 80, 78, 71])], { type: 'image/png' }), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => ({
+        width: 375,
+        height: 812,
+      }))
+    );
+
+    const { buildDocxDownloadPayload } = await import('./file-download-export');
+
+    await buildDocxDownloadPayload({
+      content: '![手机截图](assets/mobile.png)',
+      fileName: 'PRD.md',
+      projectPath: '/tmp/project',
+      markdownFilePath: 'docs/PRD.md',
+      backendBaseUrl: 'http://127.0.0.1:12306',
+    });
+
+    const document = toBlobMock.mock.calls[0][0] as {
+      options: {
+        sections: Array<{
+          children: Array<{
+            options: {
+              children: Array<{ __type: string; options: { transformation: { width: number; height: number } } }>;
+            };
+          }>;
+        }>;
+      };
+    };
+    expect(
+      document.options.sections[0].children[0].options.children[0].options.transformation
+    ).toEqual({
+      width: 375,
+      height: 812,
+    });
   });
 });

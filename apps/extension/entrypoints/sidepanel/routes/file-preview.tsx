@@ -17,6 +17,7 @@ import {
   EyeIcon,
   FileTextIcon,
   ImagePlusIcon,
+  Maximize2Icon,
   MessageSquarePlusIcon,
   PencilIcon,
   RefreshCwIcon,
@@ -46,6 +47,13 @@ import remarkMath from 'remark-math';
 import type { PluggableList } from 'unified';
 import 'katex/dist/katex.min.css';
 import { Button } from '@/entrypoints/sidepanel/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/entrypoints/sidepanel/components/ui/dialog';
 import { createAgentV2Client } from '../lib/agent-v2/client';
 import {
   isLiveWritePreviewMessage,
@@ -70,10 +78,10 @@ import {
   buildAnnotationDraftFromPendingSelection,
   buildPendingAnnotationSelection,
   type PendingAnnotationSelection,
+  type SelectionHighlightRect,
   type TextRangeAnchor,
 } from './file-preview.annotation-action';
 import { type AnnotationHitTarget, findAnnotationIdAtPoint } from './file-preview.annotation-hit';
-import { syncPendingAnnotationHighlight } from './file-preview.pending-highlight';
 import {
   countActiveAnnotations,
   type FileAnnotationStatus,
@@ -99,6 +107,7 @@ import {
   buildMarkdownInsertTargetFromNode,
   resolveMarkdownInsertOffset,
 } from './file-preview.markdown-insert-position';
+import { isMarkdownImageInsertModifierActive } from './file-preview.image-insert-trigger';
 
 type FileAnnotation = {
   id: string;
@@ -124,6 +133,7 @@ type AnnotationDraft = {
   selectedText: string;
   range: Range | null;
   anchor: TextRangeAnchor | null;
+  highlightRects: SelectionHighlightRect[];
   note: string;
   x: number;
   y: number;
@@ -394,29 +404,51 @@ export function clearWindowSelection() {
 
 export function collectHighlightRects(root: HTMLElement, ranges: Range[]): HighlightRect[] {
   const rootRect = root.getBoundingClientRect();
-  return ranges.flatMap((range) =>
-    Array.from(range.getClientRects())
+  return ranges.flatMap((range) => {
+    const clientRects =
+      typeof range.getClientRects === 'function'
+        ? Array.from(range.getClientRects())
+        : [];
+    const resolvedRects =
+      clientRects.length > 0
+        ? clientRects
+        : typeof range.getBoundingClientRect === 'function'
+          ? [range.getBoundingClientRect()]
+          : [];
+
+    return resolvedRects
       .filter((rect) => rect.width > 0 && rect.height > 0)
       .map((rect) => ({
         left: rect.left - rootRect.left,
         top: rect.top - rootRect.top,
         width: rect.width,
         height: rect.height,
-      }))
-  );
+      }));
+  });
 }
 
 export function collectViewportHighlightRects(ranges: Range[]): HighlightRect[] {
-  return ranges.flatMap((range) =>
-    Array.from(range.getClientRects())
+  return ranges.flatMap((range) => {
+    const clientRects =
+      typeof range.getClientRects === 'function'
+        ? Array.from(range.getClientRects())
+        : [];
+    const resolvedRects =
+      clientRects.length > 0
+        ? clientRects
+        : typeof range.getBoundingClientRect === 'function'
+          ? [range.getBoundingClientRect()]
+          : [];
+
+    return resolvedRects
       .filter((rect) => rect.width > 0 && rect.height > 0)
       .map((rect) => ({
         left: rect.left,
         top: rect.top,
         width: rect.width,
         height: rect.height,
-      }))
-  );
+      }));
+  });
 }
 
 export function shouldRenderHighlightOverlayFallback(
@@ -1143,13 +1175,18 @@ function normalizeMermaidSvgElement(svgElement: SVGSVGElement | null) {
   return { contentWidth, contentHeight };
 }
 
-function MermaidBlock({ chart }: { chart: string }) {
-  const [svg, setSvg] = useState('');
-  const [error, setError] = useState<string | null>(null);
+function MermaidViewportSurface({
+  svg,
+  onFullscreenRequest,
+  isFullscreen = false,
+}: {
+  svg: string;
+  onFullscreenRequest?: () => void;
+  isFullscreen?: boolean;
+}) {
   const [viewport, setViewport] = useState<MermaidViewport>({ scale: 1, x: 0, y: 0 });
-  const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const renderId = `webmcp-mermaid-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -1158,20 +1195,6 @@ function MermaidBlock({ chart }: { chart: string }) {
     originX: number;
     originY: number;
   } | null>(null);
-
-  useEffect(() => {
-    logMermaidDebug('mount', {
-      renderId,
-      chartLength: chart.length,
-      cached: mermaidSvgCache.has(chart),
-    });
-    return () => {
-      logMermaidDebug('unmount', {
-        renderId,
-        chartLength: chart.length,
-      });
-    };
-  }, [chart, renderId]);
 
   const getDiagramMeasurement = useCallback((): MermaidMeasurement | null => {
     const container = containerRef.current;
@@ -1204,10 +1227,10 @@ function MermaidBlock({ chart }: { chart: string }) {
         containerHeight: measurement.containerHeight,
         contentWidth: measurement.contentWidth,
         contentHeight: measurement.contentHeight,
-        padding: 24,
+        padding: isFullscreen ? 8 : 24,
       })
     );
-  }, [getDiagramMeasurement]);
+  }, [getDiagramMeasurement, isFullscreen]);
 
   const handleFitWidth = () => {
     const measurement = getDiagramMeasurement();
@@ -1219,79 +1242,13 @@ function MermaidBlock({ chart }: { chart: string }) {
       computeFitWidthTopMermaidViewport({
         containerWidth: measurement.containerWidth,
         contentWidth: measurement.contentWidth,
-        padding: 24,
+        padding: isFullscreen ? 8 : 24,
       })
     );
   };
 
   useEffect(() => {
-    let cancelled = false;
-
-    const render = async () => {
-      try {
-        const cachedSvg = mermaidSvgCache.get(chart);
-        if (cachedSvg) {
-          logMermaidDebug('cache-hit', {
-            renderId,
-            chartLength: chart.length,
-          });
-          if (!cancelled) {
-            setSvg(cachedSvg);
-            setError(null);
-            setContentSize(null);
-          }
-          return;
-        }
-
-        logMermaidDebug('render-start', {
-          renderId,
-          chartLength: chart.length,
-        });
-        const mermaidModule = await import('mermaid');
-        const mermaid = mermaidModule.default;
-        if (!mermaidInitialized) {
-          mermaid.initialize({
-            startOnLoad: false,
-            securityLevel: 'loose',
-            theme: 'default',
-            htmlLabels: false,
-          });
-          mermaidInitialized = true;
-        }
-        const result = await mermaid.render(renderId, chart);
-        rememberMermaidSvg(chart, result.svg);
-        if (!cancelled) {
-          setSvg(result.svg);
-          setError(null);
-          setContentSize(null);
-        }
-        logMermaidDebug('render-done', {
-          renderId,
-          chartLength: chart.length,
-        });
-      } catch (renderError) {
-        logMermaidDebug('render-error', {
-          renderId,
-          chartLength: chart.length,
-          error: renderError instanceof Error ? renderError.message : String(renderError),
-        });
-        if (!cancelled) {
-          setSvg('');
-          setError(renderError instanceof Error ? renderError.message : String(renderError));
-          setContentSize(null);
-        }
-      }
-    };
-
-    void render();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [chart, renderId]);
-
-  useEffect(() => {
-    if (!svg || error) {
+    if (!svg) {
       return;
     }
 
@@ -1302,7 +1259,7 @@ function MermaidBlock({ chart }: { chart: string }) {
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener('resize', handleResize);
     };
-  }, [error, resetViewport, svg]);
+  }, [resetViewport, svg]);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!svg) {
@@ -1365,19 +1322,41 @@ function MermaidBlock({ chart }: { chart: string }) {
     );
   };
 
-  if (error) {
-    return (
-      <pre className="my-4 overflow-auto rounded-md border border-destructive/30 bg-destructive/8 p-4 text-xs text-destructive">
-        {error}
-      </pre>
-    );
-  }
-
   return (
-    <div className="my-4 rounded-lg border bg-slate-950 p-3 text-slate-100">
-      <div className="mb-2 flex items-center justify-between gap-2 text-xs text-slate-300">
-        <span>拖拽平移，按钮缩放</span>
-        <div className="flex items-center gap-1">
+    <div
+      className={
+        isFullscreen
+          ? 'flex h-full min-h-0 flex-col bg-slate-950 text-slate-100'
+          : 'my-4 rounded-lg border bg-slate-950 p-3 text-slate-100'
+      }
+    >
+      <div
+        className={
+          isFullscreen
+            ? 'pointer-events-none absolute left-3 right-3 top-3 z-10 flex items-start justify-end gap-2'
+            : 'mb-2 flex items-center justify-between gap-2 text-xs text-slate-300'
+        }
+      >
+        {isFullscreen ? null : <span>拖拽平移，按钮缩放</span>}
+        <div
+          className={
+            isFullscreen
+              ? 'pointer-events-auto flex items-center gap-1 rounded-md border border-slate-700/80 bg-slate-950/88 p-1 text-xs text-slate-200 shadow-lg backdrop-blur'
+              : 'flex items-center gap-1'
+          }
+        >
+          {onFullscreenRequest ? (
+            <button
+              type="button"
+              className="rounded border border-slate-700 px-2 py-1 hover:bg-slate-800"
+              onClick={onFullscreenRequest}
+            >
+              <span className="inline-flex items-center gap-1">
+                <Maximize2Icon className="h-3.5 w-3.5" />
+                <span>{isFullscreen ? '退出全屏' : '全屏'}</span>
+              </span>
+            </button>
+          ) : null}
           <button
             type="button"
             className="rounded border border-slate-700 px-2 py-1 hover:bg-slate-800"
@@ -1419,7 +1398,7 @@ function MermaidBlock({ chart }: { chart: string }) {
         ref={containerRef}
         role="application"
         aria-label="Mermaid 流程图画布"
-        className={`relative h-[70vh] min-h-[420px] overflow-hidden rounded bg-slate-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`relative overflow-hidden bg-slate-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${isFullscreen ? 'h-full min-h-0 rounded-none' : 'h-[70vh] min-h-[420px] rounded'}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endDragging}
@@ -1444,6 +1423,117 @@ function MermaidBlock({ chart }: { chart: string }) {
         )}
       </div>
     </div>
+  );
+}
+
+export function MermaidBlock({ chart }: { chart: string }) {
+  const [svg, setSvg] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  const renderId = `webmcp-mermaid-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+  useEffect(() => {
+    logMermaidDebug('mount', {
+      renderId,
+      chartLength: chart.length,
+      cached: mermaidSvgCache.has(chart),
+    });
+    return () => {
+      logMermaidDebug('unmount', {
+        renderId,
+        chartLength: chart.length,
+      });
+    };
+  }, [chart, renderId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const render = async () => {
+      try {
+        const cachedSvg = mermaidSvgCache.get(chart);
+        if (cachedSvg) {
+          logMermaidDebug('cache-hit', {
+            renderId,
+            chartLength: chart.length,
+          });
+          if (!cancelled) {
+            setSvg(cachedSvg);
+            setError(null);
+          }
+          return;
+        }
+
+        logMermaidDebug('render-start', {
+          renderId,
+          chartLength: chart.length,
+        });
+        const mermaidModule = await import('mermaid');
+        const mermaid = mermaidModule.default;
+        if (!mermaidInitialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'loose',
+            theme: 'default',
+            htmlLabels: false,
+          });
+          mermaidInitialized = true;
+        }
+        const result = await mermaid.render(renderId, chart);
+        rememberMermaidSvg(chart, result.svg);
+        if (!cancelled) {
+          setSvg(result.svg);
+          setError(null);
+        }
+        logMermaidDebug('render-done', {
+          renderId,
+          chartLength: chart.length,
+        });
+      } catch (renderError) {
+        logMermaidDebug('render-error', {
+          renderId,
+          chartLength: chart.length,
+          error: renderError instanceof Error ? renderError.message : String(renderError),
+        });
+        if (!cancelled) {
+          setSvg('');
+          setError(renderError instanceof Error ? renderError.message : String(renderError));
+        }
+      }
+    };
+
+    void render();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chart, renderId]);
+
+  if (error) {
+    return (
+      <pre className="my-4 overflow-auto rounded-md border border-destructive/30 bg-destructive/8 p-4 text-xs text-destructive">
+        {error}
+      </pre>
+    );
+  }
+
+  return (
+    <>
+      <MermaidViewportSurface svg={svg} onFullscreenRequest={() => setIsFullscreenOpen(true)} />
+      <Dialog open={isFullscreenOpen} onOpenChange={setIsFullscreenOpen}>
+        <DialogContent className="h-screen max-h-none w-screen max-w-none gap-0 rounded-none border-0 bg-slate-950 p-0 text-slate-100">
+          <DialogHeader className="flex flex-row items-center gap-3 border-b border-slate-800 px-4 py-2 pr-14 text-left">
+            <DialogTitle className="shrink-0 text-white">流程图全屏查看</DialogTitle>
+            <DialogDescription className="truncate text-sm text-slate-400">
+              可在全屏视图中拖拽平移、缩放和重置 Mermaid 流程图。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative min-h-0 flex-1">
+            <MermaidViewportSurface svg={svg} isFullscreen />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1611,14 +1701,14 @@ export function findActiveAnnotationById(
   };
 }
 
-const MarkdownPreview = memo(function MarkdownPreview({
+export const MarkdownPreview = memo(function MarkdownPreview({
   content,
   annotations,
   matchedAnnotationIds,
   projectPath,
   filePath,
   activeAnnotationPreviewRef,
-  pendingHighlightRange,
+  pendingHighlightRects = [],
   onPendingSelectionChange,
   onAnnotationPreviewClose,
   onAnnotationPreviewOpen,
@@ -1633,7 +1723,7 @@ const MarkdownPreview = memo(function MarkdownPreview({
   projectPath: string;
   filePath: string;
   activeAnnotationPreviewRef: { current: ActiveAnnotationPreview | null };
-  pendingHighlightRange: Range | null;
+  pendingHighlightRects: SelectionHighlightRect[];
   onPendingSelectionChange: (selection: PendingAnnotationSelection | null) => void;
   onAnnotationPreviewClose: () => void;
   onAnnotationPreviewOpen: (preview: ActiveAnnotationPreview) => void;
@@ -1645,10 +1735,8 @@ const MarkdownPreview = memo(function MarkdownPreview({
   const articleRef = useRef<HTMLElement | null>(null);
   const annotationTargetsRef = useRef<AnnotationHitTarget[]>([]);
   const annotationHighlightRangesRef = useRef<Range[]>([]);
-  const pendingHighlightRangeRef = useRef<Range | null>(null);
   const [annotationHighlightRects, setAnnotationHighlightRects] = useState<HighlightRect[]>([]);
-  const [pendingHighlightRects, setPendingHighlightRects] = useState<HighlightRect[]>([]);
-  const [isCtrlPressed, setIsCtrlPressed] = useState(false);
+  const [isAltPressed, setIsAltPressed] = useState(false);
   const [floatingImageInsertTarget, setFloatingImageInsertTarget] =
     useState<MarkdownFloatingImageInsertTarget | null>(null);
   const remarkPlugins = useMemo<PluggableList>(() => [remarkGfm, remarkMath], []);
@@ -1657,11 +1745,6 @@ const MarkdownPreview = memo(function MarkdownPreview({
   const refreshOverlayRects = useCallback(() => {
     setAnnotationHighlightRects(
       collectViewportHighlightRects(annotationHighlightRangesRef.current)
-    );
-    setPendingHighlightRects(
-      pendingHighlightRangeRef.current
-        ? collectViewportHighlightRects([pendingHighlightRangeRef.current])
-        : []
     );
   }, []);
 
@@ -1736,17 +1819,6 @@ const MarkdownPreview = memo(function MarkdownPreview({
   }, [annotations, content, onResolvedAnnotationIdsChange, refreshOverlayRects, renderMermaid]);
 
   useEffect(() => {
-    syncPendingAnnotationHighlight(pendingHighlightRange);
-    pendingHighlightRangeRef.current = pendingHighlightRange;
-    refreshOverlayRects();
-    return () => {
-      syncPendingAnnotationHighlight(null);
-      pendingHighlightRangeRef.current = null;
-      setPendingHighlightRects([]);
-    };
-  }, [pendingHighlightRange, refreshOverlayRects]);
-
-  useEffect(() => {
     const article = articleRef.current;
     if (!article) {
       return;
@@ -1799,18 +1871,18 @@ const MarkdownPreview = memo(function MarkdownPreview({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Control') {
-        setIsCtrlPressed(true);
+      if (event.key === 'Alt') {
+        setIsAltPressed(true);
       }
     };
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === 'Control') {
-        setIsCtrlPressed(false);
+      if (event.key === 'Alt') {
+        setIsAltPressed(false);
         setFloatingImageInsertTarget(null);
       }
     };
     const handleBlur = () => {
-      setIsCtrlPressed(false);
+      setIsAltPressed(false);
       setFloatingImageInsertTarget(null);
     };
 
@@ -1857,6 +1929,7 @@ const MarkdownPreview = memo(function MarkdownPreview({
         width: window.innerWidth,
         height: window.innerHeight,
       },
+      highlightRects: collectHighlightRects(articleRef.current, [range]),
     });
     onPendingSelectionChange(pendingSelection);
   }, [content, onImageInsertTargetChange, onPendingSelectionChange]);
@@ -1943,7 +2016,12 @@ const MarkdownPreview = memo(function MarkdownPreview({
       if (!article || !(target instanceof Node)) {
         return;
       }
-      if (!event.ctrlKey && !isCtrlPressed) {
+      if (
+        !isMarkdownImageInsertModifierActive(
+          { altKey: event.altKey, ctrlKey: event.ctrlKey },
+          isAltPressed
+        )
+      ) {
         setFloatingImageInsertTarget(null);
         return;
       }
@@ -1965,7 +2043,7 @@ const MarkdownPreview = memo(function MarkdownPreview({
         y: floatingTarget.y,
       });
     },
-    [content, isCtrlPressed, onImageInsertTargetChange]
+    [content, isAltPressed, onImageInsertTargetChange]
   );
 
   return (
@@ -2058,22 +2136,24 @@ const MarkdownPreviewBody = memo(function MarkdownPreviewBody({
                   }}
                 />
               ))}
-              {pendingHighlightRects.map((rect, index) => (
-                <div
-                  key={`pending-${rect.left}-${rect.top}-${index}`}
-                  className="absolute rounded-[3px] bg-blue-300/45"
-                  style={{
-                    left: rect.left,
-                    top: rect.top,
-                    width: rect.width,
-                    height: rect.height,
-                  }}
-                />
-              ))}
             </div>,
             document.body
           )
         : null}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        {pendingHighlightRects.map((rect, index) => (
+          <div
+            key={`pending-${rect.left}-${rect.top}-${index}`}
+            className="absolute rounded-[2px] bg-blue-300/45"
+            style={{
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+            }}
+          />
+        ))}
+      </div>
       {floatingImageInsertTarget && typeof document !== 'undefined'
         ? createPortal(
             <button
@@ -2615,7 +2695,7 @@ function FilePreviewPage() {
     () => countActiveAnnotations(resolvedAnnotations),
     [resolvedAnnotations]
   );
-  const pendingHighlightRange = pendingAnnotationSelection?.range ?? annotationDraft?.range ?? null;
+  const pendingHighlightRects = annotationDraft?.highlightRects ?? [];
   const annotationCountLabel = useMemo(
     () => formatAnnotationCountLabel(activeAnnotationCount, resolvedAnnotations.length),
     [activeAnnotationCount, resolvedAnnotations.length]
@@ -3070,6 +3150,9 @@ function FilePreviewPage() {
       const payload = await buildDocxDownloadPayload({
         content: draftContent,
         fileName: fileNameFromPath(params.filePath),
+        projectPath: params.projectPath,
+        markdownFilePath: params.filePath,
+        backendBaseUrl: config.api.agentV2BaseUrl,
       });
       triggerBrowserDownload(payload);
     } catch (downloadError) {
@@ -3193,24 +3276,6 @@ function FilePreviewPage() {
             </Button>
           ) : null}
           {kind === 'markdown' && viewMode === 'preview' ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const resolvedTarget = resolveCurrentSelectionImageInsertTarget();
-                if (!resolvedTarget?.ok) {
-                  setError(resolvedTarget?.message || '请先在预览正文中点击要插入图片的位置');
-                  return;
-                }
-                imageFileInputRef.current?.click();
-              }}
-              title="在当前位置插入图片"
-            >
-              <ImagePlusIcon className="h-4 w-4" />
-              <span>图片</span>
-            </Button>
-          ) : null}
-          {kind === 'markdown' && viewMode === 'preview' ? (
             <div className="relative">
               <Button
                 variant="outline"
@@ -3237,6 +3302,7 @@ function FilePreviewPage() {
                       selectedText: annotation.selectedText,
                       range: null,
                       anchor: annotation.anchor ?? null,
+                      highlightRects: [],
                       note: annotation.note,
                       x: Math.max(window.innerWidth - 420, 24),
                       y: 96,
@@ -3379,7 +3445,7 @@ function FilePreviewPage() {
             projectPath={params.projectPath}
             filePath={params.filePath}
             activeAnnotationPreviewRef={activeAnnotationPreviewRef}
-            pendingHighlightRange={pendingHighlightRange}
+            pendingHighlightRects={pendingHighlightRects}
             onPendingSelectionChange={handlePendingAnnotationSelectionChange}
             onAnnotationPreviewClose={handleCloseAnnotationPreview}
             onAnnotationPreviewOpen={handleOpenAnnotationPreview}
@@ -3433,6 +3499,7 @@ function FilePreviewPage() {
             selectedText: activeAnnotationPreview.annotation.selectedText,
             range: null,
             anchor: activeAnnotationPreview.annotation.anchor ?? null,
+            highlightRects: [],
             note: activeAnnotationPreview.annotation.note,
             x: Math.max(window.innerWidth - 420, 24),
             y: 96,

@@ -1237,13 +1237,12 @@ describe('Chat chat selection quote interaction', () => {
     const scrollContainer = view.container.querySelector(
       '.claude-mvp-conversation'
     ) as HTMLDivElement;
-    const overlay = scrollContainer.parentElement as HTMLDivElement;
 
     Object.defineProperty(scrollContainer, 'scrollTop', {
       configurable: true,
       value: 240,
     });
-    Object.defineProperty(overlay, 'clientWidth', {
+    Object.defineProperty(window, 'innerWidth', {
       configurable: true,
       value: 320,
     });
@@ -1264,13 +1263,6 @@ describe('Chat chat selection quote interaction', () => {
       value: () => rangeRect,
     });
 
-    const scrollRectSpy = vi
-      .spyOn(scrollContainer, 'getBoundingClientRect')
-      .mockReturnValue(createMockRect({ top: 20, left: 10, right: 330, bottom: 420 }));
-    const overlayRectSpy = vi
-      .spyOn(overlay, 'getBoundingClientRect')
-      .mockReturnValue(createMockRect({ top: 20, left: 10, right: 330, bottom: 420 }));
-
     try {
       selectText(bubble, '可引用的一段文本');
 
@@ -1278,11 +1270,9 @@ describe('Chat chat selection quote interaction', () => {
       const top = Number.parseFloat(button.style.top);
 
       expect(scrollContainer.scrollTop).toBe(240);
-      expect(top).toBeCloseTo(60, 3);
+      expect(top).toBeCloseTo(80, 3);
       expect(top).toBeLessThan(150);
     } finally {
-      scrollRectSpy.mockRestore();
-      overlayRectSpy.mockRestore();
       if (rangeDescriptor) {
         Object.defineProperty(window.Range.prototype, 'getBoundingClientRect', rangeDescriptor);
       } else {
@@ -1775,6 +1765,132 @@ describe('Chat chat selection quote interaction', () => {
     expect((pageEditButton as HTMLButtonElement).disabled).toBe(false);
 
     fireEvent.click(pageEditButton);
+
+    await waitFor(() => {
+      expect(pageEditMocks.mockPageEditDeactivateMutateAsync).toHaveBeenCalledWith({ tabId: 123 });
+    });
+  });
+
+  it('模型不可交互时，页面工作台关闭后仍允许再次点击进入', async () => {
+    pageEditMocks.mockResolvePageEditTabId.mockResolvedValue(123);
+    pageEditMocks.mockGetPageEditToggleLabel.mockReturnValue('进入编辑');
+    pageEditMocks.mockIsPageEditActive.mockReturnValue(false);
+    pageEditMocks.mockPageEditGetStateUseQuery.mockImplementation(() => ({
+      data: null,
+      isLoading: false,
+      refetch: pageEditMocks.mockPageEditStateRefetch,
+    }));
+    bootstrapGateMocks.mockUseBootstrapGateState.mockReturnValue({
+      status: 'ready',
+      result: {
+        ...bootstrapGateMocks.mockBootstrapGateResult,
+        modelAccess: {
+          ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess,
+          localConfig: {
+            ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess.localConfig,
+            anthropicApiKey: '',
+          },
+          runtimeInfo: {
+            ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess.runtimeInfo,
+            available: false,
+            claudeCliAvailable: false,
+            hasProjectModelConfig: false,
+            reason: '缺少可用模型配置',
+          },
+          userClaudeSettingsTestResult: null,
+          projectModelConfigTestResult: null,
+          viewState: {
+            ...bootstrapGateMocks.mockBootstrapGateResult.modelAccess.viewState,
+            overallStatus: 'needs_config',
+            summary: '请先配置模型后再发起对话。',
+            userClaudeSettings: 'unavailable',
+            projectModelConfig: 'needs_config',
+          },
+        },
+      },
+      backgroundSync: {
+        status: 'completed',
+      },
+      retry: vi.fn(async () => undefined),
+      retrySync: vi.fn(async () => undefined),
+    });
+    sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_project_selected'
+    );
+
+    const view = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_project_selected',
+      payload: {
+        projectPath: '/tmp/project',
+      },
+    });
+
+    const pageEditButton = await view.findByRole('button', { name: '进入编辑' });
+    expect((pageEditButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(pageEditButton);
+
+    await waitFor(() => {
+      expect(pageEditMocks.mockPageEditActivateMutateAsync).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('顶部铅笔在进入编辑进行中允许再次点击，并在完成后按最后意图退出', async () => {
+    const activateDeferred = createDeferred<{
+      tabId: number;
+      status: 'active';
+      pageMode: 'local-snapshot';
+      capabilities: Record<string, never>;
+    } | null>();
+    pageEditMocks.mockResolvePageEditTabId.mockResolvedValue(123);
+    pageEditMocks.mockPageEditActivateMutateAsync.mockImplementation(() => activateDeferred.promise);
+    pageEditMocks.mockPageEditDeactivateMutateAsync.mockResolvedValue(null);
+    sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_project_selected'
+    );
+
+    const view = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_project_selected',
+      payload: {
+        projectPath: '/tmp/project',
+      },
+    });
+
+    const pageEditButton = await view.findByRole('button', { name: '页面编辑' });
+    expect((pageEditButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(pageEditButton);
+
+    await waitFor(() => {
+      expect(pageEditMocks.mockPageEditActivateMutateAsync).toHaveBeenCalledTimes(1);
+    });
+    expect((view.getByRole('button', { name: '页面编辑' }) as HTMLButtonElement).disabled).toBe(
+      false
+    );
+
+    fireEvent.click(view.getByRole('button', { name: '页面编辑' }));
+
+    await act(async () => {
+      activateDeferred.resolve({
+        tabId: 123,
+        status: 'active',
+        pageMode: 'local-snapshot',
+        capabilities: {},
+      });
+      await activateDeferred.promise;
+    });
 
     await waitFor(() => {
       expect(pageEditMocks.mockPageEditDeactivateMutateAsync).toHaveBeenCalledWith({ tabId: 123 });
