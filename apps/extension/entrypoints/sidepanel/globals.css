@@ -132,6 +132,24 @@
 
 /* Reusable toolbar and badge component classes for the sidepanel */
 @layer components {
+  .chat-selection-surface,
+  .chat-selection-surface * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .chat-selection-surface ::selection,
+  .chat-selection-surface *::selection {
+    background: color-mix(in oklch, var(--color-primary) 22%, white);
+    color: var(--color-foreground);
+  }
+
+  .dark .chat-selection-surface ::selection,
+  .dark .chat-selection-surface *::selection {
+    background: color-mix(in oklch, var(--color-primary) 32%, black);
+    color: var(--color-foreground);
+  }
+
   /* Full-width toolbar surface that sits at the bottom/top with subtle blur */
   .toolbar-surface {
     @apply border-t bg-gradient-to-r from-background via-background/95 to-background backdrop-blur-md supports-[backdrop-filter]:bg-background/80;

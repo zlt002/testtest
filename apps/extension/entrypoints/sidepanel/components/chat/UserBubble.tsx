@@ -118,7 +118,7 @@ export function UserBubble({ message }: { message: DisplayMessage }) {
 
   return (
     <div className="flex justify-end">
-      <div className="min-w-0 max-w-[92%] break-words rounded-lg bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground [overflow-wrap:anywhere]">
+      <div className="chat-selection-surface min-w-0 max-w-[92%] break-words rounded-lg bg-primary px-3 py-2 text-sm leading-6 text-primary-foreground selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]">
         {images.length ? (
           <div className="mb-2 flex max-w-full flex-wrap justify-end gap-2">
             {images.map((image, index) => (
@@ -153,7 +153,7 @@ export function UserBubble({ message }: { message: DisplayMessage }) {
             </button>
             {contextExpanded ? (
               <div className="border-t border-primary-foreground/15 px-2.5 py-2">
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 px-2 py-2 font-mono text-[11px] leading-5 text-primary-foreground/85 [overflow-wrap:anywhere]">
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-black/20 px-2 py-2 font-mono text-[11px] leading-5 text-primary-foreground/85 selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]">
                   {contextBlocks.map((block) => `${block.label}\n${block.content}`).join('\n\n')}
                 </pre>
               </div>
@@ -163,7 +163,7 @@ export function UserBubble({ message }: { message: DisplayMessage }) {
         <div className="relative min-w-0">
           <div
             ref={contentRef}
-            className={`whitespace-pre-wrap ${canCollapse && !expanded ? 'overflow-hidden' : ''}`}
+            className={`whitespace-pre-wrap selection:bg-sky-200 selection:text-slate-950 ${canCollapse && !expanded ? 'overflow-hidden' : ''}`}
             style={
               canCollapse && !expanded ? { maxHeight: `${COLLAPSED_MAX_HEIGHT_REM}rem` } : undefined
             }

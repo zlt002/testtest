@@ -7,7 +7,6 @@ export function AssistantBubble({ children }: { children: ReactNode }) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [canCollapse, setCanCollapse] = useState(false);
-  const [collapsedOffset, setCollapsedOffset] = useState(0);
 
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -18,9 +17,6 @@ export function AssistantBubble({ children }: { children: ReactNode }) {
     const update = () => {
       const nextCanCollapse = content.scrollHeight > COLLAPSED_MAX_HEIGHT_PX + 12;
       setCanCollapse(nextCanCollapse);
-      setCollapsedOffset(
-        nextCanCollapse ? Math.max(content.scrollHeight - COLLAPSED_MAX_HEIGHT_PX, 0) : 0
-      );
     };
 
     update();
@@ -46,11 +42,6 @@ export function AssistantBubble({ children }: { children: ReactNode }) {
         <div
           ref={contentRef}
           className="min-w-0 break-words [overflow-wrap:anywhere]"
-          style={
-            isCollapsed && collapsedOffset > 0
-              ? { transform: `translateY(-${collapsedOffset}px)` }
-              : undefined
-          }
         >
           {children}
         </div>
@@ -60,7 +51,7 @@ export function AssistantBubble({ children }: { children: ReactNode }) {
           className={
             expanded
               ? 'mt-2 flex justify-center'
-              : 'pointer-events-none absolute inset-x-0 top-0 flex justify-center bg-gradient-to-b from-card via-card/90 to-transparent pb-12 pt-1'
+              : 'pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-card via-card/90 to-transparent pt-10'
           }
         >
           <button

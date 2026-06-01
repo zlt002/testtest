@@ -46,4 +46,27 @@ describe('MarkdownImageInsertOverlay', () => {
     expect(onAltChange).toHaveBeenCalledWith('流程图');
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it('cancels the overlay without confirming', () => {
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <MarkdownImageInsertOverlay
+        draft={{
+          file: new File(['image'], 'image.png', { type: 'image/png' }),
+          offset: 3,
+          alt: '图片',
+        }}
+        saving={false}
+        onAltChange={() => undefined}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });

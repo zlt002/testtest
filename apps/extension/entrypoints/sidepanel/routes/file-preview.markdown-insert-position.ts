@@ -7,11 +7,15 @@ const SUPPORTED_INSERT_TAGS = new Set([
   'H5',
   'H6',
   'LI',
+  'TABLE',
+  'TBODY',
+  'TR',
   'TD',
   'TH',
   'BLOCKQUOTE',
 ]);
 const unsupportedMessage = '当前位置暂不支持插入图片，请点到正文段落、标题、列表或表格单元格中';
+const TABLE_INSERT_TAGS = new Set(['TABLE', 'TBODY', 'TR', 'TD', 'TH']);
 
 export type MarkdownInsertTarget =
   | { ok: true; text: string; tagName: string }
@@ -39,15 +43,169 @@ export function buildMarkdownInsertTargetFromNode(root: HTMLElement, node: Node)
   if (!element) {
     return { ok: false, message: unsupportedMessage };
   }
-  const text = element.textContent?.replace(/\s+/g, ' ').trim() || '';
+  const blockquoteElement =
+    element.tagName === 'P' ? (element.closest('blockquote') as HTMLElement | null) : null;
+  const resolvedElement = blockquoteElement || element;
+  const text = resolvedElement.textContent?.replace(/\s+/g, ' ').trim() || '';
   if (!text) {
     return { ok: false, message: unsupportedMessage };
   }
-  return { ok: true, text, tagName: element.tagName };
+  return { ok: true, text, tagName: resolvedElement.tagName };
 }
 
 function normalize(value: string) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function compact(value: string) {
+  return normalize(value).replace(/\s+/g, '');
+}
+
+function isMarkdownTableSeparator(line: string) {
+  const trimmed = line.trim();
+  const cells = trimmed
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function isMarkdownTableRow(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed || !trimmed.includes('|')) {
+    return false;
+  }
+  return trimmed
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .some((cell) => cell.trim().length > 0);
+}
+
+function normalizeMarkdownTableText(lines: string[]) {
+  return normalize(
+    lines
+      .filter((line) => !isMarkdownTableSeparator(line))
+      .map((line) => line.replace(/\|/g, ' '))
+      .join(' ')
+  );
+}
+
+function findMarkdownTableBlocks(source: string) {
+  const lines = source.split('\n');
+  const blocks: Array<{ start: number; end: number; normalizedText: string }> = [];
+  let offset = 0;
+
+  for (let index = 0; index < lines.length; ) {
+    if (!(isMarkdownTableRow(lines[index]) && index + 1 < lines.length && isMarkdownTableSeparator(lines[index + 1]))) {
+      offset += lines[index].length + 1;
+      index += 1;
+      continue;
+    }
+
+    const blockStart = offset;
+    const blockLines: string[] = [];
+    while (index < lines.length && (isMarkdownTableRow(lines[index]) || isMarkdownTableSeparator(lines[index]))) {
+      blockLines.push(lines[index]);
+      offset += lines[index].length + 1;
+      index += 1;
+    }
+
+    blocks.push({
+      start: blockStart,
+      end: Math.min(source.length, offset - 1),
+      normalizedText: normalizeMarkdownTableText(blockLines),
+    });
+  }
+
+  return blocks;
+}
+
+function resolveMarkdownTableInsertOffset(source: string, targetText: string) {
+  const normalizedTarget = normalize(targetText);
+  const compactTarget = compact(targetText);
+  const matchedBlocks = findMarkdownTableBlocks(source).filter((block) =>
+    block.normalizedText.includes(normalizedTarget) || compact(block.normalizedText).includes(compactTarget)
+  );
+
+  if (matchedBlocks.length !== 1) {
+    return null;
+  }
+
+  return matchedBlocks[0].end;
+}
+
+function normalizeMarkdownBlockquoteText(lines: string[]) {
+  return normalize(lines.map((line) => line.replace(/^\s*>\s?/, '')).join(' '));
+}
+
+function findMarkdownBlockquoteBlocks(source: string) {
+  const lines = source.split('\n');
+  const blocks: Array<{ end: number; normalizedText: string }> = [];
+  let offset = 0;
+
+  for (let index = 0; index < lines.length; ) {
+    if (!lines[index].trim().startsWith('>')) {
+      offset += lines[index].length + 1;
+      index += 1;
+      continue;
+    }
+
+    const blockLines: string[] = [];
+    while (index < lines.length && lines[index].trim().startsWith('>')) {
+      blockLines.push(lines[index]);
+      offset += lines[index].length + 1;
+      index += 1;
+    }
+
+    blocks.push({
+      end: Math.min(source.length, offset - 1),
+      normalizedText: normalizeMarkdownBlockquoteText(blockLines),
+    });
+  }
+
+  return blocks;
+}
+
+function resolveMarkdownBlockquoteInsertOffset(source: string, targetText: string) {
+  const normalizedTarget = normalize(targetText);
+  const matchedBlocks = findMarkdownBlockquoteBlocks(source).filter(
+    (block) => block.normalizedText === normalizedTarget
+  );
+
+  if (matchedBlocks.length !== 1) {
+    return null;
+  }
+
+  return matchedBlocks[0].end;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function countStandaloneParagraphOccurrences(source: string, text: string) {
+  const pattern = new RegExp(`(^|\\n\\n)${escapeRegExp(text)}(?=\\n\\n|$)`, 'g');
+  let count = 0;
+  while (pattern.exec(source)) {
+    count += 1;
+  }
+  return count;
+}
+
+function findStandaloneParagraphEndOffset(source: string, text: string) {
+  const pattern = new RegExp(`(^|\\n\\n)(${escapeRegExp(text)})(?=\\n\\n|$)`, 'g');
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    return null;
+  }
+  const match = matches[0];
+  const rawIndex = match.index ?? -1;
+  if (rawIndex < 0) {
+    return null;
+  }
+  return rawIndex + match[1].length + match[2].length;
 }
 
 function findSourceMatch(source: string, targetText: string) {
@@ -67,8 +225,27 @@ export function resolveMarkdownInsertOffset(source: string, target: MarkdownInse
   if (!target.ok) {
     return target;
   }
+  if (target.tagName === 'BLOCKQUOTE') {
+    const blockquoteOffset = resolveMarkdownBlockquoteInsertOffset(source, target.text);
+    if (blockquoteOffset !== null) {
+      return { ok: true as const, offset: blockquoteOffset };
+    }
+  }
+  if (TABLE_INSERT_TAGS.has(target.tagName)) {
+    const tableOffset = resolveMarkdownTableInsertOffset(source, target.text);
+    if (tableOffset !== null) {
+      return { ok: true as const, offset: tableOffset };
+    }
+  }
+
   const match = findSourceMatch(source, target.text);
   if (match === 'duplicate') {
+    if (target.tagName === 'P' && countStandaloneParagraphOccurrences(source, target.text) === 1) {
+      const paragraphEnd = findStandaloneParagraphEndOffset(source, target.text);
+      if (paragraphEnd !== null) {
+        return { ok: true as const, offset: paragraphEnd };
+      }
+    }
     return { ok: false as const, message: '当前位置无法唯一定位，请换一个插入位置' };
   }
   if (match === null) {
@@ -77,10 +254,6 @@ export function resolveMarkdownInsertOffset(source: string, target: MarkdownInse
 
   const rawIndex = source.indexOf(target.text);
   if (rawIndex >= 0 && source.indexOf(target.text, rawIndex + 1) < 0) {
-    if (target.tagName === 'TD' || target.tagName === 'TH') {
-      const lineEnd = source.indexOf('\n', rawIndex);
-      return { ok: true as const, offset: lineEnd >= 0 ? lineEnd : source.length };
-    }
     return { ok: true as const, offset: rawIndex + target.text.length };
   }
 

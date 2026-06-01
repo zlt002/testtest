@@ -17,7 +17,7 @@ describe('AssistantBubble', () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock);
   });
 
-  it('collapses long assistant responses from the bottom and expands on demand', () => {
+  it('collapses long assistant responses and expands on demand', () => {
     const scrollHeightSpy = vi
       .spyOn(HTMLElement.prototype, 'scrollHeight', 'get')
       .mockReturnValue(640);
@@ -34,7 +34,7 @@ describe('AssistantBubble', () => {
     const content = viewport.firstElementChild as HTMLDivElement;
 
     expect(viewport.style.maxHeight).toBe('420px');
-    expect(content.style.transform).toBe('translateY(-220px)');
+    expect(content.style.transform).toBe('');
 
     fireEvent.click(screen.getByRole('button', { name: '展开' }));
 

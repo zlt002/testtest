@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
@@ -600,9 +601,9 @@ function ChatMarkdownPre({ children }: { children?: ReactNode }) {
     }>(firstChild)
   ) {
     return (
-      <pre className="my-3 max-w-full whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 [overflow-wrap:anywhere]">
+      <pre className="my-3 max-w-full whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 selection:bg-sky-300 selection:text-slate-950 [overflow-wrap:anywhere]">
         <code
-          className={`${firstChild.props.className || ''} whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}
+          className={`${firstChild.props.className || ''} whitespace-pre-wrap break-words selection:bg-sky-300 selection:text-slate-950 [overflow-wrap:anywhere]`}
         >
           {firstChild.props.children}
         </code>
@@ -611,7 +612,7 @@ function ChatMarkdownPre({ children }: { children?: ReactNode }) {
   }
 
   return (
-    <pre className="my-3 max-w-full whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 [overflow-wrap:anywhere]">
+    <pre className="my-3 max-w-full whitespace-pre-wrap break-words rounded-md bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-100 selection:bg-sky-300 selection:text-slate-950 [overflow-wrap:anywhere]">
       {children}
     </pre>
   );
@@ -622,7 +623,7 @@ function ChatMarkdownCode({ className, children }: { className?: string; childre
   if (className || /[\r\n]/.test(raw)) {
     return (
       <code
-        className={`${className || ''} whitespace-pre-wrap break-words [overflow-wrap:anywhere]`}
+        className={`${className || ''} whitespace-pre-wrap break-words selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]`}
       >
         {children}
       </code>
@@ -630,7 +631,7 @@ function ChatMarkdownCode({ className, children }: { className?: string; childre
   }
 
   return (
-    <code className="break-words rounded bg-muted px-1 py-0.5 text-[0.92em] [overflow-wrap:anywhere]">
+    <code className="break-words rounded bg-muted px-1 py-0.5 text-[0.92em] selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]">
       {children}
     </code>
   );
@@ -640,7 +641,7 @@ function AssistantMarkdown({ content }: { content: string }) {
   const remarkPlugins = useMemo(() => [remarkGfm], []);
 
   return (
-    <div className="agent-chat-markdown min-w-0 break-words text-sm leading-6 text-foreground [overflow-wrap:anywhere]">
+    <div className="agent-chat-markdown chat-selection-surface min-w-0 break-words text-sm leading-6 text-foreground selection:bg-sky-200 selection:text-slate-950 [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         urlTransform={preserveMarkdownHref}
@@ -652,7 +653,11 @@ function AssistantMarkdown({ content }: { content: string }) {
           h1: ({ children }) => <h1 className="mb-2 mt-3 text-lg font-semibold">{children}</h1>,
           h2: ({ children }) => <h2 className="mb-2 mt-3 text-base font-semibold">{children}</h2>,
           h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-sm font-semibold">{children}</h3>,
-          p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+          p: ({ children }) => (
+            <p className="my-2 first:mt-0 last:mb-0 selection:bg-sky-200 selection:text-slate-950">
+              {children}
+            </p>
+          ),
           ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-5">{children}</ul>,
           ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-5">{children}</ol>,
           li: ({ children }) => <li className="pl-0.5">{children}</li>,
@@ -672,7 +677,7 @@ function AssistantMarkdown({ content }: { content: string }) {
             </a>
           ),
           table: ({ children }) => (
-            <div className="my-3 max-w-full overflow-x-auto rounded-md border">
+            <div className="my-3 max-w-full overflow-x-auto rounded-md border selection:bg-sky-200 selection:text-slate-950">
               <table className="w-full table-fixed border-collapse text-xs">{children}</table>
             </div>
           ),
@@ -2396,6 +2401,7 @@ export function Chat() {
   const bootstrapGate = useBootstrapGateState();
   const selectionOverlayRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const selectionQuoteTimerRef = useRef<number | null>(null);
   const officialApiKeyInputRef = useRef<HTMLInputElement | null>(null);
   const lastBackgroundSyncStatusRef = useRef(bootstrapGate.backgroundSync.status);
   const inputRef = useRef('');
@@ -3196,6 +3202,10 @@ export function Chat() {
     setIsFullConversationVisible(false);
   }, []);
   const hideSelectionQuote = useCallback(() => {
+    if (selectionQuoteTimerRef.current != null) {
+      window.clearTimeout(selectionQuoteTimerRef.current);
+      selectionQuoteTimerRef.current = null;
+    }
     setSelectionQuote(null);
     setSelectionLockedConversationItems(null);
     setSelectionLockedHiddenCount(null);
@@ -3227,19 +3237,30 @@ export function Chat() {
         ? range.getBoundingClientRect()
         : fallbackRect;
     const estimatedButtonWidth = 120;
-    const relativeTop = rangeRect.top - overlayRect.top - 40;
-    const relativeLeft = (rangeRect.left + rangeRect.right) / 2 - overlayRect.left;
-
-    setSelectionLockedConversationItems((current) => current ?? visibleConversationItems);
-    setSelectionLockedHiddenCount((current) => current ?? hiddenConversationItemCount);
-    setSelectionQuote({
+    const viewportTop = rangeRect.top - 40;
+    const viewportLeft = (rangeRect.left + rangeRect.right) / 2;
+    const nextSelectionQuote = {
       text: selectedText,
-      top: Math.max(relativeTop, 8),
+      top: Math.max(viewportTop, 8),
       left: Math.min(
-        Math.max(relativeLeft, 8),
-        Math.max(overlay.clientWidth - estimatedButtonWidth, 8)
+        Math.max(viewportLeft, 8),
+        Math.max(window.innerWidth - estimatedButtonWidth, 8)
       ),
-    });
+    };
+
+    if (selectionQuoteTimerRef.current != null) {
+      window.clearTimeout(selectionQuoteTimerRef.current);
+    }
+    selectionQuoteTimerRef.current = window.setTimeout(() => {
+      selectionQuoteTimerRef.current = null;
+      const activeSelection = getActiveConversationSelection(scrollRef.current, window.getSelection());
+      if (!activeSelection || activeSelection !== nextSelectionQuote.text) {
+        return;
+      }
+      setSelectionLockedConversationItems((current) => current ?? visibleConversationItems);
+      setSelectionLockedHiddenCount((current) => current ?? hiddenConversationItemCount);
+      setSelectionQuote(nextSelectionQuote);
+    }, 80);
   }, [hiddenConversationItemCount, hideSelectionQuote, visibleConversationItems]);
   const clearSelectionQuote = useCallback(() => {
     hideSelectionQuote();
@@ -3374,6 +3395,9 @@ export function Chat() {
     setInput(nextValue);
     clearSelectionQuote();
   }, [clearSelectionQuote, selectionQuote]);
+  const handleStopRun = useCallback(() => {
+    return stream.stop('user_stop');
+  }, [stream]);
   const updateScrollAffordance = useCallback(() => {
     const scrollElement = scrollRef.current;
     setHasContentBelow(scrollElement ? hasScrollableContentBelow(scrollElement) : false);
@@ -3418,6 +3442,14 @@ export function Chat() {
   useEffect(() => {
     inputRef.current = input;
   }, [input]);
+
+  useEffect(() => {
+    return () => {
+      if (selectionQuoteTimerRef.current != null) {
+        window.clearTimeout(selectionQuoteTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -3649,11 +3681,6 @@ export function Chat() {
       console.debug('[chat] ensure_companion_ready failed:', error);
     });
   }, []);
-
-  useEffect(() => {
-    document.addEventListener('selectionchange', updateSelectionQuote);
-    return () => document.removeEventListener('selectionchange', updateSelectionQuote);
-  }, [updateSelectionQuote]);
 
   useEffect(() => {
     agentClient
@@ -4765,26 +4792,10 @@ export function Chat() {
               onCollapseConversation={collapseConversation}
               onCopyAssistantMarkdown={handleCopyAssistantMarkdown}
               onExportAssistantMarkdown={handleExportAssistantMarkdown}
-              onStopRun={() => stream.stop('user_stop')}
+              onStopRun={handleStopRun}
             />
           )}
         </div>
-
-        {selectionQuote ? (
-          <button
-            type="button"
-            className="absolute z-20 rounded-full border bg-background px-3 py-1.5 text-xs shadow-lg hover:bg-accent"
-            style={{
-              top: selectionQuote.top,
-              left: selectionQuote.left,
-              transform: 'translate(-50%, -100%)',
-            }}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={handleAppendSelectionQuote}
-          >
-            添加到对话
-          </button>
-        ) : null}
 
         {hasContentBelow ? (
           <Button
@@ -4800,6 +4811,25 @@ export function Chat() {
           </Button>
         ) : null}
       </div>
+
+      {selectionQuote && typeof document !== 'undefined'
+        ? createPortal(
+            <button
+              type="button"
+              className="fixed z-[80] rounded-full border bg-background px-3 py-1.5 text-xs shadow-lg hover:bg-accent"
+              style={{
+                top: selectionQuote.top,
+                left: selectionQuote.left,
+                transform: 'translate(-50%, -100%)',
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={handleAppendSelectionQuote}
+            >
+              添加到对话
+            </button>,
+            document.body
+          )
+        : null}
 
       <div data-chat-v2-composer-dock="true" className="relative z-30">
         {stream.error ? (

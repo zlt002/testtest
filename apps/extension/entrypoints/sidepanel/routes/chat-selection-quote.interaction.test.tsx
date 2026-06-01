@@ -1188,13 +1188,17 @@ describe('Chat chat selection quote interaction', () => {
 
   it('对话流内选中文本后显示“添加到对话”按钮', async () => {
     const view = render(<Chat />);
+    expect(view.container.innerHTML).toContain('selection:bg-sky-200');
 
     const bubble = await view.findByText('这是对话流内可引用的一段文本');
     expect(view.getByRole('textbox', { name: '对话输入框' })).toBeTruthy();
 
     selectText(bubble, '可引用的一段文本');
 
-    expect(await view.findByRole('button', { name: '添加到对话' })).toBeTruthy();
+    const button = await view.findByRole('button', { name: '添加到对话' });
+    expect(button).toBeTruthy();
+    expect(view.container.contains(button)).toBe(false);
+    expect(window.getSelection()?.toString()).toBe('可引用的一段文本');
   });
 
   it('点击“添加到对话”后，把引用块写入输入框', async () => {
