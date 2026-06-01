@@ -1905,22 +1905,58 @@ export default class VisBug extends HTMLElement {
     return window.location.protocol === 'file:'
   }
 
+  createSaveSnapshotDocument() {
+    const snapshot = document.cloneNode(true)
+    const root = snapshot.documentElement
+
+    root?.querySelectorAll?.('link[data-webmcp-page-edit-style]').forEach(node => node.remove())
+    root?.querySelectorAll?.('[data-webmcp-page-edit-root="true"]').forEach(node => node.remove())
+    root?.querySelectorAll?.('vis-bug, visbug-grip, visbug-handles, visbug-label, visbug-hover, visbug-selected, visbug-box-model, visbug-gridlines, visbug-distance, visbug-metatip, visbug-corners, visbug-overlay, visbug-ally').forEach(node => node.remove())
+
+    root?.querySelectorAll?.('[draggable="true"], [data-webmcp-page-edit-draggable], [data-selected], [data-pseudo-select], [data-selected-hide], [data-pinhover], [data-measuring], [visbug-drag-src]').forEach(node => {
+      node.removeAttribute('draggable')
+      node.removeAttribute('data-webmcp-page-edit-draggable')
+      node.removeAttribute('data-selected')
+      node.removeAttribute('data-pseudo-select')
+      node.removeAttribute('data-selected-hide')
+      node.removeAttribute('data-pinhover')
+      node.removeAttribute('data-measuring')
+      node.removeAttribute('visbug-drag-src')
+    })
+
+    root?.querySelectorAll?.('[data-webmcp-page-edit-surface-cursor]').forEach(node => {
+      node.removeAttribute('data-webmcp-page-edit-surface-cursor')
+
+      const cursor = node.style?.cursor?.trim?.()
+      if (cursor === 'move' || cursor === 'grab' || cursor === 'grabbing')
+        node.style.cursor = null
+
+      if (!node.getAttribute('style'))
+        node.removeAttribute('style')
+    })
+
+    return snapshot
+  }
+
   serializeCurrentDocument() {
-    const doctype = document.doctype
+    const snapshot = this.createSaveSnapshotDocument()
+    const snapshotDocumentElement = snapshot.documentElement
+    const snapshotDoctype = snapshot.doctype
+    const doctype = snapshotDoctype
       ? `<!DOCTYPE ${[
-          document.doctype.name,
-          document.doctype.publicId
-            ? `PUBLIC "${document.doctype.publicId}"`
-            : document.doctype.systemId
+          snapshotDoctype?.name,
+          snapshotDoctype?.publicId
+            ? `PUBLIC "${snapshotDoctype.publicId}"`
+            : snapshotDoctype?.systemId
               ? 'SYSTEM'
               : '',
-          document.doctype.systemId ? `"${document.doctype.systemId}"` : '',
+          snapshotDoctype?.systemId ? `"${snapshotDoctype.systemId}"` : '',
         ]
           .filter(Boolean)
           .join(' ')}>`
       : '<!DOCTYPE html>'
 
-    return `${doctype}\n${document.documentElement.outerHTML}`
+    return `${doctype}\n${snapshotDocumentElement.outerHTML}`
   }
 
   saveCurrentFile() {

@@ -240,6 +240,68 @@ describe('page-edit file save action', () => {
     );
   });
 
+  it('保存时只保留页面改动，不保留编辑态拖拽与工作台痕迹', async () => {
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const postMessageSpy = vi.spyOn(window, 'postMessage').mockImplementation(() => undefined);
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+    document.head.insertAdjacentHTML(
+      'beforeend',
+      '<link rel="stylesheet" href="chrome-extension://demo/page-edit.css" data-webmcp-page-edit-style="true">',
+    );
+    document.body.innerHTML = `
+      <div
+        id="target"
+        draggable="true"
+        data-webmcp-page-edit-draggable="true"
+        data-webmcp-page-edit-surface-cursor="move"
+        data-selected="true"
+        data-pseudo-select="true"
+        visbug-drag-src="true"
+        style="position: relative; left: 12px; top: 8px; cursor: move;"
+      >
+        已移动卡片
+      </div>
+      <visbug-grip style="--top: 10px; --left: 20px;"></visbug-grip>
+    `;
+
+    const visbug = new VisBug();
+    document.body.prepend(visbug);
+    visbug.setAttribute('data-webmcp-page-edit-root', 'true');
+    visbug.setSelectionBridgeNonce('nonce-clean');
+
+    visbug.saveCurrentFile();
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(postMessageSpy).toHaveBeenCalledOnce();
+
+    const payload = postMessageSpy.mock.calls[0]?.[0] as {
+      payload: { html: string };
+    };
+    const savedHtml = payload.payload.html;
+
+    expect(savedHtml).toContain('left: 12px;');
+    expect(savedHtml).toContain('top: 8px;');
+    expect(savedHtml).not.toContain('<vis-bug');
+    expect(savedHtml).not.toContain('<visbug-grip');
+    expect(savedHtml).not.toContain('data-webmcp-page-edit-root');
+    expect(savedHtml).not.toContain('data-webmcp-page-edit-style');
+    expect(savedHtml).not.toContain('draggable="true"');
+    expect(savedHtml).not.toContain('data-webmcp-page-edit-draggable');
+    expect(savedHtml).not.toContain('data-webmcp-page-edit-surface-cursor');
+    expect(savedHtml).not.toContain('visbug-drag-src');
+    expect(savedHtml).not.toContain('data-selected=');
+    expect(savedHtml).not.toContain('data-pseudo-select=');
+    expect(savedHtml).not.toContain('cursor: move');
+  });
+
   it('用户取消确认时不发送保存消息', async () => {
     dom.reconfigure({ url: 'file:///Users/demo/index.html' });
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);

@@ -76,6 +76,7 @@ import type {
   RunCard,
   RunFileReference,
   RunProcessItem,
+  SubagentWaitingSummary,
   TodoItem,
 } from '../lib/agent-v2/run-cards';
 import {
@@ -965,17 +966,55 @@ function useStatusClock(intervalMs = 5000) {
   return now;
 }
 
-function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }) {
+function summarizeCollapsedSubagentActivity(
+  subagents: SessionSubagentSnapshot[],
+  now: number
+): string | null {
+  if (subagents.length === 0) {
+    return null;
+  }
+
+  const latestSubagent = [...subagents].sort((left, right) => {
+    const leftTime = new Date(left.updatedAt || left.startedAt || 0).getTime();
+    const rightTime = new Date(right.updatedAt || right.startedAt || 0).getTime();
+    return rightTime - leftTime;
+  })[0];
+
+  if (!latestSubagent) {
+    return null;
+  }
+
+  const latestActivity = latestSubagent.activities.at(-1);
+  const runtimeState = deriveSubagentRuntimeState(latestSubagent, now);
+  const detail =
+    latestSubagent.latestSummary ||
+    latestActivity?.detail ||
+    runtimeState.detail ||
+    runtimeState.label;
+
+  if (!detail) {
+    return `最近活动：${latestSubagent.title}`;
+  }
+
+  return `最近活动：${latestSubagent.title} · ${sanitizeUserVisibleProcessText(detail)}`;
+}
+
+function SubagentPreview({
+  subagents,
+  waitingSummaryState,
+  canStopForOrphanedSubagents,
+  onStop,
+}: {
+  subagents: SessionSubagentSnapshot[];
+  waitingSummaryState: SubagentWaitingSummary;
+  canStopForOrphanedSubagents?: boolean;
+  onStop?: () => void | Promise<void>;
+}) {
   const now = useStatusClock();
   const [expanded, setExpanded] = useState(() =>
     subagents.some((subagent) => subagent.status === 'running')
   );
-
-  useEffect(() => {
-    if (subagents.some((subagent) => subagent.status === 'running')) {
-      setExpanded(true);
-    }
-  }, [subagents]);
+  const collapsedActivitySummary = summarizeCollapsedSubagentActivity(subagents, now);
 
   if (subagents.length === 0) {
     return null;
@@ -988,7 +1027,37 @@ function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }
         className="flex w-full items-center justify-between gap-2 text-left text-xs text-muted-foreground"
         onClick={() => setExpanded((value) => !value)}
       >
-        <span>子代理 {subagents.length} 个</span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span>子代理 {subagents.length} 个</span>
+            {waitingSummaryState.activeWaitingCount > 0 ? (
+              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                活跃 {waitingSummaryState.activeWaitingCount}
+              </Badge>
+            ) : null}
+            {waitingSummaryState.waitingCount > 0 ? (
+              <Badge
+                variant="outline"
+                className="h-5 border-amber-300 px-1.5 text-[10px] text-amber-700 dark:border-amber-800 dark:text-amber-300"
+              >
+                工具等待 {waitingSummaryState.waitingCount}
+              </Badge>
+            ) : null}
+            {waitingSummaryState.orphanedCount > 0 ? (
+              <Badge
+                variant="outline"
+                className="h-5 border-red-300 px-1.5 text-[10px] text-red-700 dark:border-red-800 dark:text-red-300"
+              >
+                失联 {waitingSummaryState.orphanedCount}
+              </Badge>
+            ) : null}
+          </span>
+          {!expanded && collapsedActivitySummary ? (
+            <span className="mt-1 block truncate text-[11px] text-muted-foreground">
+              {collapsedActivitySummary}
+            </span>
+          ) : null}
+        </span>
         <span className="flex items-center gap-1">
           <span>{expanded ? '收起' : '展开'}</span>
           <ChevronDownIcon className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -1041,6 +1110,19 @@ function SubagentPreview({ subagents }: { subagents: SessionSubagentSnapshot[] }
               </div>
             );
           })}
+          {canStopForOrphanedSubagents ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => void onStop?.()}
+              >
+                停止当前运行
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -1063,38 +1145,11 @@ function RunProcessPreview({
   const waitingSummaryState = summarizeSubagentWaitingState(card.subagents, now, {
     parentLastActivityAt: card.updatedAt,
   });
-  const parentWaitingSummary = waitingSummaryState.message;
   const canStopForOrphanedSubagents =
     waitingSummaryState.orphanedCount > 0 && card.cardStatus === 'running' && Boolean(onStop);
 
   return (
     <div className="space-y-2">
-      {parentWaitingSummary ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          <div>{parentWaitingSummary}</div>
-          {waitingSummaryState.orphanedCount > 0 &&
-          waitingSummaryState.activeWaitingCount === 0 &&
-          !waitingSummaryState.parentAdvancedBeyondOrphans &&
-          !waitingSummaryState.shouldAutoStop ? (
-            <div className="mt-1 text-[11px] text-amber-700/90 dark:text-amber-300/90">
-              如果全部子代理持续失联满 2 分钟，系统会自动停止当前运行，避免你继续空等。
-            </div>
-          ) : null}
-          {canStopForOrphanedSubagents ? (
-            <div className="mt-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 border-amber-300 bg-background/80 px-2 text-xs text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:text-amber-200 dark:hover:bg-amber-950/40"
-                onClick={() => void onStop?.()}
-              >
-                停止当前运行
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       {card.processItems.length > 0 ? (
         <div className="rounded-md bg-muted/30 px-3 py-2">
           <div className="space-y-0.5">
@@ -1104,7 +1159,12 @@ function RunProcessPreview({
           </div>
         </div>
       ) : null}
-      <SubagentPreview subagents={card.subagents} />
+      <SubagentPreview
+        subagents={card.subagents}
+        waitingSummaryState={waitingSummaryState}
+        canStopForOrphanedSubagents={canStopForOrphanedSubagents}
+        onStop={onStop}
+      />
     </div>
   );
 }

@@ -182,6 +182,7 @@ const moveWatch = node => {
 
   state.drag.siblings.forEach((grip, sibling) => {
     sibling.setAttribute('draggable', true)
+    sibling.setAttribute('data-webmcp-page-edit-draggable', 'true')
     $(sibling).on('dragover', dragOver)
     $(sibling).on('mouseenter', siblingHoverIn)
     $(sibling).on('mouseleave', siblingHoverOut)
@@ -197,6 +198,7 @@ const moveUnwatch = node => {
 
   state.drag.siblings.forEach((grip, sibling) => {
     sibling.removeAttribute('draggable')
+    sibling.removeAttribute('data-webmcp-page-edit-draggable')
     $(sibling).off('dragover', dragOver)
     $(sibling).off('mouseenter', siblingHoverIn)
     $(sibling).off('mouseleave', siblingHoverOut)

@@ -1,11 +1,11 @@
 // @vitest-environment node
 
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { JSDOM } from 'jsdom';
 import type { ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConversationRunItem, RunCard } from '../lib/agent-v2/run-cards';
-import type { DisplayMessage } from '../lib/agent-v2/types';
+import type { DisplayMessage, SessionSubagentSnapshot } from '../lib/agent-v2/types';
 
 const toastMocks = vi.hoisted(() => ({
   mockToastSuccess: vi.fn(),
@@ -492,6 +492,29 @@ function runCard(overrides: Partial<RunCard> = {}): RunCard {
   };
 }
 
+function subagent(overrides: Partial<SessionSubagentSnapshot> = {}): SessionSubagentSnapshot {
+  return {
+    agentId: overrides.agentId || 'subagent-1',
+    title: overrides.title || '调研佛山天气气候',
+    status: overrides.status || 'running',
+    startedAt: overrides.startedAt || '2026-05-28T04:00:00.000Z',
+    updatedAt: overrides.updatedAt || '2026-05-28T04:00:04.000Z',
+    latestSummary: overrides.latestSummary || '正在查询近 7 天天气',
+    latestToolName: overrides.latestToolName || 'WebSearch',
+    messageCount: overrides.messageCount || 1,
+    toolCount: overrides.toolCount || 1,
+    activities: overrides.activities || [
+      {
+        id: 'activity-1',
+        timestamp: '2026-05-28T04:00:04.000Z',
+        kind: 'message',
+        title: '最新进展',
+        detail: '正在查询近 7 天天气',
+      },
+    ],
+  };
+}
+
 describe('Chat markdown export', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -601,6 +624,113 @@ describe('Chat markdown export', () => {
       );
     });
     expect(toastMocks.mockToastSuccess).toHaveBeenCalledWith('Markdown 已复制');
+  });
+
+  it('用户手动收起子代理后，后续更新不会自动重新展开，并在折叠行显示最新活动', async () => {
+    mockStreamState.conversationItems = [
+      {
+        type: 'run',
+        card: runCard({
+          id: 'run-subagents',
+          runId: 'run-subagents',
+          cardStatus: 'running',
+          headline: '执行中',
+          subagents: [
+            subagent({
+              agentId: 'subagent-weather',
+              title: '调研佛山天气气候',
+              updatedAt: '2026-05-28T04:00:04.000Z',
+              latestSummary: '正在查询近 7 天天气',
+            }),
+          ],
+        }),
+      },
+    ];
+
+    const view = render(<Chat />);
+
+    expect(await view.findByText('调研佛山天气气候')).toBeTruthy();
+    fireEvent.click(view.getByRole('button', { name: /子代理 1 个/i }));
+    await waitFor(() => {
+      expect(view.queryByText('调研佛山天气气候')).toBeNull();
+    });
+
+    mockStreamState.conversationItems = [
+      {
+        type: 'run',
+        card: runCard({
+          id: 'run-subagents',
+          runId: 'run-subagents',
+          cardStatus: 'running',
+          headline: '执行中',
+          subagents: [
+            subagent({
+              agentId: 'subagent-weather',
+              title: '调研佛山天气气候',
+              updatedAt: '2026-05-28T04:00:10.000Z',
+              latestSummary: '已切换到逐小时天气整理',
+              activities: [
+                {
+                  id: 'activity-2',
+                  timestamp: '2026-05-28T04:00:10.000Z',
+                  kind: 'message',
+                  title: '最新进展',
+                  detail: '已切换到逐小时天气整理',
+                },
+              ],
+            }),
+          ],
+        }),
+      },
+    ];
+
+    view.rerender(<Chat />);
+
+    await waitFor(() => {
+      expect(view.queryByText('调研佛山天气气候')).toBeNull();
+      expect(view.getByText(/最近活动：调研佛山天气气候/)).toBeTruthy();
+      expect(view.getByText(/已切换到逐小时天气整理/)).toBeTruthy();
+    });
+  });
+
+  it('子代理等待状态合并到子代理卡标签里，不再单独显示黄色摘要块', async () => {
+    const activeUpdatedAt = new Date(Date.now() - 5_000).toISOString();
+    const waitingUpdatedAt = new Date(Date.now() - 20_000).toISOString();
+
+    mockStreamState.conversationItems = [
+      {
+        type: 'run',
+        card: runCard({
+          id: 'run-subagent-tags',
+          runId: 'run-subagent-tags',
+          cardStatus: 'running',
+          headline: '执行中',
+          subagents: [
+            subagent({
+              agentId: 'subagent-economy',
+              title: '调研佛山经济情况',
+              updatedAt: activeUpdatedAt,
+              latestSummary: '正在读取统计公报',
+            }),
+            subagent({
+              agentId: 'subagent-weather',
+              title: '调研佛山天气情况',
+              updatedAt: waitingUpdatedAt,
+              latestSummary: '正在等待网页读取结果',
+            }),
+          ],
+        }),
+      },
+    ];
+
+    const view = render(<Chat />);
+
+    expect(await view.findByRole('button', { name: /子代理 2 个/i })).toBeTruthy();
+    expect(view.getByText('活跃 2')).toBeTruthy();
+    expect(view.getByText('工具等待 1')).toBeTruthy();
+    expect(
+      view.queryByText('父代理正在等待 2 个活跃子代理返回，其中 1 个疑似等待工具响应。')
+    ).toBeNull();
   });
 
   it('首屏 bootstrap 静态判定可用时，不应回退成检测中文案', async () => {

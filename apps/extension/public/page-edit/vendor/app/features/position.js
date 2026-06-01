@@ -117,6 +117,7 @@ export function draggable({el, surface = el, cursor = 'move', history = null}) {
     })
     el.style.transition   = 'none'
     surface.style.cursor  = cursor
+    surface.setAttribute('data-webmcp-page-edit-surface-cursor', cursor)
 
     surface.addEventListener('mousedown', onMouseDown, true)
     surface.addEventListener('mouseup', onMouseUp, true)
@@ -130,6 +131,7 @@ export function draggable({el, surface = el, cursor = 'move', history = null}) {
     })
     el.style.transition   = null
     surface.style.cursor  = null
+    surface.removeAttribute('data-webmcp-page-edit-surface-cursor')
 
     surface.removeEventListener('mousedown', onMouseDown, true)
     surface.removeEventListener('mouseup', onMouseUp, true)
