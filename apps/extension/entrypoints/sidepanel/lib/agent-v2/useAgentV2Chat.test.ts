@@ -612,6 +612,46 @@ describe('useAgentV2Chat', () => {
     });
   });
 
+  it('keeps uploaded document attachments on local user messages', async () => {
+    clientMocks.startRun.mockImplementationOnce(async () => undefined);
+
+    const { result } = renderHook(() =>
+      useAgentV2Chat({ baseUrl: 'http://localhost:3000', endpoint: '/api/agent-v2' })
+    );
+
+    await act(async () => {
+      await result.current.sendMessage('看看这个文档内容', {
+        attachments: [
+          {
+            id: 'attachment-doc-1',
+            sessionFileId: 'session-file-doc-1',
+            name: '功能说明.docx',
+            mimeType:
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            size: 345678,
+            kind: 'document',
+            storage: 'uploaded',
+          },
+        ],
+      });
+    });
+
+    expect(result.current.messages[0]).toMatchObject({
+      role: 'user',
+      text: '看看这个文档内容',
+      attachments: [
+        {
+          id: 'attachment-doc-1',
+          name: '功能说明.docx',
+          mimeType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size: 345678,
+          kind: 'document',
+        },
+      ],
+    });
+  });
+
   it('shows a local assistant placeholder before the first run event arrives', async () => {
     let resolveStartRun: (() => void) | null = null;
     clientMocks.startRun.mockImplementationOnce(

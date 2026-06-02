@@ -690,6 +690,7 @@ describe('createPageEditService', () => {
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
     const armInteractiveSelectionAnalysis = vi.fn().mockResolvedValue(undefined);
+    const showSelectionAnalysisGuidance = vi.fn().mockResolvedValue(undefined);
     const rememberPendingSelectionAnalysis = vi.fn();
     const startSelectionAnalysis = vi.fn().mockResolvedValue({
       sessionId: 'analysis-1',
@@ -714,6 +715,7 @@ describe('createPageEditService', () => {
       getPageEditState,
       startSelectionAnalysis,
       armInteractiveSelectionAnalysis,
+      showSelectionAnalysisGuidance,
       rememberPendingSelectionAnalysis,
       publishComposerAppend,
       openSidePanel,
@@ -765,6 +767,15 @@ describe('createPageEditService', () => {
       }),
     });
     await vi.waitFor(() => {
+      expect(showSelectionAnalysisGuidance).toHaveBeenCalledWith({
+        tabId: 7,
+        analysisMode: 'interactive',
+        targetElement: createAnalyzeTarget({
+          tagName: 'button',
+          text: '查询',
+          outerHTMLSnippet: '<button type="button">查询</button>',
+        }),
+      });
       expect(openSidePanel).toHaveBeenCalledWith(7);
       expect(publishComposerAppend).toHaveBeenCalledWith({
         text: expect.stringContaining('请在页面上执行一次真实点击或交互'),
@@ -777,6 +788,7 @@ describe('createPageEditService', () => {
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
     const armInteractiveSelectionAnalysis = vi.fn().mockResolvedValue(undefined);
+    const showSelectionAnalysisGuidance = vi.fn().mockResolvedValue(undefined);
     const rememberPendingSelectionAnalysis = vi.fn();
     const startSelectionAnalysis = vi.fn().mockResolvedValue({
       sessionId: 'analysis-2',
@@ -801,6 +813,7 @@ describe('createPageEditService', () => {
       getPageEditState,
       startSelectionAnalysis,
       armInteractiveSelectionAnalysis,
+      showSelectionAnalysisGuidance,
       rememberPendingSelectionAnalysis,
       publishComposerAppend,
       openSidePanel,
@@ -832,10 +845,20 @@ describe('createPageEditService', () => {
       analysisMode: 'display',
     });
     expect(armInteractiveSelectionAnalysis).not.toHaveBeenCalled();
-    expect(openSidePanel).toHaveBeenCalledWith(7);
-    expect(publishComposerAppend).toHaveBeenCalledWith({
-      text: expect.stringContaining('请刷新页面或触发一次重新加载'),
-      source: 'page-edit:analyze',
+    await vi.waitFor(() => {
+      expect(showSelectionAnalysisGuidance).toHaveBeenCalledWith({
+        tabId: 7,
+        analysisMode: 'display',
+        targetElement: createAnalyzeTarget({
+          tagName: 'span',
+          text: '运单查询',
+        }),
+      });
+      expect(openSidePanel).toHaveBeenCalledWith(7);
+      expect(publishComposerAppend).toHaveBeenCalledWith({
+        text: expect.stringContaining('请刷新页面或触发一次重新加载'),
+        source: 'page-edit:analyze',
+      });
     });
   });
 
@@ -936,6 +959,7 @@ describe('createPageEditService', () => {
   it('completes interactive analysis after runtime click completion message', async () => {
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
+    const clearSelectionAnalysisGuidance = vi.fn().mockResolvedValue(undefined);
     const completeSelectionAnalysis = vi.fn().mockResolvedValue({
       markdown: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/query`',
     });
@@ -959,6 +983,7 @@ describe('createPageEditService', () => {
       clearPendingSelectionAnalysis,
       getPageEditState,
       completeSelectionAnalysis,
+      clearSelectionAnalysisGuidance,
       publishComposerAppend,
       openSidePanel,
     });
@@ -979,6 +1004,9 @@ describe('createPageEditService', () => {
     await Promise.resolve();
 
     expect(clearPendingSelectionAnalysis).toHaveBeenCalledWith('analysis-3');
+    expect(clearSelectionAnalysisGuidance).toHaveBeenCalledWith({
+      tabId: 7,
+    });
     expect(completeSelectionAnalysis).toHaveBeenCalledWith({
       sessionId: 'analysis-3',
     });

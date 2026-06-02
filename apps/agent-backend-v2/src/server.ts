@@ -46,6 +46,30 @@ loadDotenv({ path: resolve(__dirname, '../.dev.vars'), override: true });
 const env = loadEnv();
 const defaultWorkspacePath = resolveDefaultWorkspacePath(env.workdir);
 const globalSkillSources = buildGlobalSkillSources(env.globalSkillRoots);
+
+async function mergeBuiltinSkillSources(
+  sources: Array<{ rootDir: string; scanDir: string; prefix?: string }> = []
+) {
+  const merged = [
+    ...(await defaultCapabilityCatalogService.listBuiltinCapabilitySources()),
+    ...sources,
+    ...globalSkillSources.map((source) => ({
+      rootDir: source.rootDir,
+      scanDir: source.rootDir,
+    })),
+  ];
+
+  return merged.filter((source, index, collection) => {
+    const key = `${resolve(source.rootDir)}::${resolve(source.scanDir)}::${source.prefix || ''}`;
+    return (
+      collection.findIndex(
+        (item) =>
+          `${resolve(item.rootDir)}::${resolve(item.scanDir)}::${item.prefix || ''}` === key
+      ) === index
+    );
+  });
+}
+
 const runtime = createClaudeSessionPool();
 const runStateStore = createSessionRunStateStore();
 const capabilitiesService = createCapabilitiesService({
@@ -151,56 +175,34 @@ const agentService = createAgentService({
 
 const capabilityCatalogService = {
   ...defaultCapabilityCatalogService,
-  listCapabilities(input: Parameters<typeof defaultCapabilityCatalogService.listCapabilities>[0]) {
+  async listCapabilities(
+    input: Parameters<typeof defaultCapabilityCatalogService.listCapabilities>[0]
+  ) {
     return defaultCapabilityCatalogService.listCapabilities({
       ...input,
-      builtinSources: [
-        ...(input?.builtinSources || []),
-        ...globalSkillSources.map((source) => ({
-          rootDir: source.rootDir,
-          scanDir: source.rootDir,
-        })),
-      ],
+      builtinSources: await mergeBuiltinSkillSources(input?.builtinSources || []),
     });
   },
-  readCapability(input: Parameters<typeof defaultCapabilityCatalogService.readCapability>[0]) {
+  async readCapability(input: Parameters<typeof defaultCapabilityCatalogService.readCapability>[0]) {
     return defaultCapabilityCatalogService.readCapability({
       ...input,
-      builtinSources: [
-        ...(input?.builtinSources || []),
-        ...globalSkillSources.map((source) => ({
-          rootDir: source.rootDir,
-          scanDir: source.rootDir,
-        })),
-      ],
+      builtinSources: await mergeBuiltinSkillSources(input?.builtinSources || []),
     });
   },
-  readCapabilityFile(
+  async readCapabilityFile(
     input: Parameters<typeof defaultCapabilityCatalogService.readCapabilityFile>[0]
   ) {
     return defaultCapabilityCatalogService.readCapabilityFile({
       ...input,
-      builtinSources: [
-        ...(input?.builtinSources || []),
-        ...globalSkillSources.map((source) => ({
-          rootDir: source.rootDir,
-          scanDir: source.rootDir,
-        })),
-      ],
+      builtinSources: await mergeBuiltinSkillSources(input?.builtinSources || []),
     });
   },
-  updateCapabilityFile(
+  async updateCapabilityFile(
     input: Parameters<typeof defaultCapabilityCatalogService.updateCapabilityFile>[0]
   ) {
     return defaultCapabilityCatalogService.updateCapabilityFile({
       ...input,
-      builtinSources: [
-        ...(input?.builtinSources || []),
-        ...globalSkillSources.map((source) => ({
-          rootDir: source.rootDir,
-          scanDir: source.rootDir,
-        })),
-      ],
+      builtinSources: await mergeBuiltinSkillSources(input?.builtinSources || []),
     });
   },
 };

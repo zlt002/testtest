@@ -356,6 +356,7 @@ const createParagraph = (
   options: Record<string, unknown> = {}
 ) =>
   new Paragraph({
+    alignment: AlignmentType.LEFT,
     spacing: {
       before: 40,
       after: 140,
@@ -437,6 +438,7 @@ const paragraphFromText = (text: string, options: Record<string, unknown> = {}):
 
 const tableCellParagraph = (cell: MarkdownNode, rowIndex: number) =>
   new Paragraph({
+    alignment: AlignmentType.LEFT,
     spacing: {
       before: 60,
       after: 60,
@@ -1013,6 +1015,7 @@ export const buildDocxDownloadPayload = async ({
             color: BODY_TEXT,
           },
           paragraph: {
+            alignment: AlignmentType.LEFT,
             spacing: {
               line: 360,
             },

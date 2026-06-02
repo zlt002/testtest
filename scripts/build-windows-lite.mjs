@@ -121,6 +121,38 @@ async function writeUtf8BomFile(filePath, content) {
   await writeFile(filePath, utf8BomBuffer(content));
 }
 
+export function buildRuntimeCopyPlan({ rootDir, tempDir, payloadDir, runtimeDir }) {
+  return [
+    {
+      from: path.join(tempDir, 'native-server', 'index.cjs'),
+      to: path.join(runtimeDir, 'native-server', 'runtime.cjs'),
+    },
+    {
+      from: path.join(tempDir, 'agent-backend-v2'),
+      to: path.join(runtimeDir, 'agent-backend-v2'),
+    },
+    {
+      from: path.join(rootDir, 'apps', 'agent-backend-v2', 'builtin-skills'),
+      to: path.join(payloadDir, 'builtin-skills'),
+    },
+    {
+      from: path.join(rootDir, 'apps', 'agent-backend-v2', 'builtin-plugins'),
+      to: path.join(payloadDir, 'builtin-plugins'),
+    },
+    {
+      from: path.join(
+        rootDir,
+        'apps',
+        'agent-backend-v2',
+        'node_modules',
+        '@anthropic-ai',
+        'claude-agent-sdk'
+      ),
+      to: path.join(runtimeDir, 'vendor', 'claude-agent-sdk'),
+    },
+  ];
+}
+
 function buildPayloadArchiveInvocation({ outputPath, platform = process.platform }) {
   if (platform === 'win32') {
     return {
@@ -3063,18 +3095,9 @@ async function main() {
 
   const runtimeDir = path.join(payloadDir, 'runtime');
   await mkdir(path.join(runtimeDir, 'native-server'), { recursive: true });
-  await copyDereferenced(
-    path.join(tempDir, 'native-server', 'index.cjs'),
-    path.join(runtimeDir, 'native-server', 'runtime.cjs')
-  );
-  await copyDereferenced(
-    path.join(tempDir, 'agent-backend-v2'),
-    path.join(runtimeDir, 'agent-backend-v2')
-  );
-  await copyDereferenced(
-    path.join(rootDir, 'apps', 'agent-backend-v2', 'node_modules', '@anthropic-ai', 'claude-agent-sdk'),
-    path.join(runtimeDir, 'vendor', 'claude-agent-sdk')
-  );
+  for (const asset of buildRuntimeCopyPlan({ rootDir, tempDir, payloadDir, runtimeDir })) {
+    await copyDereferenced(asset.from, asset.to);
+  }
 
   await mkdir(path.join(payloadDir, 'logs'), { recursive: true });
   await mkdir(path.join(payloadDir, 'workspace'), { recursive: true });

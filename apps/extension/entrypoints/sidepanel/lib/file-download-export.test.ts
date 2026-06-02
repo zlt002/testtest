@@ -179,4 +179,75 @@ describe('file download export', () => {
       height: 812,
     });
   });
+
+  it('sets table cell paragraphs to left alignment for docx exports', async () => {
+    const { buildDocxDownloadPayload } = await import('./file-download-export');
+
+    await buildDocxDownloadPayload({
+      content: '| 字段 | 值 |\n| --- | --- |\n| 文档状态 | 草稿 |',
+      fileName: 'PRD.md',
+    });
+
+    const document = toBlobMock.mock.calls[0][0] as {
+      options: {
+        sections: Array<{
+          children: Array<{
+            options: {
+              rows: Array<{
+                options: {
+                  children: Array<{
+                    options: {
+                      children: Array<{
+                        options: {
+                          alignment: string;
+                        };
+                      }>;
+                    };
+                  }>;
+                };
+              }>;
+            };
+          }>;
+        }>;
+      };
+    };
+
+    expect(
+      document.options.sections[0].children[0].options.rows[1].options.children[0].options.children[0]
+        .options.alignment
+    ).toBe('left');
+  });
+
+  it('sets normal markdown paragraphs to left alignment for docx exports', async () => {
+    const { buildDocxDownloadPayload } = await import('./file-download-export');
+
+    await buildDocxDownloadPayload({
+      content: '**版本**: 1.0',
+      fileName: 'PRD.md',
+    });
+
+    const document = toBlobMock.mock.calls[0][0] as {
+      options: {
+        styles: {
+          default: {
+            document: {
+              paragraph: {
+                alignment: string;
+              };
+            };
+          };
+        };
+        sections: Array<{
+          children: Array<{
+            options: {
+              alignment: string;
+            };
+          }>;
+        }>;
+      };
+    };
+
+    expect(document.options.styles.default.document.paragraph.alignment).toBe('left');
+    expect(document.options.sections[0].children[0].options.alignment).toBe('left');
+  });
 });

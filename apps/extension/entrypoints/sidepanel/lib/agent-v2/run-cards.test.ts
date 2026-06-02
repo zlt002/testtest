@@ -216,7 +216,7 @@ describe('projectConversationRunItems', () => {
     ]);
   });
 
-  it('falls back to approved plan todos for continuation runs before TodoWrite arrives', () => {
+  it('does not derive todos from approved plan text before TodoWrite arrives', () => {
     const items = projectConversationRunItems([
       message({
         id: 'user-1',
@@ -257,11 +257,7 @@ describe('projectConversationRunItems', () => {
 
     expect(run?.type).toBe('run');
     if (run?.type !== 'run') return;
-    expect(run.card.todos).toEqual([
-      { content: '续跑后立即展示计划待办', status: 'in_progress' },
-      { content: '等待真实 TodoWrite 覆盖', status: 'pending' },
-      { content: '跑定向测试', status: 'pending' },
-    ]);
+    expect(run.card.todos).toEqual([]);
   });
 
   it('preserves the full process list when a run has many process events', () => {

@@ -1,3 +1,5 @@
+import { isLocalSnapshotMode } from '../../../runtime/page-mode.js';
+
 const VISBUG_NODE_PATTERN = /^visbug-/i;
 const PAGE_EDIT_UI_TAG_PATTERN = /^(vis-bug|visbug-)/i;
 const MAX_TEXT_LENGTH = 120;
@@ -246,13 +248,15 @@ export function findSelectableParentElement(element) {
   return null;
 }
 
-export function buildElementSummary(element) {
+export function buildElementSummary(element, { includeClasses = isLocalSnapshotMode() } = {}) {
   const tag = element.tagName.toLowerCase();
   const id = element.id ? `#${element.id}` : '';
-  const classes = Array.from(element.classList)
-    .slice(0, 3)
-    .map((name) => `.${name}`)
-    .join('');
+  const classes = includeClasses
+    ? Array.from(element.classList)
+        .slice(0, 3)
+        .map((name) => `.${name}`)
+        .join('')
+    : '';
   const text = normalizeText(element.textContent).slice(0, 40) || '(空)';
 
   return `${tag}${id}${classes}  文本: ${text}`;
@@ -361,7 +365,9 @@ export function buildPickedElementCaptureContext(element) {
 
 export function describeSelectedElement(element, options = {}) {
   const pageUrl = options.pageUrl || window.location.href;
-  const summary = buildElementSummary(element);
+  const summary = buildElementSummary(element, {
+    includeClasses: pageUrl.startsWith('file://'),
+  });
 
   if (pageUrl.startsWith('file://')) {
     const filePath = normalizeFilePathFromUrl(pageUrl);

@@ -43,6 +43,7 @@ import { createSelectionPresentationPolicy } from './selection-presentation.js';
 import {
   metaKey,
   htmlStringToDom,
+  htmlStringToNodes,
   createClassname,
   camelToDash,
   isOffBounds,
@@ -320,6 +321,11 @@ export function Selectable(visbug) {
     selectionBridgeNonce = typeof nonce === 'string' && nonce ? nonce : null;
   };
 
+  const isSelectionAnalysisGuidanceActive = () =>
+    typeof document?.documentElement?.getAttribute === 'function' &&
+    typeof document.documentElement.getAttribute('data-webmcp-page-edit-analysis-mode') ===
+      'string';
+
   const listen = () => {
     document.addEventListener('keydown', freezePageKeyboardInteraction, true);
     document.addEventListener('keyup', freezePageKeyboardInteraction, true);
@@ -385,6 +391,12 @@ export function Selectable(visbug) {
   };
 
   const on_click = (e) => {
+    if (isSelectionAnalysisGuidanceActive()) {
+      clearMeasurements();
+      clearHover();
+      return;
+    }
+
     if (isPageEditUiTarget(e.target)) {
       return;
     }
@@ -452,6 +464,12 @@ export function Selectable(visbug) {
   };
 
   const on_dblclick = (e) => {
+    if (isSelectionAnalysisGuidanceActive()) {
+      clearMeasurements();
+      clearHover();
+      return;
+    }
+
     e.preventDefault();
     e.stopPropagation();
     if (isOffBounds(e.target)) return;
@@ -591,6 +609,40 @@ export function Selectable(visbug) {
     previous: node.previousSibling,
     next: node.nextSibling,
   });
+
+  const tableStructureTags = new Set([
+    'caption',
+    'col',
+    'colgroup',
+    'tbody',
+    'td',
+    'tfoot',
+    'th',
+    'thead',
+    'tr',
+  ]);
+
+  const isTableStructureElement = (node) =>
+    node instanceof Element && tableStructureTags.has(node.tagName.toLowerCase());
+
+  const resolveStructuredPasteTargets = (targets, html) => {
+    if (!targets.length) return targets;
+
+    const primaryTarget = targets[0];
+    const parsedNodes = htmlStringToNodes(html, primaryTarget);
+    const parsedNode = parsedNodes[0] || null;
+
+    if (
+      targets.length > 1 &&
+      parsedNodes.length === 1 &&
+      isTableStructureElement(parsedNode) &&
+      targets.every(isTableStructureElement)
+    ) {
+      return [primaryTarget];
+    }
+
+    return targets;
+  };
 
   const restoreNodeAtAnchor = ({ node, anchor }) => {
     if (!anchor.parent) return;
@@ -764,18 +816,25 @@ export function Selectable(visbug) {
 
   const applyStructuredPaste = (targets, html) => {
     if (!canEditCurrentPage()) return;
+    if (!targets.length) return;
 
-    const pastedEntries = targets.reduce((entries, target) => {
-      const node = htmlStringToDom(html);
+    const clipboardNodes = htmlStringToNodes(html, targets[0]).filter(Boolean);
+    if (!clipboardNodes.length) return;
+
+    const orderedTargets = sortNodesInDocumentOrder(targets);
+    const shouldPairNodesByIndex =
+      clipboardNodes.length > 1 && clipboardNodes.length === orderedTargets.length;
+
+    const pastedEntries = orderedTargets.reduce((entries, target, index) => {
+      const parent = target?.parentNode;
+      if (!parent) return entries;
+
+      const sourceNode = shouldPairNodesByIndex ? clipboardNodes[index] : clipboardNodes[0];
+      const node = sourceNode?.cloneNode(true);
       if (!node) return entries;
 
-      const anchor = {
-        parent: target,
-        previous: target.lastChild,
-        next: null,
-      };
-
-      target.appendChild(node);
+      const anchor = createStructureAnchor(target);
+      parent.insertBefore(node, anchor.next);
       entries.push({ node, anchor });
       return entries;
     }, []);
@@ -795,6 +854,13 @@ export function Selectable(visbug) {
   };
 
   const on_pointer_down = (e) => {
+    if (isSelectionAnalysisGuidanceActive()) {
+      clearMeasurements();
+      clearHover();
+      marqueeState.suppressedClick = null;
+      return;
+    }
+
     if (isEditableKeyboardTarget(e.target)) {
       return;
     }
@@ -986,10 +1052,16 @@ export function Selectable(visbug) {
 
     if (selected[0] && nodeClipboard !== selected[0]) {
       e.preventDefault();
-      let $node = selected[0].cloneNode(true);
-      $node.removeAttribute('data-selected');
+      const orderedSelection = sortNodesInDocumentOrder(selected);
+      const copiedHtml = orderedSelection
+        .map((node) => {
+          const clonedNode = node.cloneNode(true);
+          clonedNode.removeAttribute?.('data-selected');
+          return clonedNode.outerHTML;
+        })
+        .join('');
 
-      copyBackup = $node.outerHTML;
+      copyBackup = copiedHtml;
       e.clipboardData.setData('text/html', copyBackup);
 
       const { state } = await navigator.permissions.query({ name: 'clipboard-write' });
@@ -1023,7 +1095,7 @@ export function Selectable(visbug) {
 
     if (selected.length && potentialHTML) {
       e.preventDefault();
-      applyStructuredPaste([...selected], potentialHTML);
+      applyStructuredPaste(resolveStructuredPasteTargets([...selected], potentialHTML), potentialHTML);
     }
   };
 
@@ -1196,6 +1268,11 @@ export function Selectable(visbug) {
   };
 
   const on_hover = (e) => {
+    if (isSelectionAnalysisGuidanceActive()) {
+      clearMeasurements();
+      return clearHover();
+    }
+
     if (marqueeState.active) return;
 
     const $target = deepElementFromPoint(e.clientX, e.clientY);
@@ -1239,7 +1316,8 @@ export function Selectable(visbug) {
   const buildSelectionLabelTemplate = (element, policy) => {
     if (!policy.showSelectionLabel) return '';
 
-    const classSelector = createClassname(element);
+    const shouldShowClassSelector = isEditableWorkbenchMode(getWorkbenchMode());
+    const classSelector = shouldShowClassSelector ? createClassname(element) : '';
 
     if (!policy.showSelectionMetadata) {
       return `
@@ -1407,7 +1485,8 @@ export function Selectable(visbug) {
   const overlayHoverUI = ({ el, no_hover = false, no_label = true }) => {
     if (hover_state.target === el) return;
     hover_state.target = el;
-    const classSelector = createClassname(el);
+    const shouldShowClassSelector = isEditableWorkbenchMode(getWorkbenchMode());
+    const classSelector = shouldShowClassSelector ? createClassname(el) : '';
 
     hover_state.element = no_hover ? null : createHover(el);
 

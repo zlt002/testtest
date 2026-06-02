@@ -17,6 +17,7 @@ import type {
   AgentV2StopReason,
   AgentEvent,
   BrowserContext,
+  DisplayAttachment,
   DisplayMessage,
   ImageAttachment,
   InteractionDecision,
@@ -72,6 +73,25 @@ function attachmentsToDisplayImages(
     }));
 
   return images.length > 0 ? images : undefined;
+}
+
+function attachmentsToDisplayAttachments(
+  attachments: SessionAttachment[] | undefined
+): DisplayAttachment[] | undefined {
+  const visibleAttachments = (attachments || [])
+    .filter((attachment) => attachment.kind !== 'image')
+    .map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      size: attachment.size,
+      kind:
+        attachment.kind === 'document' || attachment.kind === 'text'
+          ? attachment.kind
+          : 'other',
+    }));
+
+  return visibleAttachments.length > 0 ? visibleAttachments : undefined;
 }
 
 function activeRunStatusFromEvent(event: AgentEvent): 'connecting' | 'streaming' {
@@ -388,6 +408,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
       const displayImages = input?.images?.length
         ? input.images
         : attachmentsToDisplayImages(attachments);
+      const displayAttachments = attachmentsToDisplayAttachments(attachments);
       abortControllerRef.current = controller;
       setActiveProjectPath(input?.projectPath || null);
       setActiveRunStartedAt(new Date().toISOString());
@@ -408,6 +429,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
           kind: 'text',
           text: trimmed,
           images: displayImages,
+          attachments: displayAttachments,
           timestamp: new Date().toISOString(),
         },
         {

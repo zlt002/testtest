@@ -27,6 +27,14 @@ export type AgentEvent = {
   payload: Record<string, unknown>;
 };
 
+export type DisplayAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: 'document' | 'text' | 'other';
+};
+
 export type DisplayMessage = {
   id: string;
   sessionId: string;
@@ -44,6 +52,7 @@ export type DisplayMessage = {
   sequence?: number | null;
   raw?: unknown;
   images?: ImageAttachment[];
+  attachments?: DisplayAttachment[];
   requestId?: string | null;
   interactionKind?: 'interactive_prompt' | 'permission_request' | 'plan_approval' | null;
   runPhase?:

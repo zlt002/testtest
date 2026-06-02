@@ -11,6 +11,11 @@ const state = {
   },
 }
 
+const isSelectionAnalysisGuidanceActive = () =>
+  typeof document?.documentElement?.getAttribute === 'function' &&
+  typeof document.documentElement.getAttribute('data-webmcp-page-edit-analysis-mode') ===
+    'string'
+
 export function Guides(visbug) {
   $('body').on('mousemove', on_hover)
   $('body').on('mouseout', on_hoverout)
@@ -34,6 +39,11 @@ export function Guides(visbug) {
 }
 
 const on_hover = e => {
+  if (isSelectionAnalysisGuidanceActive()) {
+    hideGridlines()
+    return
+  }
+
   const target = deepElementFromPoint(e.clientX, e.clientY)
   if (!target) return
   if (isOffBounds(target)) return

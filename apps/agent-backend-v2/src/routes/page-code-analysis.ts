@@ -1,11 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PageEvidenceSchema } from '@mcp-b/dom-analysis-contracts';
 import { createRepoContextRouter } from '../codebase/repo-context-router.ts';
+import type { PageGraphContextResolution } from '../codebase/repo-context-router.ts';
 import type { PageCodebaseRule } from '../codebase/repo-routing-config.ts';
 import { createAttributionService } from '../dom-analysis/attribution-service.ts';
+import {
+  buildAnalysisCard,
+  resolveAnalysisCardSignals,
+} from '../dom-analysis/analysis-card-builder.ts';
 import { createChatSummaryBuilder } from '../dom-analysis/chat-summary-builder.ts';
 import { createCodeLocationService } from '../dom-analysis/code-location-service.ts';
 import { createDocumentBuilder } from '../dom-analysis/document-builder.ts';
+import { resolveKbCandidate } from '../dom-analysis/kb-candidate-resolver.ts';
+import { resolvePageFeature } from '../dom-analysis/page-feature-resolver.ts';
+import {
+  buildSuggestedCommand,
+  extractApiTerms,
+  extractFieldTerms,
+} from '../dom-analysis/suggested-command-builder.ts';
 import type {
   AttributionResult,
   DomDocumentLocation,
@@ -236,6 +248,58 @@ function sendMarkdown(res: ServerResponse, status: number, markdown: string): vo
   res.end(markdown);
 }
 
+function dedupeTerms(items: string[]): string[] {
+  return items.filter((item, index) => item.length > 0 && items.indexOf(item) === index);
+}
+
+function collectObservedApis(pageEvidence: {
+  pageContext: { apiCandidates: string[] };
+  networkEvidence: Array<{ url: string }>;
+}): string[] {
+  return dedupeTerms([
+    ...pageEvidence.pageContext.apiCandidates,
+    ...pageEvidence.networkEvidence
+      .map((item) => {
+        const matchedPath = item.url.match(/(\/api[^?]+)/);
+        return matchedPath?.[1] ?? '';
+      })
+      .filter(Boolean),
+  ]);
+}
+
+function resolveRouteContext(input: {
+  router: ReturnType<typeof createRepoContextRouter>;
+  pageEvidence: {
+    pageContext: {
+      url: string;
+      pathname?: string;
+      hashRoute?: string;
+      pageTextSummary: string[];
+      apiCandidates: string[];
+      resourceHints: string[];
+    };
+    runtimeEvidence: {
+      chunkHints: string[];
+    };
+  };
+  pageCodebaseMappingConfig?: {
+    rules: PageCodebaseRule[];
+  };
+}): PageGraphContextResolution {
+  return input.router.resolve({
+    url: input.pageEvidence.pageContext.url,
+    pathname: input.pageEvidence.pageContext.pathname,
+    hashRoute: input.pageEvidence.pageContext.hashRoute,
+    pageTextSummary: input.pageEvidence.pageContext.pageTextSummary,
+    apiCandidates: input.pageEvidence.pageContext.apiCandidates,
+    resourceHints: [
+      ...input.pageEvidence.pageContext.resourceHints,
+      ...input.pageEvidence.runtimeEvidence.chunkHints,
+    ],
+    pageCodebaseMappingConfig: input.pageCodebaseMappingConfig,
+  });
+}
+
 export function createPageCodeAnalysisRoute(options?: {
   projectNameByRepo?: Record<string, string>;
   attributionService?: ReturnType<typeof createAttributionService>;
@@ -322,6 +386,9 @@ export function createPageCodeAnalysisRoute(options?: {
 
     if (pathname === '/api/agent-v2/page-code-analysis/dom-analyze') {
       const body = await readJsonBody<DomAnalyzeBody>(req);
+      const pageCodebaseMappingConfig = normalizePageCodebaseMappingConfig(
+        body.pageCodebaseMappingConfig
+      );
       let pageEvidence;
       try {
         pageEvidence = PageEvidenceSchema.parse(body.pageEvidence);
@@ -330,6 +397,63 @@ export function createPageCodeAnalysisRoute(options?: {
       }
 
       const attribution = attributionService.attribute(pageEvidence);
+      const rawEvidence = {
+        pageTextSummary: pageEvidence.pageContext.pageTextSummary,
+        apiCandidates: pageEvidence.pageContext.apiCandidates,
+        resourceHints: [
+          ...pageEvidence.pageContext.resourceHints,
+          ...pageEvidence.runtimeEvidence.chunkHints,
+        ],
+      };
+      const routeContext = resolveRouteContext({
+        router,
+        pageEvidence,
+        pageCodebaseMappingConfig,
+      });
+      const pageFeature = resolvePageFeature({
+        pageTitle: pageEvidence.pageContext.title,
+        pageLabel: routeContext.pageLabel,
+        hashRoute: pageEvidence.pageContext.hashRoute,
+        pageTextSummary: pageEvidence.pageContext.pageTextSummary,
+      });
+      const cardSignals = resolveAnalysisCardSignals({
+        elementText: pageEvidence.targetElement.text,
+        pageTextSummary: pageEvidence.pageContext.pageTextSummary,
+        recommendedApi: attribution.bestApi,
+        attributionConfidence: attribution.confidence,
+        interactionEvidenceCount: pageEvidence.interactionEvidence.length,
+      });
+      const actionTerms = dedupeTerms(
+        [pageEvidence.targetElement.text?.trim() ?? '', cardSignals.actionType ?? ''].filter(Boolean)
+      );
+      const observedApis = collectObservedApis(pageEvidence);
+      const kbCandidate = resolveKbCandidate({
+        routeContext: {
+          matched: routeContext.matched,
+          triggerSkill: routeContext.triggerSkill,
+          ewankbKb: routeContext.ewankbKb,
+          ewankbMode: routeContext.ewankbMode,
+        },
+        observedApis,
+      });
+      const apiTerms = extractApiTerms(attribution.bestApi ?? observedApis[0] ?? null);
+      const fieldTerms = extractFieldTerms(cardSignals.tableHeaders);
+      const analysisCard = buildAnalysisCard({
+        pageName: pageFeature.primaryFeatureName,
+        route: pageEvidence.pageContext.hashRoute ?? null,
+        elementText: pageEvidence.targetElement.text,
+        actionType: cardSignals.actionType,
+        tableHeaders: cardSignals.tableHeaders,
+        recommendedApi: attribution.bestApi,
+        confidence: cardSignals.confidence,
+      });
+      const suggestedCommand = buildSuggestedCommand({
+        kbCandidate,
+        featureName: pageFeature.primaryFeatureName,
+        actionTerms,
+        apiTerms,
+        fieldTerms,
+      });
 
       const response = {
         page: {
@@ -346,19 +470,23 @@ export function createPageCodeAnalysisRoute(options?: {
         },
         attribution,
         evidence: {
-          pageTextSummary: pageEvidence.pageContext.pageTextSummary,
-          apiCandidates: pageEvidence.pageContext.apiCandidates,
-          resourceHints: [
-            ...pageEvidence.pageContext.resourceHints,
-            ...pageEvidence.runtimeEvidence.chunkHints,
-          ],
+          kbCandidate,
+          featureNameCandidates: pageFeature.featureNameCandidates,
+          actionTerms,
+          apiTerms,
+          fieldTerms,
         },
+        analysisCard,
+        suggestedCommand,
       };
 
       sendJson(res, 200, {
         ...response,
         chatSummary: {
-          markdown: chatSummaryBuilder.build(response),
+          markdown: chatSummaryBuilder.build({
+            ...response,
+            evidence: rawEvidence,
+          }),
         },
       });
       return true;

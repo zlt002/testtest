@@ -78,9 +78,30 @@ export const showHideNodeLabel = (el, show = false) => {
       el.style.display = null)
 }
 
-export const htmlStringToDom = (htmlString = "") =>
-  (new DOMParser().parseFromString(htmlString, 'text/html'))
-    .body.firstChild
+export const htmlStringToNodes = (htmlString = "", contextElement = null) => {
+  const normalizedHtml = String(htmlString ?? '').trim()
+
+  if (!normalizedHtml) return []
+
+  if (contextElement?.nodeType && typeof document?.createRange === 'function') {
+    const range = document.createRange()
+
+    try {
+      range.selectNode(contextElement)
+      const fragment = range.createContextualFragment(normalizedHtml)
+      return Array.from(fragment.childNodes)
+    }
+    catch (_) {}
+  }
+
+  const parsedDocument = new DOMParser().parseFromString(normalizedHtml, 'text/html')
+  return Array.from(parsedDocument.body.childNodes)
+}
+
+export const htmlStringToDom = (htmlString = "", contextElement = null) => {
+  const nodes = htmlStringToNodes(htmlString, contextElement)
+  return nodes[0] || null
+}
 
 export const isOffBounds = node =>
   node.closest && (

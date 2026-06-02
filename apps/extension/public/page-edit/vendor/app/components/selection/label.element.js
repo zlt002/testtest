@@ -22,6 +22,7 @@ const debugLog = (label, payload = {}) => {
 };
 
 const LABEL_VIEWPORT_GAP = 8;
+const LABEL_INSIDE_OFFSET = 1;
 
 function clampLabelIntoViewport(labelHost, view) {
   labelHost.style.setProperty('--translate-x', '0px');
@@ -37,11 +38,19 @@ function clampLabelIntoViewport(labelHost, view) {
   const anchorHeight = Number.parseFloat(labelHost.style.getPropertyValue('--anchor-height')) || 0;
   const overflowRight = shellBounds.right - (view.innerWidth - LABEL_VIEWPORT_GAP);
   const overflowLeft = LABEL_VIEWPORT_GAP - shellBounds.left;
+  const canRenderInsideAnchor = anchorHeight > shellBounds.height + LABEL_INSIDE_OFFSET * 2;
 
   if (shellBounds.top < LABEL_VIEWPORT_GAP || anchorTop <= shellBounds.height + LABEL_VIEWPORT_GAP) {
-    labelHost.style.setProperty('--translate-y', `${anchorHeight + LABEL_VIEWPORT_GAP}px`);
+    if (canRenderInsideAnchor) {
+      labelHost.style.setProperty('--translate-y', `${LABEL_INSIDE_OFFSET}px`);
+      labelHost.setAttribute('data-inside-label', 'true');
+    } else {
+      labelHost.style.setProperty('--translate-y', `${anchorHeight + LABEL_VIEWPORT_GAP}px`);
+      labelHost.removeAttribute('data-inside-label');
+    }
   } else {
     labelHost.style.setProperty('--translate-y', 'calc(-100% - var(--stack-offset-y))');
+    labelHost.removeAttribute('data-inside-label');
   }
 
   if (overflowRight > 0) {

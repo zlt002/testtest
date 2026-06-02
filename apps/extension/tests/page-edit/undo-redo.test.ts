@@ -123,6 +123,22 @@ function dispatchClipboard(type: 'cut' | 'paste', html = '') {
   return clipboardData;
 }
 
+function dispatchCopy(html = '') {
+  const event = new window.Event('copy', {
+    bubbles: true,
+    cancelable: true,
+  });
+  const clipboardData = createClipboardData(html);
+
+  Object.defineProperty(event, 'clipboardData', {
+    configurable: true,
+    value: clipboardData,
+  });
+
+  document.dispatchEvent(event);
+  return clipboardData;
+}
+
 function dispatchMouse(
   target: EventTarget,
   type: 'mousedown' | 'mousemove' | 'mouseup',
@@ -474,27 +490,146 @@ describe('page-edit undo/redo wiring', () => {
       installClipboardMocks({ readText: '<span id="pasted"></span>' });
       document.body.innerHTML = `
         <main id="root">
-          <div id="target">
-            <span id="seed"></span>
-          </div>
+          <div id="target"></div>
+          <div id="tail"></div>
         </main>
       `;
 
+      const root = document.getElementById('root');
       const target = document.getElementById('target');
+      const tail = document.getElementById('tail');
 
+      expect(root).not.toBeNull();
+      expect(target).not.toBeNull();
+      expect(tail).not.toBeNull();
+
+      selectable.select(target!);
+
+      dispatchClipboard('paste');
+      await Promise.resolve();
+      expect(getChildIds(root!)).toEqual(['target', 'pasted', 'tail']);
+
+      triggerShortcut({ key: 'z', ctrlKey: true, keyCode: 90 });
+      expect(getChildIds(root!)).toEqual(['target', 'tail']);
+
+      triggerShortcut({ key: 'y', ctrlKey: true, keyCode: 89 });
+      expect(getChildIds(root!)).toEqual(['target', 'pasted', 'tail']);
+    }, { platform: 'Win32' });
+  });
+
+  it('粘贴 td 时会保持表格结构并插入到选中单元格后面', async () => {
+    await withSelectableFixture(async ({ selectable }) => {
+      installClipboardMocks({ readText: '<td id="pasted"><div class="cell el-tooltip">NEW</div></td>' });
+      document.body.innerHTML = `
+        <table>
+          <tbody>
+            <tr id="row">
+              <td id="a"><div class="cell el-tooltip">A</div></td>
+              <td id="b"><div class="cell el-tooltip">B</div></td>
+              <td id="c"><div class="cell el-tooltip">C</div></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      const row = document.getElementById('row');
+      const target = document.getElementById('b');
+
+      expect(row).not.toBeNull();
       expect(target).not.toBeNull();
 
       selectable.select(target!);
 
       dispatchClipboard('paste');
       await Promise.resolve();
-      expect(getChildIds(target!)).toEqual(['seed', 'pasted']);
+
+      expect(Array.from(row!.children).map((cell) => cell.id)).toEqual(['a', 'b', 'pasted', 'c']);
+      expect(Array.from(row!.children).every((cell) => cell.tagName.toLowerCase() === 'td')).toBe(
+        true,
+      );
+      expect(row!.querySelector('#pasted > .cell')?.textContent).toBe('NEW');
 
       triggerShortcut({ key: 'z', ctrlKey: true, keyCode: 90 });
-      expect(getChildIds(target!)).toEqual(['seed']);
+      expect(Array.from(row!.children).map((cell) => cell.id)).toEqual(['a', 'b', 'c']);
 
       triggerShortcut({ key: 'y', ctrlKey: true, keyCode: 89 });
-      expect(getChildIds(target!)).toEqual(['seed', 'pasted']);
+      expect(Array.from(row!.children).map((cell) => cell.id)).toEqual(['a', 'b', 'pasted', 'c']);
+    }, { platform: 'Win32' });
+  });
+
+  it('多选 td 粘贴时只在主选中单元格后插入一次', async () => {
+    await withSelectableFixture(async ({ selectable }) => {
+      installClipboardMocks({ readText: '<td id="pasted"><div class="cell el-tooltip">NEW</div></td>' });
+      document.body.innerHTML = `
+        <table>
+          <tbody>
+            <tr id="row">
+              <td id="a"><div class="cell el-tooltip">A</div></td>
+              <td id="b"><div class="cell el-tooltip">B</div></td>
+              <td id="c"><div class="cell el-tooltip">C</div></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      const row = document.getElementById('row');
+      const first = document.getElementById('a');
+      const primary = document.getElementById('b');
+
+      expect(row).not.toBeNull();
+      expect(first).not.toBeNull();
+      expect(primary).not.toBeNull();
+
+      selectable.select(first!);
+      selectable.select(primary!);
+
+      dispatchClipboard('paste');
+      await Promise.resolve();
+
+      expect(Array.from(row!.children).map((cell) => cell.id)).toEqual(['a', 'b', 'pasted', 'c']);
+      expect(row!.querySelectorAll('#pasted')).toHaveLength(1);
+    }, { platform: 'Win32' });
+  });
+
+  it('多选复制多个 td 后会在对应单元格后批量粘贴', async () => {
+    await withSelectableFixture(async ({ selectable }) => {
+      installClipboardMocks();
+      document.body.innerHTML = `
+        <table>
+          <tbody>
+            <tr id="row">
+              <td id="a"><div class="cell el-tooltip">A</div></td>
+              <td id="b"><div class="cell el-tooltip">B</div></td>
+              <td id="c"><div class="cell el-tooltip">C</div></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+
+      const row = document.getElementById('row');
+      const first = document.getElementById('a');
+      const second = document.getElementById('b');
+
+      expect(row).not.toBeNull();
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+
+      selectable.select(first!);
+      selectable.select(second!);
+
+      const clipboardData = dispatchCopy();
+      const copiedHtml = clipboardData.getData('text/html');
+
+      expect(copiedHtml).toContain('id="a"');
+      expect(copiedHtml).toContain('id="b"');
+
+      dispatchClipboard('paste', copiedHtml);
+      await Promise.resolve();
+
+      expect(Array.from(row!.children).map((cell) => cell.id)).toEqual(['a', 'a', 'b', 'b', 'c']);
+      expect(Array.from(row!.children).every((cell) => cell.tagName.toLowerCase() === 'td')).toBe(
+        true,
+      );
     }, { platform: 'Win32' });
   });
 

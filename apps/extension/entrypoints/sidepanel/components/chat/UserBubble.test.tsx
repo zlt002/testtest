@@ -252,4 +252,32 @@ describe('UserBubble', () => {
     expect(screen.getByText('/ewankb-server-query')).toBeTruthy();
     expect(screen.queryByText('（输入内容仅包含自动上下文）')).toBeNull();
   });
+
+  it('renders non-image attachments in the user bubble', () => {
+    render(
+      <UserBubble
+        message={{
+          id: 'message-9',
+          sessionId: 'session-1',
+          role: 'user',
+          kind: 'text',
+          text: '文档内容是啥呢',
+          attachments: [
+            {
+              id: 'attachment-doc-1',
+              name: '功能说明.docx',
+              mimeType:
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              size: 345678,
+              kind: 'document',
+            },
+          ],
+          timestamp: new Date(0).toISOString(),
+        }}
+      />
+    );
+
+    expect(screen.getByText('功能说明.docx')).toBeTruthy();
+    expect(screen.getByText(/文档 · 337\.6 KB/)).toBeTruthy();
+  });
 });

@@ -6,6 +6,7 @@ import {
   applyWindowsLiteBetaManifest,
   buildArchiveInvocation,
   buildCommandInvocation,
+  buildRuntimeCopyPlan,
   buildWindowsLiteBetaDisplayName,
   buildWindowsLiteBetaManifestVersion,
   buildWindowsManifest,
@@ -169,6 +170,38 @@ test('buildArchiveInvocation keeps zip command outside Windows', () => {
       args: ['-qr', '/tmp/accr-ui-windows-lite-x64.zip', 'accr-ui-windows-lite-x64'],
     }
   );
+});
+
+test('buildRuntimeCopyPlan includes builtin skills and builtin plugins in the packaged runtime', () => {
+  const plan = buildRuntimeCopyPlan({
+    rootDir: '/repo',
+    tempDir: '/repo/.tmp/windows-lite',
+    payloadDir: '/repo/.tmp/windows-lite/payload',
+    runtimeDir: '/repo/.tmp/windows-lite/payload/runtime',
+  });
+
+  assert.deepEqual(plan, [
+    {
+      from: '/repo/.tmp/windows-lite/native-server/index.cjs',
+      to: '/repo/.tmp/windows-lite/payload/runtime/native-server/runtime.cjs',
+    },
+    {
+      from: '/repo/.tmp/windows-lite/agent-backend-v2',
+      to: '/repo/.tmp/windows-lite/payload/runtime/agent-backend-v2',
+    },
+    {
+      from: '/repo/apps/agent-backend-v2/builtin-skills',
+      to: '/repo/.tmp/windows-lite/payload/builtin-skills',
+    },
+    {
+      from: '/repo/apps/agent-backend-v2/builtin-plugins',
+      to: '/repo/.tmp/windows-lite/payload/builtin-plugins',
+    },
+    {
+      from: '/repo/apps/agent-backend-v2/node_modules/@anthropic-ai/claude-agent-sdk',
+      to: '/repo/.tmp/windows-lite/payload/runtime/vendor/claude-agent-sdk',
+    },
+  ]);
 });
 
 test('agentBackendBat uses a stable timestamp command with fallback log name', () => {

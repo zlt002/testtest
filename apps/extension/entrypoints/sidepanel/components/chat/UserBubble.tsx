@@ -23,6 +23,29 @@ type GeneratedInputContextBlock = {
   content: string;
 };
 
+function formatAttachmentSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) {
+    return '0 B';
+  }
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getAttachmentKindLabel(kind: 'document' | 'text' | 'other') {
+  if (kind === 'document') {
+    return '文档';
+  }
+  if (kind === 'text') {
+    return '文本';
+  }
+  return '附件';
+}
+
 function splitGeneratedInputContext(text: string): {
   visibleText: string;
   contextBlocks: GeneratedInputContextBlock[];
@@ -79,6 +102,7 @@ export function UserBubble({ message }: { message: DisplayMessage }) {
   const [contextExpanded, setContextExpanded] = useState(false);
   const [canCollapse, setCanCollapse] = useState(false);
   const images = message.images || [];
+  const attachments = message.attachments || [];
   const { visibleText, contextBlocks } = useMemo(
     () => splitGeneratedInputContext(message.text || ''),
     [message.text]
@@ -131,6 +155,24 @@ export function UserBubble({ message }: { message: DisplayMessage }) {
                   alt={`附件 #${index + 1}`}
                   className="h-20 w-20 object-cover"
                 />
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {attachments.length ? (
+          <div className="mb-2 flex flex-col items-stretch gap-2">
+            {attachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="min-w-0 overflow-hidden rounded-md border border-primary-foreground/20 bg-primary-foreground/10 px-3 py-2 text-left"
+              >
+                <div className="truncate text-sm font-medium text-primary-foreground">
+                  {attachment.name}
+                </div>
+                <div className="text-xs text-primary-foreground/75">
+                  {getAttachmentKindLabel(attachment.kind)} ·{' '}
+                  {formatAttachmentSize(attachment.size)}
+                </div>
               </div>
             ))}
           </div>

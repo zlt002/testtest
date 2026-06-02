@@ -1,5 +1,4 @@
 import type { DisplayMessage, SessionSubagentSnapshot } from './types';
-import { deriveContinuationTodos } from './continuation';
 import { getInteractionDisplayMeta } from './plan-mode';
 
 export const PROCESS_PREVIEW_ITEM_LIMIT = 2;
@@ -633,16 +632,6 @@ function todosFromMessage(message: DisplayMessage): TodoItem[] {
   return [...extractTodos(message.toolInput), ...extractTodos(message.toolResult)];
 }
 
-function continuationTodosFromMessage(message: DisplayMessage): TodoItem[] {
-  if (message.role !== 'user' || message.kind !== 'text' || typeof message.text !== 'string') {
-    return [];
-  }
-  return deriveContinuationTodos(message.text).map((todo) => ({
-    ...todo,
-    content: localizeTodoContent(todo.content),
-  }));
-}
-
 function processItemFromMessage(message: DisplayMessage): RunProcessItem | null {
   if (message.kind === 'tool_call') {
     const title = message.toolName ? `工具调用 · ${message.toolName}` : '工具调用';
@@ -860,9 +849,7 @@ function buildRunCard(input: {
   );
   const processItems = allProcessItems;
   const toolTodos = sorted.flatMap(todosFromMessage);
-  const continuationTodos =
-    toolTodos.length > 0 ? [] : sorted.flatMap(continuationTodosFromMessage);
-  const todos = toolTodos.length > 0 ? toolTodos : continuationTodos;
+  const todos = toolTodos;
   const files = filesFromMessages(sorted);
   const latestInteraction = [...sorted]
     .reverse()

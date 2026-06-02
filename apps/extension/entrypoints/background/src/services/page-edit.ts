@@ -257,6 +257,130 @@ async function armInteractiveSelectionAnalysis(input: {
   });
 }
 
+async function showSelectionAnalysisGuidance(input: {
+  tabId: number;
+  analysisMode: 'interactive' | 'display';
+  targetElement: PickedElementContext;
+  executeScript?: typeof defaultExecuteScript;
+}) {
+  const executeScript = input.executeScript ?? defaultExecuteScript;
+  await executeScript({
+    target: { tabId: input.tabId },
+    world: 'MAIN',
+    args: [
+      {
+        analysisMode: input.analysisMode,
+        selector: input.targetElement.selector,
+        id: input.targetElement.id,
+        tagName: input.targetElement.tagName,
+      },
+    ],
+    func: (config: {
+      analysisMode: 'interactive' | 'display';
+      selector: string | null;
+      id: string | null;
+      tagName: string;
+    }) => {
+      const root = document.querySelector('vis-bug[data-webmcp-page-edit-root="true"]');
+      const guidanceSelector = '[data-webmcp-page-edit-analysis-guidance="true"]';
+      const focusSelector = 'visbug-selected[data-webmcp-page-edit-analysis-focus="true"]';
+
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-mode',
+        config.analysisMode,
+      );
+      document.querySelectorAll(guidanceSelector).forEach((node) => node.remove());
+      document.querySelectorAll(focusSelector).forEach((node) => node.remove());
+
+      if (
+        root instanceof HTMLElement &&
+        typeof (root as { selectorEngine?: { unselect_all?: (input?: { silent?: boolean }) => void } })
+          .selectorEngine?.unselect_all === 'function'
+      ) {
+        (root as {
+          selectorEngine: { unselect_all: (input?: { silent?: boolean }) => void };
+        }).selectorEngine.unselect_all({ silent: true });
+      }
+
+      const resolveTarget = () => {
+        if (config.selector) {
+          try {
+            const matched = document.querySelector(config.selector);
+            if (matched instanceof HTMLElement) {
+              return matched;
+            }
+          } catch (_) {}
+        }
+
+        if (config.id) {
+          const matched = document.getElementById(config.id);
+          if (matched instanceof HTMLElement) {
+            return matched;
+          }
+        }
+
+        const fallback = document.querySelector(config.tagName);
+        return fallback instanceof HTMLElement ? fallback : null;
+      };
+
+      const hint = document.createElement('div');
+      hint.setAttribute('data-webmcp-page-edit-analysis-guidance', 'true');
+      hint.style.position = 'fixed';
+      hint.style.top = '16px';
+      hint.style.left = '50%';
+      hint.style.transform = 'translateX(-50%)';
+      hint.style.zIndex = '2147483647';
+      hint.style.maxWidth = 'min(720px, calc(100vw - 32px))';
+      hint.style.padding = '10px 14px';
+      hint.style.borderRadius = '12px';
+      hint.style.background = 'rgba(17, 24, 39, 0.92)';
+      hint.style.color = '#fff';
+      hint.style.font = '600 13px/1.45 -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", sans-serif';
+      hint.style.boxShadow = '0 12px 28px rgba(15, 23, 42, 0.28)';
+      hint.style.pointerEvents = 'none';
+      hint.textContent =
+        config.analysisMode === 'interactive'
+          ? '已进入接口分析，请直接点击高亮元素完成一次真实交互。'
+          : '已进入接口分析，请刷新页面或触发一次重载，系统会自动抓取候选请求。';
+      document.body.appendChild(hint);
+
+      if (config.analysisMode !== 'interactive') {
+        return;
+      }
+
+      const target = resolveTarget();
+      if (!target) {
+        return;
+      }
+
+      const focus = document.createElement('visbug-selected');
+      focus.setAttribute('data-webmcp-page-edit-analysis-focus', 'true');
+      document.body.appendChild(focus);
+      (focus as unknown as { position: { el: HTMLElement; node_label_id: string } }).position = {
+        el: target,
+        node_label_id: 'analysis-focus',
+      };
+    },
+  });
+}
+
+async function clearSelectionAnalysisGuidance(input: {
+  tabId: number;
+  executeScript?: typeof defaultExecuteScript;
+}) {
+  const executeScript = input.executeScript ?? defaultExecuteScript;
+  await executeScript({
+    target: { tabId: input.tabId },
+    world: 'MAIN',
+    func: () => {
+      document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+      document
+        .querySelectorAll('[data-webmcp-page-edit-analysis-guidance="true"], visbug-selected[data-webmcp-page-edit-analysis-focus="true"]')
+        .forEach((node) => node.remove());
+    },
+  });
+}
+
 async function publishPageEditSelectionAnalysisResult(input: {
   pending: PendingPageEditSelectionAnalysis;
   completeSelectionAnalysis: typeof pageEditElementAnalysisService.completeSelectionAnalysis;
@@ -1020,6 +1144,7 @@ export function createPageEditSelectionAnalyzeMessageListener(input: {
   startSelectionAnalysis?: typeof pageEditElementAnalysisService.startSelectionAnalysis;
   cancelSelectionAnalysis?: typeof pageEditElementAnalysisService.cancelSelectionAnalysis;
   armInteractiveSelectionAnalysis?: typeof armInteractiveSelectionAnalysis;
+  showSelectionAnalysisGuidance?: typeof showSelectionAnalysisGuidance;
   rememberPendingSelectionAnalysis?: (input: PendingPageEditSelectionAnalysis) => void;
   clearPendingSelectionAnalysis?: (sessionId: string) => void;
   publishComposerAppend?: typeof publishAgentV2ComposerAppend;
@@ -1034,6 +1159,8 @@ export function createPageEditSelectionAnalyzeMessageListener(input: {
     input.cancelSelectionAnalysis ?? pageEditElementAnalysisService.cancelSelectionAnalysis;
   const armInteractiveSelectionAnalysisImpl =
     input.armInteractiveSelectionAnalysis ?? armInteractiveSelectionAnalysis;
+  const showSelectionAnalysisGuidanceImpl =
+    input.showSelectionAnalysisGuidance ?? showSelectionAnalysisGuidance;
   const rememberPendingSelectionAnalysis =
     input.rememberPendingSelectionAnalysis ?? rememberPendingPageEditSelectionAnalysis;
   const clearPendingSelectionAnalysis =
@@ -1111,6 +1238,12 @@ export function createPageEditSelectionAnalyzeMessageListener(input: {
           });
         }
 
+        await showSelectionAnalysisGuidanceImpl({
+          tabId,
+          analysisMode: started.analysisMode,
+          targetElement: target,
+        }).catch(() => undefined);
+
         const openSidePanelTask =
           typeof windowId === 'number' ? openSidePanel(windowId).catch(() => undefined) : undefined;
         const publishComposerAppendTask = publishComposerAppend({
@@ -1148,6 +1281,7 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
   getPendingSelectionAnalysis?: (sessionId: string) => PendingPageEditSelectionAnalysis | null;
   clearPendingSelectionAnalysis?: (sessionId: string) => void;
   completeSelectionAnalysis?: typeof pageEditElementAnalysisService.completeSelectionAnalysis;
+  clearSelectionAnalysisGuidance?: typeof clearSelectionAnalysisGuidance;
   publishComposerAppend?: typeof publishAgentV2ComposerAppend;
   openSidePanel?: (windowId: number) => Promise<void>;
 }) {
@@ -1159,6 +1293,8 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
     input.clearPendingSelectionAnalysis ?? clearPendingPageEditSelectionAnalysis;
   const completeSelectionAnalysis =
     input.completeSelectionAnalysis ?? pageEditElementAnalysisService.completeSelectionAnalysis;
+  const clearSelectionAnalysisGuidanceImpl =
+    input.clearSelectionAnalysisGuidance ?? clearSelectionAnalysisGuidance;
   const publishComposerAppend = input.publishComposerAppend ?? publishAgentV2ComposerAppend;
   const openSidePanel =
     input.openSidePanel ??
@@ -1205,6 +1341,9 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
     }
 
     clearPendingSelectionAnalysis(pending.sessionId);
+    void clearSelectionAnalysisGuidanceImpl({
+      tabId: pending.tabId,
+    }).catch(() => undefined);
     void publishPageEditSelectionAnalysisResult({
       pending,
       completeSelectionAnalysis,

@@ -181,6 +181,36 @@ describe('selection overlay positioning', () => {
     expect(label.style.getPropertyValue('--left')).toBe('5px');
   });
 
+  it('moves the selection label inside the box when the selected element is pinned to the viewport top', async () => {
+    const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
+
+    const source = document.querySelector('[data-label-id="node-1"]') as HTMLElement;
+    source.getBoundingClientRect = () =>
+      ({
+        x: 12,
+        y: 4,
+        top: 4,
+        left: 12,
+        right: 332,
+        bottom: 124,
+        width: 320,
+        height: 120,
+      }) as DOMRect;
+
+    const label = new Label();
+    label.text = '<a node>div</a>';
+    document.body.appendChild(label);
+
+    label.position = {
+      node_label_id: 'node-1',
+      boundingRect: source.getBoundingClientRect(),
+    };
+
+    expect(label.style.getPropertyValue('--translate-y')).toBe('1px');
+    expect(label.getAttribute('data-inside-label')).toBe('true');
+    expect(labelCss).toContain(':host([data-inside-label="true"]) > span.label-shell');
+  });
+
   it('positions box-model and distance overlays with viewport coordinates only', async () => {
     const { BoxModel } = await import('../../public/page-edit/vendor/app/components/selection/box-model.element.js');
     const { Distance } = await import('../../public/page-edit/vendor/app/components/selection/distance.element.js');

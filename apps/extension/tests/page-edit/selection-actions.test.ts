@@ -261,6 +261,28 @@ describe('selection-actions helpers', () => {
     expect(markup).not.toContain('>编辑<');
   });
 
+  it('renders only send and parent buttons for multi-selection labels', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
+    const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
+    const label = new Label();
+    label.text = '<a node>已选 3 项</a>';
+    label.setAttribute('data-multi-selection-label', 'true');
+    const markup = label.render('multi');
+
+    expect(markup).toContain('data-action="send-selection"');
+    expect(markup).toContain('data-action="select-parent"');
+    expect(markup).toContain('>发送<');
+    expect(markup).toContain('>父级<');
+    expect(markup).not.toContain('data-action="capture-selection"');
+    expect(markup).not.toContain('data-action="annotate-selection"');
+    expect(markup).not.toContain('>采集<');
+    expect(markup).not.toContain('>备注<');
+  });
+
   it('dispatchAction emits action details with the source label id', async () => {
     const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
     const label = new Label();
@@ -358,7 +380,7 @@ describe('selection-actions helpers', () => {
     expect(Number.parseFloat(label.style.getPropertyValue('--translate-x'))).toBeLessThan(0);
   });
 
-  it('places the selection action label below the element when there is no room above', async () => {
+  it('moves the selection action label inside the element when there is no room above and the box is tall enough', async () => {
     const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
     const label = new Label();
 
@@ -401,10 +423,112 @@ describe('selection-actions helpers', () => {
       height: 32,
     };
 
-    expect(label.style.getPropertyValue('--translate-y')).toBe('40px');
+    expect(label.style.getPropertyValue('--translate-y')).toBe('1px');
+    expect(label.getAttribute('data-inside-label')).toBe('true');
   });
 
-  it('builds a compact readable element summary', () => {
+  it('shifts the selection action label right when the label would overflow past the viewport left edge', async () => {
+    const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
+    const label = new Label();
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
+
+    document.body.appendChild(label);
+    label.text = '<a node>span</a><a>.status</a>';
+    label.position = {
+      boundingRect: {
+        x: 4,
+        y: 120,
+        width: 40,
+      },
+      node_label_id: 'left-edge',
+    };
+
+    const shell = (label as HTMLElement & { $shadow?: ShadowRoot }).$shadow?.querySelector(
+      '.label-shell'
+    ) as HTMLSpanElement;
+    vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue({
+      x: -36,
+      y: 80,
+      width: 240,
+      height: 28,
+      top: 80,
+      right: 204,
+      bottom: 108,
+      left: -36,
+      toJSON: () => ({}),
+    });
+
+    label.update = {
+      x: 4,
+      y: 120,
+      width: 40,
+    };
+
+    expect(Number.parseFloat(label.style.getPropertyValue('--translate-x'))).toBeGreaterThan(0);
+  });
+
+  it('keeps the selection action label below the element when there is no room above and the box is too short', async () => {
+    const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
+    const label = new Label();
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 1000,
+    });
+
+    document.body.appendChild(label);
+    label.text = '<a node>span</a><a>.status</a>';
+    label.position = {
+      boundingRect: {
+        x: 300,
+        y: 4,
+        width: 80,
+        height: 20,
+      },
+      node_label_id: 'top-edge-short',
+    };
+
+    const shell = (label as HTMLElement & { $shadow?: ShadowRoot }).$shadow?.querySelector(
+      '.label-shell'
+    ) as HTMLSpanElement;
+    vi.spyOn(shell, 'getBoundingClientRect').mockReturnValue({
+      x: 299,
+      y: -24,
+      width: 240,
+      height: 28,
+      top: -24,
+      right: 539,
+      bottom: 4,
+      left: 299,
+      toJSON: () => ({}),
+    });
+
+    label.update = {
+      x: 300,
+      y: 4,
+      width: 80,
+      height: 20,
+    };
+
+    expect(label.style.getPropertyValue('--translate-y')).toBe('28px');
+    expect(label.getAttribute('data-inside-label')).toBeNull();
+  });
+
+  it('builds a compact readable element summary for live pages without class metadata', () => {
+    const element = document.querySelector('.status.active') as HTMLElement;
+    expect(buildElementSummary(element)).toBe('span  文本: 已揽收');
+  });
+
+  it('keeps class metadata in the compact readable element summary for local snapshot pages', () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+
     const element = document.querySelector('.status.active') as HTMLElement;
     expect(buildElementSummary(element)).toBe('span.status.active  文本: 已揽收');
   });
@@ -474,7 +598,7 @@ describe('selection-actions helpers', () => {
     const element = document.querySelector('.status.active') as HTMLElement;
     expect(describeSelectedElement(element, { pageUrl: 'https://example.com/orders' })).toEqual({
       source: 'live-page',
-      text: '定位信息：\n选择器: #card > span.status.active\n元素: span.status.active  文本: 已揽收',
+      text: '定位信息：\n选择器: #card > span.status.active\n元素: span  文本: 已揽收',
     });
   });
 
@@ -836,6 +960,82 @@ describe('selection-actions helpers', () => {
             },
           },
           window.location.origin,
+        );
+      } finally {
+        window.postMessage = originalPostMessage;
+      }
+    });
+  });
+
+  it('renders only one multi-selection label and hides capture/annotate buttons', async () => {
+    await withSelectableFixture(({ selectable }) => {
+      document.body.innerHTML = `
+        <section id="card-a"><span class="alpha">A</span></section>
+        <section id="card-b"><span class="beta">B</span></section>
+      `;
+
+      const firstTarget = document.querySelector('.alpha') as HTMLElement;
+      const secondTarget = document.querySelector('.beta') as HTMLElement;
+
+      selectable.select(firstTarget);
+      selectable.select(secondTarget);
+
+      const labels = Array.from(document.querySelectorAll('visbug-label')) as Array<
+        HTMLElement & { $shadow?: ShadowRoot }
+      >;
+
+      expect(labels).toHaveLength(1);
+      expect(labels[0].getAttribute('data-multi-selection-label')).toBe('true');
+
+      const buttonActions = Array.from(
+        labels[0].$shadow?.querySelectorAll('button[data-action]') ?? [],
+      ).map((button) => button.getAttribute('data-action'));
+
+      expect(buttonActions).toEqual(['send-selection', 'select-parent']);
+    });
+  });
+
+  it('posts payloads for every selected element when multi-selection send fires', async () => {
+    await withSelectableFixture(({ selectable }) => {
+      document.body.innerHTML = `
+        <section id="card-a"><span class="alpha">A</span></section>
+        <section id="card-b"><span class="beta">B</span></section>
+      `;
+
+      const firstTarget = document.querySelector('.alpha') as HTMLElement;
+      const secondTarget = document.querySelector('.beta') as HTMLElement;
+      const originalPostMessage = window.postMessage;
+      const postMessage = vi.fn();
+      window.postMessage = postMessage as typeof window.postMessage;
+
+      try {
+        selectable.select(firstTarget);
+        selectable.select(secondTarget);
+
+        const label = document.querySelector('visbug-label') as HTMLElement;
+        label.dispatchEvent(
+          new CustomEvent('selection-action', {
+            bubbles: true,
+            detail: { action: 'send-selection' },
+          }),
+        );
+
+        expect(postMessage).toHaveBeenCalledTimes(2);
+        expect(postMessage.mock.calls[0][0]).toEqual(
+          expect.objectContaining({
+            type: 'page_edit_selection_append',
+            payload: expect.objectContaining({
+              text: expect.stringContaining('选择器: #card-b > span.beta'),
+            }),
+          }),
+        );
+        expect(postMessage.mock.calls[1][0]).toEqual(
+          expect.objectContaining({
+            type: 'page_edit_selection_append',
+            payload: expect.objectContaining({
+              text: expect.stringContaining('选择器: #card-a > span.alpha'),
+            }),
+          }),
         );
       } finally {
         window.postMessage = originalPostMessage;
@@ -1326,7 +1526,7 @@ describe('selection-actions helpers', () => {
           'analyze-selection',
           'annotate-selection',
         ]);
-        expect(visibleMetadata).toEqual(['span', '.status.active']);
+        expect(visibleMetadata).toEqual(['span']);
       });
     });
 
@@ -1401,6 +1601,68 @@ describe('selection-actions helpers', () => {
       });
     });
 
+    it('does not show hover outlines while selection analysis guidance is active', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-mode',
+        'interactive',
+      );
+
+      try {
+        await withSelectableFixture(({ selectable }) => {
+          const hoverTarget = document.querySelector('.status.active') as HTMLElement;
+          document.elementFromPoint = vi.fn(() => hoverTarget);
+
+          dispatchMouse(document.body, 'mousemove', {
+            clientX: 20,
+            clientY: 20,
+          });
+
+          expect(document.querySelectorAll('visbug-hover')).toHaveLength(0);
+          expect(document.querySelectorAll('visbug-label')).toHaveLength(0);
+        });
+      } finally {
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+      }
+    });
+
+    it('does not re-enter normal selection mode while selection analysis guidance is active', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-mode',
+        'interactive',
+      );
+
+      try {
+        await withSelectableFixture(({ selectable }) => {
+          const target = document.querySelector('.status.active') as HTMLElement;
+
+          dispatchMouse(target, 'mousedown', {
+            clientX: 20,
+            clientY: 20,
+            button: 0,
+          });
+          dispatchMouse(target, 'click', {
+            clientX: 20,
+            clientY: 20,
+            button: 0,
+          });
+
+          expect(selectable.selection()).toHaveLength(0);
+          expect(document.querySelectorAll('visbug-selected')).toHaveLength(0);
+          expect(document.querySelectorAll('visbug-label')).toHaveLength(0);
+        });
+      } finally {
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+      }
+    });
+
     it('honors policy-driven action bar visibility instead of relying on page mode defaults', async () => {
       vi.resetModules();
       vi.doMock('../../public/page-edit/vendor/app/features/selection-presentation.js', async () => {
@@ -1443,7 +1705,7 @@ describe('selection-actions helpers', () => {
           ).map((anchor) => anchor.textContent?.trim() ?? '');
 
           expect(actions).toHaveLength(0);
-          expect(visibleMetadata).toEqual(['span', '.status.active']);
+          expect(visibleMetadata).toEqual(['span']);
         });
       } finally {
         vi.doUnmock('../../public/page-edit/vendor/app/features/selection-presentation.js');

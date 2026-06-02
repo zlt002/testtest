@@ -406,6 +406,8 @@ export default class VisBug extends HTMLElement {
       ...document.getElementsByTagName('visbug-label'),
       ...document.getElementsByTagName('visbug-gridlines'),
     ].forEach(el => el.remove())
+    document.querySelectorAll('[data-webmcp-page-edit-analysis-guidance]').forEach(el => el.remove())
+    document.documentElement?.removeAttribute?.('data-webmcp-page-edit-analysis-mode')
 
     this.teardown?.();
 
@@ -1912,6 +1914,8 @@ export default class VisBug extends HTMLElement {
     root?.querySelectorAll?.('link[data-webmcp-page-edit-style]').forEach(node => node.remove())
     root?.querySelectorAll?.('[data-webmcp-page-edit-root="true"]').forEach(node => node.remove())
     root?.querySelectorAll?.('vis-bug, visbug-grip, visbug-handles, visbug-label, visbug-hover, visbug-selected, visbug-box-model, visbug-gridlines, visbug-distance, visbug-metatip, visbug-corners, visbug-overlay, visbug-ally').forEach(node => node.remove())
+    root?.querySelectorAll?.('[data-webmcp-page-edit-analysis-guidance]').forEach(node => node.remove())
+    root?.removeAttribute?.('data-webmcp-page-edit-analysis-mode')
 
     root?.querySelectorAll?.('[draggable="true"], [data-webmcp-page-edit-draggable], [data-selected], [data-pseudo-select], [data-selected-hide], [data-pinhover], [data-measuring], [visbug-drag-src]').forEach(node => {
       node.removeAttribute('draggable')

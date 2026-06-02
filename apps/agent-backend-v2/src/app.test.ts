@@ -2404,37 +2404,45 @@ test('page code analysis dom analyze route returns unified analysis result', asy
             selector: '[data-testid="target"]',
             xpath: '//*[@data-testid="target"]',
             tagName: 'BUTTON',
-            text: '回单管理',
-            outerHTMLSnippet: '<button>回单管理</button>',
+            text: '搜索',
+            outerHTMLSnippet: '<button>搜索</button>',
             classList: ['primary-action'],
             dataAttributes: {},
           },
           pageContext: {
-            url: 'https://an-uat.annto.com/#/distribute/receipt-mngt/list',
+            url: 'https://gls-uat.annto.com/#/entrustedOrderModule/expressInquiry',
             pathname: '/index.html',
-            hashRoute: '/distribute/receipt-mngt/list',
-            title: '回单管理',
-            pageTextSummary: ['回单管理', '监控'],
-            apiCandidates: ['/api-tms/receipt/queryList'],
-            resourceHints: ['receipt-list.chunk.js'],
+            hashRoute: '/entrustedOrderModule/expressInquiry',
+            title: '快递询价',
+            pageTextSummary: [
+              '快递询价',
+              '搜索',
+              '供应商简称',
+              '价目表名称',
+              '起始国/地区',
+              '目的地',
+              '服务类型',
+            ],
+            apiCandidates: ['/api-miloms/guarantee/expressCostPrice/summarySearch'],
+            resourceHints: ['express-inquiry.chunk.js'],
           },
           networkEvidence: [
             {
               requestId: 'req-1',
-              url: 'https://api.example.com/api-tms/receipt/queryList?page=1',
+              url: 'https://api.example.com/api-miloms/guarantee/expressCostPrice/summarySearch?page=1',
               method: 'GET',
               status: 200,
               resourceType: 'xhr',
               startedAt: 1,
               finishedAt: 2,
-              initiatorHint: 'receipt-list-page',
-              responsePreview: '回单管理 列表',
+              initiatorHint: 'express-inquiry-page',
+              responsePreview: '快递询价 列表查询',
             },
           ],
           interactionEvidence: [],
           runtimeEvidence: {
-            scriptUrls: ['https://cdn.example.com/receipt-list.chunk.js'],
-            chunkHints: ['receipt-list.chunk.js'],
+            scriptUrls: ['https://cdn.example.com/express-inquiry.chunk.js'],
+            chunkHints: ['express-inquiry.chunk.js'],
             sourceMapHints: [],
           },
           captureSessionMeta: {
@@ -2447,17 +2455,17 @@ test('page code analysis dom analyze route returns unified analysis result', asy
         pageCodebaseMappingConfig: {
           rules: [
             {
-              id: 'otp-receipt',
-              businessId: 'otp',
-              pageLabel: '回单管理',
+              id: 'gls-express-inquiry',
+              businessId: 'gls',
+              pageLabel: '快递询价',
               triggerSkill: '/ewankb-server-query',
-              ewankbKb: 'otp',
+              ewankbKb: 'gls',
               ewankbMode: 'graph',
               enabled: true,
-              hostIncludes: ['an-uat.annto.com'],
-              hashRouteIncludes: ['/distribute/receipt-mngt'],
-              pageTextIncludes: ['回单管理', '监控'],
-              apiPrefixes: ['/api-tms/receipt/'],
+              hostIncludes: ['gls-uat.annto.com'],
+              hashRouteIncludes: ['/entrustedOrderModule/expressInquiry'],
+              pageTextIncludes: ['快递询价', '供应商简称'],
+              apiPrefixes: ['/api-miloms/guarantee/expressCostPrice/'],
               frontendGraphProjects: [
                 'Users-zhanglt21-Desktop-codebase-otp-pc',
                 'Users-zhanglt21-Desktop-codebase-otp-pc2',
@@ -2491,38 +2499,74 @@ test('page code analysis dom analyze route returns unified analysis result', asy
         bestApi: string | null;
       };
       evidence: {
-        pageTextSummary: string[];
-        apiCandidates: string[];
-        resourceHints: string[];
+        kbCandidate: string | null;
+        featureNameCandidates: string[];
+        actionTerms: string[];
+        apiTerms: string[];
+        fieldTerms: string[];
       };
+      analysisCard: {
+        pageName: string | null;
+        route: string | null;
+        targetAction: string | null;
+        actionType: string | null;
+        tableHeaders: string[];
+        recommendedApi: string | null;
+        confidence: 'low' | 'medium' | 'high';
+      };
+      suggestedCommand: string | null;
       chatSummary: {
         markdown: string;
       };
     };
     assert.deepEqual(result.page, {
-      title: '回单管理',
-      url: 'https://an-uat.annto.com/#/distribute/receipt-mngt/list',
+      title: '快递询价',
+      url: 'https://gls-uat.annto.com/#/entrustedOrderModule/expressInquiry',
       pathname: '/index.html',
-      hashRoute: '/distribute/receipt-mngt/list',
+      hashRoute: '/entrustedOrderModule/expressInquiry',
     });
     assert.deepEqual(result.targetElement, {
       tagName: 'BUTTON',
-      text: '回单管理',
+      text: '搜索',
       selector: '[data-testid="target"]',
       xpath: '//*[@data-testid="target"]',
     });
-    assert.equal(result.attribution.bestApi, '/api-tms/receipt/queryList');
+    assert.equal(result.attribution.bestApi, '/api-miloms/guarantee/expressCostPrice/summarySearch');
     assert.deepEqual(result.evidence, {
-      pageTextSummary: ['回单管理', '监控'],
-      apiCandidates: ['/api-tms/receipt/queryList'],
-      resourceHints: ['receipt-list.chunk.js', 'receipt-list.chunk.js'],
+      kbCandidate: 'gls',
+      featureNameCandidates: [
+        '快递询价',
+        '搜索',
+        '供应商简称',
+        '价目表名称',
+        '起始国/地区',
+        '目的地',
+        '服务类型',
+      ],
+      actionTerms: ['搜索', '列表查询'],
+      apiTerms: ['expressCostPrice', 'summarySearch'],
+      fieldTerms: ['供应商简称', '目的地', '服务类型'],
     });
+    assert.deepEqual(result.analysisCard, {
+      pageName: '快递询价',
+      route: '#/entrustedOrderModule/expressInquiry',
+      targetAction: '点击「搜索」',
+      actionType: '列表查询',
+      tableHeaders: ['供应商简称', '价目表名称', '起始国/地区', '目的地', '服务类型'],
+      recommendedApi: '/api-miloms/guarantee/expressCostPrice/summarySearch',
+      confidence: 'medium',
+    });
+    assert.equal(
+      result.suggestedCommand,
+      '/ewankb-server-query graph gls "快递询价 搜索 列表查询 expressCostPrice summarySearch 供应商简称 目的地 服务类型"'
+    );
     assert.match(result.chatSummary.markdown, /^# 页面元素接口联分析/m);
-    assert.match(result.chatSummary.markdown, /回单管理/);
-    assert.match(result.chatSummary.markdown, /\/api-tms\/receipt\/queryList/);
-    assert.match(result.chatSummary.markdown, /receipt-list\.chunk\.js/);
+    assert.match(result.chatSummary.markdown, /快递询价/);
+    assert.match(result.chatSummary.markdown, /\/api-miloms\/guarantee\/expressCostPrice\/summarySearch/);
+    assert.match(result.chatSummary.markdown, /express-inquiry\.chunk\.js/);
     assert.match(result.chatSummary.markdown, /代码来源判断与知识库查询已改由独立 skill 处理/);
     assert.doesNotMatch(result.chatSummary.markdown, /建议知识库|建议查询模式|匹配规则/);
+    assert.doesNotMatch(result.chatSummary.markdown, /ewankb-server-query graph gls/);
   } finally {
     server.close();
   }
@@ -2580,6 +2624,119 @@ test('page code analysis dom analyze route returns controlled 400 on invalid pag
       error: 'Invalid DOM analyze request body',
       code: 'invalid_dom_analyze_request',
     });
+  } finally {
+    server.close();
+  }
+});
+
+test('page code analysis dom analyze route returns low-confidence structure without kb candidate', async () => {
+  const app = createApp({
+    agentService: {
+      async getSessionHistory() {
+        return { messages: [] };
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+    fileService: {
+      async listTree() {
+        return { entries: [] };
+      },
+      async readTextFile() {
+        return { content: '' };
+      },
+      async writeTextFile() {
+        return { ok: true as const };
+      },
+    },
+    mcpService: {
+      async listServers() {
+        return {};
+      },
+      async upsertServer() {
+        return {};
+      },
+      async deleteServer() {
+        return {};
+      },
+    },
+  });
+  const { server, url } = await listen(app);
+  try {
+    const response = await fetch(`${url}/api/agent-v2/page-code-analysis/dom-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pageEvidence: {
+          targetElement: {
+            selector: '[data-testid="target"]',
+            xpath: '//*[@data-testid="target"]',
+            tagName: 'DIV',
+            text: null,
+            outerHTMLSnippet: '<div></div>',
+            classList: [],
+            dataAttributes: {},
+          },
+          pageContext: {
+            url: 'https://example.com/#/unknown',
+            pathname: '/index.html',
+            hashRoute: '/unknown',
+            title: '',
+            pageTextSummary: [],
+            apiCandidates: [],
+            resourceHints: [],
+          },
+          networkEvidence: [],
+          interactionEvidence: [],
+          runtimeEvidence: {
+            scriptUrls: [],
+            chunkHints: [],
+            sourceMapHints: [],
+          },
+          captureSessionMeta: {
+            sessionId: 'session-2',
+            tabId: 2,
+            capturedAt: 100,
+            mode: 'interactive',
+          },
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    const result = (await response.json()) as {
+      evidence: {
+        kbCandidate: string | null;
+        featureNameCandidates: string[];
+        actionTerms: string[];
+        apiTerms: string[];
+        fieldTerms: string[];
+      };
+      analysisCard: {
+        confidence: 'low' | 'medium' | 'high';
+        targetAction: string | null;
+      };
+      suggestedCommand: string | null;
+    };
+
+    assert.deepEqual(result.evidence, {
+      kbCandidate: null,
+      featureNameCandidates: [],
+      actionTerms: [],
+      apiTerms: [],
+      fieldTerms: [],
+    });
+    assert.deepEqual(result.analysisCard, {
+      pageName: null,
+      route: '#/unknown',
+      targetAction: null,
+      actionType: null,
+      tableHeaders: [],
+      recommendedApi: null,
+      confidence: 'low',
+    });
+    assert.equal(result.suggestedCommand, null);
   } finally {
     server.close();
   }
