@@ -1268,6 +1268,8 @@ export function Selectable(visbug) {
   };
 
   const on_hover = (e) => {
+    clearPseudoSelectionPreview();
+
     if (isSelectionAnalysisGuidanceActive()) {
       clearMeasurements();
       return clearHover();
@@ -1332,6 +1334,66 @@ export function Selectable(visbug) {
     `;
   };
 
+  const buildMultiSelectionLabelTemplate = () => `<a node>已选 ${selected.length} 项</a>`;
+
+  const getVisibleMultiSelectionLabelAnchor = () => {
+    const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+
+    const visibleCandidates = selected
+      .map((element) => ({
+        element,
+        rect: element.getBoundingClientRect(),
+      }))
+      .filter(
+        ({ rect }) =>
+          rect.bottom > 0 &&
+          rect.right > 0 &&
+          rect.top < viewportHeight &&
+          rect.left < viewportWidth,
+      )
+      .sort((left, right) => {
+        if (left.rect.top !== right.rect.top) {
+          return left.rect.top - right.rect.top;
+        }
+
+        return left.rect.left - right.rect.left;
+      });
+
+    return visibleCandidates[0]?.element || selected[0] || null;
+  };
+
+  const renderSelectionLabels = (policy) => {
+    Array.from($('visbug-label')).forEach((label) => label.remove());
+    labels = [];
+
+    if (!policy.showSelectionLabel || !selected.length) {
+      return;
+    }
+
+    const anchorElement =
+      selected.length > 1 ? getVisibleMultiSelectionLabelAnchor() : selected[0];
+    const anchorLabelId = anchorElement?.getAttribute('data-label-id');
+
+    if (!anchorElement || !anchorLabelId) {
+      return;
+    }
+
+    overlayMetaUI({
+      el: anchorElement,
+      id: anchorLabelId,
+      no_label: false,
+      showHandle: false,
+      showSelectedOutline: false,
+      showActionBar: policy.showActionBar,
+      template:
+        selected.length > 1
+          ? buildMultiSelectionLabelTemplate()
+          : buildSelectionLabelTemplate(anchorElement, policy),
+      multiSelectionLabel: selected.length > 1,
+    });
+  };
+
   const select = (el, { silent = false } = {}) => {
     if (!shouldAllowSelectionForActiveTool(el)) {
       return;
@@ -1345,17 +1407,19 @@ export function Selectable(visbug) {
 
     clearHover();
 
+    selected.unshift(el);
+
     overlayMetaUI({
       el,
       id,
-      no_label: !policy.showSelectionLabel,
+      no_label: true,
       showHandle: policy.showHandles,
       showSelectedOutline: policy.showSelectedOutline,
       showActionBar: policy.showActionBar,
       template: buildSelectionLabelTemplate(el, policy),
     });
 
-    selected.unshift(el);
+    renderSelectionLabels(policy);
     syncSelectionAnnotationUi();
     !silent && tellWatchers();
   };
@@ -1512,6 +1576,10 @@ export function Selectable(visbug) {
     hover_state.label = null;
   };
 
+  const clearPseudoSelectionPreview = () => {
+    $('[data-pseudo-select]').forEach((element) => element.removeAttribute('data-pseudo-select'));
+  };
+
   const overlayMetaUI = ({
     el,
     id,
@@ -1520,6 +1588,7 @@ export function Selectable(visbug) {
     showSelectedOutline = false,
     showActionBar = true,
     template = '',
+    multiSelectionLabel = false,
   }) => {
     let handle = showHandle
       ? createHandle({ el, id })
@@ -1528,7 +1597,7 @@ export function Selectable(visbug) {
         : null;
     let label = no_label
       ? null
-      : createLabel({ el, id, template, showActionBar });
+      : createLabel({ el, id, template, showActionBar, multiSelectionLabel });
 
     let observer = createObserver(el, { handle, label });
     let parentObserver = createObserver(el, { handle, label });
@@ -1556,7 +1625,13 @@ export function Selectable(visbug) {
 
   const setLabel = (el, label) => (label.update = el.getBoundingClientRect());
 
-  const createLabel = ({ el, id, template, showActionBar = true }) => {
+  const createLabel = ({
+    el,
+    id,
+    template,
+    showActionBar = true,
+    multiSelectionLabel = false,
+  }) => {
     if (!labels[id]) {
       const label = document.createElement('visbug-label');
 
@@ -1564,6 +1639,12 @@ export function Selectable(visbug) {
         label.setAttribute('data-readonly-label', 'true');
       } else {
         label.removeAttribute('data-readonly-label');
+      }
+
+      if (multiSelectionLabel) {
+        label.setAttribute('data-multi-selection-label', 'true');
+      } else {
+        label.removeAttribute('data-multi-selection-label');
       }
 
       label.text = template;
@@ -1583,7 +1664,15 @@ export function Selectable(visbug) {
           selectionBefore: formatDebugSelection(selected),
         });
 
-        queryPage('[data-pseudo-select]', (el) => el.removeAttribute('data-pseudo-select'));
+        clearPseudoSelectionPreview();
+
+        if (detail.activator === 'mouseleave') {
+          debugLog('query:label:clear', {
+            queryText,
+            activator: detail.activator,
+          });
+          return;
+        }
 
         queryPage(queryText + ':not([data-selected])', (el) =>
           detail.activator === 'mouseenter'
@@ -1629,26 +1718,31 @@ export function Selectable(visbug) {
             return;
           }
 
-          const payload = describeSelectedElement(actionElement, {
-            pageUrl: window.location.href,
-            documentHtml: document.documentElement?.outerHTML || '',
+          const sendTargets =
+            label.getAttribute('data-multi-selection-label') === 'true' ? [...selected] : [actionElement];
+
+          sendTargets.forEach((target) => {
+            const payload = describeSelectedElement(target, {
+              pageUrl: window.location.href,
+              documentHtml: document.documentElement?.outerHTML || '',
+            });
+
+            const messagePayload =
+              typeof selectionBridgeNonce === 'string'
+                ? {
+                    ...payload,
+                    nonce: selectionBridgeNonce,
+                  }
+                : payload;
+
+            window.postMessage(
+              {
+                type: 'page_edit_selection_append',
+                payload: messagePayload,
+              },
+              getSelectionMessageTargetOrigin()
+            );
           });
-
-          const messagePayload =
-            typeof selectionBridgeNonce === 'string'
-              ? {
-                  ...payload,
-                  nonce: selectionBridgeNonce,
-                }
-              : payload;
-
-          window.postMessage(
-            {
-              type: 'page_edit_selection_append',
-              payload: messagePayload,
-            },
-            getSelectionMessageTargetOrigin()
-          );
           return;
         }
 
@@ -1723,7 +1817,7 @@ export function Selectable(visbug) {
       $(label).on('mouseleave', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        queryPage('[data-pseudo-select]', (el) => el.removeAttribute('data-pseudo-select'));
+        clearPseudoSelectionPreview();
       });
 
       labels[labels.length] = label;

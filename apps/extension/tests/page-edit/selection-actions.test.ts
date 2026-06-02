@@ -312,6 +312,26 @@ describe('selection-actions helpers', () => {
     });
   });
 
+  it('dispatchQuery emits mouseleave so selector previews can be cleared immediately', async () => {
+    const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
+    const label = new Label();
+    const onQuery = vi.fn();
+
+    label.addEventListener('query', onQuery as EventListener);
+    label.render('8');
+
+    label.dispatchQuery({
+      target: { textContent: '.status' },
+      type: 'mouseleave',
+    } as unknown as MouseEvent);
+
+    expect(onQuery).toHaveBeenCalledTimes(1);
+    expect((onQuery.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      text: '.status',
+      activator: 'mouseleave',
+    });
+  });
+
   it('hides action buttons for readonly labels like drag bounds', async () => {
     const { Label } = await import('../../public/page-edit/vendor/app/components/selection/label.element.js');
     const label = new Label();
@@ -888,7 +908,100 @@ describe('selection-actions helpers', () => {
     });
   });
 
-  it('uses the clicked secondary label element when parent action fires in multi-selection', async () => {
+  it('clears pseudo-select previews when leaving a label query anchor', async () => {
+    await withSelectableFixture(({ selectable }) => {
+      document.body.innerHTML = `
+        <section id="card-a"><span class="status alpha">A</span></section>
+        <section id="card-b"><span class="status beta">B</span></section>
+      `;
+
+      const target = document.querySelector('.alpha') as HTMLElement;
+      const sibling = document.querySelector('.beta') as HTMLElement;
+
+      selectable.select(target);
+
+      const label = document.querySelector('visbug-label') as HTMLElement;
+      label.dispatchEvent(
+        new window.CustomEvent('query', {
+          bubbles: true,
+          detail: {
+            text: '.status',
+            activator: 'mouseenter',
+          },
+        }),
+      );
+
+      expect(sibling.getAttribute('data-pseudo-select')).toBe('true');
+
+      label.dispatchEvent(
+        new window.CustomEvent('query', {
+          bubbles: true,
+          detail: {
+            text: '.status',
+            activator: 'mouseleave',
+          },
+        }),
+      );
+
+      expect(document.querySelectorAll('[data-pseudo-select]')).toHaveLength(0);
+    });
+  });
+
+  it('clears pseudo-select previews when pointer returns to the page', async () => {
+    await withSelectableFixture(({ selectable }) => {
+      document.body.innerHTML = `
+        <section id="card-a"><span class="status alpha">A</span></section>
+        <section id="card-b"><span class="status beta">B</span></section>
+      `;
+
+      const target = document.querySelector('.alpha') as HTMLElement;
+      const sibling = document.querySelector('.beta') as HTMLElement;
+
+      sibling.getBoundingClientRect = () =>
+        ({
+          x: 120,
+          y: 80,
+          top: 80,
+          left: 120,
+          right: 200,
+          bottom: 110,
+          width: 80,
+          height: 30,
+          toJSON() {
+            return this;
+          },
+        }) as DOMRect;
+
+      document.elementFromPoint = () => sibling;
+
+      selectable.select(target);
+
+      const label = document.querySelector('visbug-label') as HTMLElement;
+      label.dispatchEvent(
+        new window.CustomEvent('query', {
+          bubbles: true,
+          detail: {
+            text: '.status',
+            activator: 'mouseenter',
+          },
+        }),
+      );
+
+      expect(sibling.getAttribute('data-pseudo-select')).toBe('true');
+
+      document.body.dispatchEvent(
+        new window.MouseEvent('mousemove', {
+          bubbles: true,
+          clientX: 140,
+          clientY: 90,
+        }),
+      );
+
+      expect(document.querySelectorAll('[data-pseudo-select]')).toHaveLength(0);
+    });
+  });
+
+  it('uses the primary selection when parent action fires in multi-selection', async () => {
     await withSelectableFixture(({ selectable }) => {
       document.body.innerHTML = `
         <section id="card-a"><span class="alpha">A</span></section>
@@ -900,26 +1013,20 @@ describe('selection-actions helpers', () => {
       selectable.select(firstTarget);
       selectable.select(secondTarget);
 
-      const secondaryLabelId = firstTarget.getAttribute('data-label-id');
-      const secondaryLabel = document.querySelector(
-        `visbug-label[data-label-id="${secondaryLabelId}"]`,
-      ) as HTMLElement;
+      const label = document.querySelector('visbug-label') as HTMLElement;
 
-      secondaryLabel.dispatchEvent(
+      label.dispatchEvent(
         new CustomEvent('selection-action', {
           bubbles: true,
-          detail: {
-            action: 'select-parent',
-            nodeLabelId: secondaryLabelId,
-          },
+          detail: { action: 'select-parent' },
         }),
       );
 
-      expect(selectable.selection().map((element) => element.id)).toEqual(['card-a']);
+      expect(selectable.selection().map((element) => element.id)).toEqual(['card-b']);
     });
   });
 
-  it('uses the clicked secondary label element when send action fires in multi-selection', async () => {
+  it('uses the primary selection first when multi-selection send fires', async () => {
     await withSelectableFixture(({ selectable }) => {
       document.body.innerHTML = `
         <section id="card-a"><span class="alpha">A</span></section>
@@ -936,30 +1043,22 @@ describe('selection-actions helpers', () => {
         selectable.select(firstTarget);
         selectable.select(secondTarget);
 
-        const secondaryLabelId = firstTarget.getAttribute('data-label-id');
-        const secondaryLabel = document.querySelector(
-          `visbug-label[data-label-id="${secondaryLabelId}"]`,
-        ) as HTMLElement;
+        const label = document.querySelector('visbug-label') as HTMLElement;
 
-        secondaryLabel.dispatchEvent(
+        label.dispatchEvent(
           new CustomEvent('selection-action', {
             bubbles: true,
-            detail: {
-              action: 'send-selection',
-              nodeLabelId: secondaryLabelId,
-            },
+            detail: { action: 'send-selection' },
           }),
         );
 
-        expect(postMessage).toHaveBeenCalledWith(
-          {
+        expect(postMessage.mock.calls[0][0]).toEqual(
+          expect.objectContaining({
             type: 'page_edit_selection_append',
-            payload: {
-              source: 'live-page',
-              text: expect.stringContaining('选择器: #card-a > span.alpha'),
-            },
-          },
-          window.location.origin,
+            payload: expect.objectContaining({
+              text: expect.stringContaining('选择器: #card-b > span.beta'),
+            }),
+          }),
         );
       } finally {
         window.postMessage = originalPostMessage;
@@ -1040,6 +1139,62 @@ describe('selection-actions helpers', () => {
       } finally {
         window.postMessage = originalPostMessage;
       }
+    });
+  });
+
+  it('anchors the multi-selection label to a currently visible selected element', async () => {
+    await withSelectableFixture(({ selectable }) => {
+      Object.defineProperty(window, 'innerHeight', {
+        configurable: true,
+        value: 300,
+      });
+
+      document.body.innerHTML = `
+        <section id="card-a"><span class="alpha">A</span></section>
+        <section id="card-b"><span class="beta">B</span></section>
+      `;
+
+      const firstTarget = document.querySelector('.alpha') as HTMLElement;
+      const secondTarget = document.querySelector('.beta') as HTMLElement;
+
+      firstTarget.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 640,
+          top: 640,
+          left: 0,
+          right: 80,
+          bottom: 680,
+          width: 80,
+          height: 40,
+          toJSON() {
+            return this;
+          },
+        }) as DOMRect;
+
+      secondTarget.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 120,
+          top: 120,
+          left: 0,
+          right: 80,
+          bottom: 160,
+          width: 80,
+          height: 40,
+          toJSON() {
+            return this;
+          },
+        }) as DOMRect;
+
+      selectable.select(firstTarget);
+      selectable.select(secondTarget);
+
+      const label = document.querySelector('visbug-label') as HTMLElement;
+
+      expect(label).toBeTruthy();
+      expect(label.getAttribute('data-label-id')).toBe(secondTarget.getAttribute('data-label-id'));
+      expect(label.style.getPropertyValue('--top')).toBe('120px');
     });
   });
 

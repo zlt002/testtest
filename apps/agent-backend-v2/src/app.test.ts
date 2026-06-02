@@ -2742,6 +2742,114 @@ test('page code analysis dom analyze route returns low-confidence structure with
   }
 });
 
+test('page code analysis dom analyze route builds suggested command from ewankb kb mode', async () => {
+  const app = createApp({
+    agentService: {
+      async getSessionHistory() {
+        return { messages: [] };
+      },
+      async abortRun() {
+        return { aborted: false, reason: 'not_active' as const };
+      },
+    },
+    fileService: {
+      async listTree() {
+        return { entries: [] };
+      },
+      async readTextFile() {
+        return { content: '' };
+      },
+      async writeTextFile() {
+        return { ok: true as const };
+      },
+    },
+    mcpService: {
+      async listServers() {
+        return {};
+      },
+      async upsertServer() {
+        return {};
+      },
+      async deleteServer() {
+        return {};
+      },
+    },
+  });
+  const { server, url } = await listen(app);
+  try {
+    const response = await fetch(`${url}/api/agent-v2/page-code-analysis/dom-analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pageEvidence: {
+          targetElement: {
+            selector: '[data-testid="target"]',
+            xpath: '//*[@data-testid="target"]',
+            tagName: 'BUTTON',
+            text: '搜索',
+            outerHTMLSnippet: '<button>搜索</button>',
+            classList: ['primary-action'],
+            dataAttributes: {},
+          },
+          pageContext: {
+            url: 'https://gls-uat.annto.com/#/entrustedOrderModule/expressInquiry',
+            pathname: '/index.html',
+            hashRoute: '/entrustedOrderModule/expressInquiry',
+            title: '快递询价',
+            pageTextSummary: ['快递询价', '搜索', '供应商简称', '目的地'],
+            apiCandidates: ['/api-miloms/guarantee/expressCostPrice/summarySearch'],
+            resourceHints: [],
+          },
+          networkEvidence: [],
+          interactionEvidence: [],
+          runtimeEvidence: {
+            scriptUrls: [],
+            chunkHints: [],
+            sourceMapHints: [],
+          },
+          captureSessionMeta: {
+            sessionId: 'session-3',
+            tabId: 3,
+            capturedAt: 100,
+            mode: 'interactive',
+          },
+        },
+        pageCodebaseMappingConfig: {
+          rules: [
+            {
+              id: 'gls-express-inquiry-kb',
+              businessId: 'gls',
+              pageLabel: '快递询价',
+              triggerSkill: '/ewankb-server-query',
+              ewankbKb: 'gls',
+              ewankbMode: 'kb',
+              enabled: true,
+              hostIncludes: ['gls-uat.annto.com'],
+              hashRouteIncludes: ['/entrustedOrderModule/expressInquiry'],
+              pageTextIncludes: ['快递询价'],
+              apiPrefixes: ['/api-miloms/guarantee/expressCostPrice/'],
+              frontendGraphProjects: ['Users-zhanglt21-Desktop-codebase-otp-pc'],
+              backendGraphProjects: ['Users-zhanglt21-Desktop-codebase-t-tms'],
+            },
+          ],
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    const result = (await response.json()) as {
+      suggestedCommand: string | null;
+    };
+
+    assert.equal(
+      result.suggestedCommand,
+      '/ewankb-server-query kb gls "快递询价 搜索 列表查询 expressCostPrice summarySearch 供应商简称 目的地"'
+    );
+  } finally {
+    server.close();
+  }
+});
+
 test('workspace management routes delegate to workspace service', async () => {
   const calls: Array<{
     action: string;

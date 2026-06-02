@@ -299,6 +299,7 @@ describe('page-edit file save action', () => {
     expect(savedHtml).not.toContain('visbug-drag-src');
     expect(savedHtml).not.toContain('data-selected=');
     expect(savedHtml).not.toContain('data-pseudo-select=');
+    expect(savedHtml).not.toContain('data-label-id=');
     expect(savedHtml).not.toContain('cursor: move');
   });
 
@@ -421,6 +422,38 @@ describe('page-edit file save action', () => {
 
     expect(visbug.shouldShowSelectionActionsEverywhere()).toBe(true);
     expect(visbug.activeTool).toBeNull();
+
+    visbug.remove();
+  });
+
+  it('挂载时会清掉旧快照残留的选择态属性，避免脏页面继续污染本次编辑', async () => {
+    document.documentElement.setAttribute(
+      'data-webmcp-page-edit-config',
+      JSON.stringify({ pageMode: 'local-snapshot' }),
+    );
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    document.body.innerHTML = `
+      <table>
+        <tbody>
+          <tr>
+            <td id="dirty-cell" data-label-id="22" data-selected="true" data-pseudo-select="true">
+              脏单元格
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+    const visbug = new VisBug();
+
+    document.body.appendChild(visbug);
+
+    const dirtyCell = document.getElementById('dirty-cell');
+    expect(dirtyCell?.hasAttribute('data-label-id')).toBe(false);
+    expect(dirtyCell?.hasAttribute('data-selected')).toBe(false);
+    expect(dirtyCell?.hasAttribute('data-pseudo-select')).toBe(false);
 
     visbug.remove();
   });

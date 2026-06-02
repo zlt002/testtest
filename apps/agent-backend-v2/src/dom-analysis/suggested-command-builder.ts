@@ -1,4 +1,6 @@
 type BuildSuggestedCommandInput = {
+  triggerSkill: string | null;
+  ewankbMode: 'graph' | 'kb' | 'deep' | null;
   kbCandidate: string | null;
   featureName: string | null;
   actionTerms: string[];
@@ -11,6 +13,21 @@ const PREFERRED_FIELD_KEYWORDS = ['简称', '目的地', '服务类型', '供应
 
 function dedupe(items: string[]): string[] {
   return items.filter((item, index) => item.length > 0 && items.indexOf(item) === index);
+}
+
+function resolveCommandPrefix(input: {
+  triggerSkill: string | null;
+  ewankbMode: 'graph' | 'kb' | 'deep' | null;
+}): string | null {
+  if (input.triggerSkill !== '/ewankb-server-query') {
+    return null;
+  }
+
+  if (!input.ewankbMode) {
+    return null;
+  }
+
+  return `${input.triggerSkill} ${input.ewankbMode}`;
 }
 
 function scoreFieldTerm(term: string): number {
@@ -46,7 +63,12 @@ export function extractFieldTerms(tableHeaders: string[]): string[] {
 }
 
 export function buildSuggestedCommand(input: BuildSuggestedCommandInput): string | null {
-  if (!input.kbCandidate) {
+  const commandPrefix = resolveCommandPrefix({
+    triggerSkill: input.triggerSkill,
+    ewankbMode: input.ewankbMode,
+  });
+
+  if (!commandPrefix || !input.kbCandidate) {
     return null;
   }
 
@@ -62,5 +84,5 @@ export function buildSuggestedCommand(input: BuildSuggestedCommandInput): string
     return null;
   }
 
-  return `/ewankb-server-query graph ${input.kbCandidate} "${queryTerms.join(' ')}"`;
+  return `${commandPrefix} ${input.kbCandidate} "${queryTerms.join(' ')}"`;
 }

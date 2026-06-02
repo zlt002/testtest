@@ -179,7 +179,7 @@ describe('createPageEditElementAnalysisService', () => {
     expect(stopCaptureForTab).toHaveBeenCalledWith(66);
   });
 
-  it('completeSelectionAnalysis 会串起 evidence、dom-analyze 并返回 backend markdown', async () => {
+  it('completeSelectionAnalysis 会串起 evidence、dom-analyze 并返回结构化分析结果', async () => {
     const sessionStore = createDomAnalysisSessionStore({
       createId: () => 'selection-complete-session',
       now: () => 10_000,
@@ -200,6 +200,16 @@ describe('createPageEditElementAnalysisService', () => {
       networkEvidence: [],
     });
     const analyzeDom = vi.fn().mockResolvedValue({
+      analysisCard: {
+        pageName: '运单中心',
+        route: '#/orders',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/query',
+        confidence: 'medium',
+      },
+      suggestedCommand: '/ewankb-server-query graph gls "运单中心 查询 列表查询 orders query 订单号 状态"',
       chatSummary: {
         markdown: '# DOM 分析摘要\n\n- 推荐接口：`/api/orders/query`',
       },
@@ -233,6 +243,17 @@ describe('createPageEditElementAnalysisService', () => {
       })
     ).resolves.toEqual({
       markdown: '# DOM 分析摘要\n\n- 推荐接口：`/api/orders/query`',
+      analysisCard: {
+        pageName: '运单中心',
+        route: '#/orders',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/query',
+        confidence: 'medium',
+      },
+      suggestedCommand:
+        '/ewankb-server-query graph gls "运单中心 查询 列表查询 orders query 订单号 状态"',
     });
 
     expect(ensureCompanionReady).toHaveBeenCalledTimes(1);

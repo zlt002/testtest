@@ -957,11 +957,22 @@ describe('createPageEditService', () => {
   });
 
   it('completes interactive analysis after runtime click completion message', async () => {
+    const publishDomAnalysisSuggestion = vi.fn().mockResolvedValue(undefined);
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
     const clearSelectionAnalysisGuidance = vi.fn().mockResolvedValue(undefined);
     const completeSelectionAnalysis = vi.fn().mockResolvedValue({
       markdown: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/query`',
+      analysisCard: {
+        pageName: '订单查询',
+        route: '#/orders',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/query',
+        confidence: 'medium',
+      },
+      suggestedCommand: '/ewankb-server-query graph gls "订单查询 查询 列表查询 orders query 订单号 状态"',
     });
     const clearPendingSelectionAnalysis = vi.fn();
     const getPendingSelectionAnalysis = vi.fn().mockReturnValue({
@@ -984,6 +995,7 @@ describe('createPageEditService', () => {
       getPageEditState,
       completeSelectionAnalysis,
       clearSelectionAnalysisGuidance,
+      publishDomAnalysisSuggestion,
       publishComposerAppend,
       openSidePanel,
     });
@@ -1011,17 +1023,30 @@ describe('createPageEditService', () => {
       sessionId: 'analysis-3',
     });
     expect(openSidePanel).toHaveBeenCalledWith(7);
-    expect(publishComposerAppend).toHaveBeenCalledWith({
-      text: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/query`',
-      source: 'page-edit:analyze-result',
+    expect(publishDomAnalysisSuggestion).toHaveBeenCalledWith({
+      card: {
+        pageName: '订单查询',
+        route: '#/orders',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/query',
+        confidence: 'medium',
+      },
+      suggestedCommand:
+        '/ewankb-server-query graph gls "订单查询 查询 列表查询 orders query 订单号 状态"',
     });
+    expect(publishComposerAppend).not.toHaveBeenCalled();
   });
 
   it('ignores interactive completion messages when pending session does not match', async () => {
+    const publishDomAnalysisSuggestion = vi.fn().mockResolvedValue(undefined);
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
     const completeSelectionAnalysis = vi.fn().mockResolvedValue({
       markdown: '# 页面元素接口关联分析',
+      analysisCard: null,
+      suggestedCommand: null,
     });
     const clearPendingSelectionAnalysis = vi.fn();
     const getPendingSelectionAnalysis = vi.fn().mockReturnValue(null);
@@ -1029,6 +1054,7 @@ describe('createPageEditService', () => {
       getPendingSelectionAnalysis,
       clearPendingSelectionAnalysis,
       completeSelectionAnalysis,
+      publishDomAnalysisSuggestion,
       publishComposerAppend,
       openSidePanel,
     });
@@ -1050,14 +1076,27 @@ describe('createPageEditService', () => {
     expect(clearPendingSelectionAnalysis).not.toHaveBeenCalled();
     expect(completeSelectionAnalysis).not.toHaveBeenCalled();
     expect(openSidePanel).not.toHaveBeenCalled();
+    expect(publishDomAnalysisSuggestion).not.toHaveBeenCalled();
     expect(publishComposerAppend).not.toHaveBeenCalled();
   });
 
   it('completes display analysis when the tracked tab reload finishes', async () => {
+    const publishDomAnalysisSuggestion = vi.fn().mockResolvedValue(undefined);
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
     const completeSelectionAnalysis = vi.fn().mockResolvedValue({
       markdown: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/list`',
+      analysisCard: {
+        pageName: '订单列表',
+        route: '#/orders/list',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '创建时间'],
+        recommendedApi: '/api/orders/list',
+        confidence: 'medium',
+      },
+      suggestedCommand:
+        '/ewankb-server-query graph gls "订单列表 查询 列表查询 orders list 订单号 创建时间"',
     });
     const clearPendingSelectionAnalysis = vi.fn();
     const listPendingSelectionAnalysesByTabId = vi.fn().mockReturnValue([
@@ -1073,6 +1112,7 @@ describe('createPageEditService', () => {
       listPendingSelectionAnalysesByTabId,
       clearPendingSelectionAnalysis,
       completeSelectionAnalysis,
+      publishDomAnalysisSuggestion,
       publishComposerAppend,
       openSidePanel,
     });
@@ -1088,10 +1128,20 @@ describe('createPageEditService', () => {
       sessionId: 'analysis-4',
     });
     expect(openSidePanel).toHaveBeenCalledWith(3);
-    expect(publishComposerAppend).toHaveBeenCalledWith({
-      text: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/list`',
-      source: 'page-edit:analyze-result',
+    expect(publishDomAnalysisSuggestion).toHaveBeenCalledWith({
+      card: {
+        pageName: '订单列表',
+        route: '#/orders/list',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '创建时间'],
+        recommendedApi: '/api/orders/list',
+        confidence: 'medium',
+      },
+      suggestedCommand:
+        '/ewankb-server-query graph gls "订单列表 查询 列表查询 orders list 订单号 创建时间"',
     });
+    expect(publishComposerAppend).not.toHaveBeenCalled();
   });
 
   it('saves file-page html when the sender tab is front active and the nonce matches', async () => {

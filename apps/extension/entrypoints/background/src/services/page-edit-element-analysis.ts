@@ -35,11 +35,15 @@ type CreatePageEditElementAnalysisServiceOptions = {
   clearTimeout?: typeof globalThis.clearTimeout;
   classifyTarget?: (targetElement: PickedElementContext) => PageEditElementAnalysisMode;
   buildEvidenceForTarget?: typeof buildDomAnalysisEvidenceForTarget;
-  analyzeDom?: (input: AnalyzeDomInput) => Promise<Pick<DomAnalyzeResult, 'chatSummary'>>;
+  analyzeDom?: (
+    input: AnalyzeDomInput
+  ) => Promise<Pick<DomAnalyzeResult, 'analysisCard' | 'suggestedCommand' | 'chatSummary'>>;
   ensureCompanionReady?: typeof ensureCompanionReady;
 };
 
-async function defaultAnalyzeDom(input: AnalyzeDomInput): Promise<Pick<DomAnalyzeResult, 'chatSummary'>> {
+async function defaultAnalyzeDom(
+  input: AnalyzeDomInput
+): Promise<Pick<DomAnalyzeResult, 'analysisCard' | 'suggestedCommand' | 'chatSummary'>> {
   const response = await fetch(`${input.agentBaseUrl}/api/agent-v2/page-code-analysis/dom-analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -200,7 +204,11 @@ export function createPageEditElementAnalysisService(
 
     async completeSelectionAnalysis(
       input: CompleteSelectionAnalysisInput
-    ): Promise<{ markdown: string }> {
+    ): Promise<{
+      markdown: string;
+      analysisCard: DomAnalyzeResult['analysisCard'];
+      suggestedCommand: string | null;
+    }> {
       const session = sessionStore.getSession(input.sessionId);
       if (!session || !session.targetElement) {
         throw new Error(`未找到页面元素分析会话: ${input.sessionId}`);
@@ -227,6 +235,8 @@ export function createPageEditElementAnalysisService(
 
         return {
           markdown: result.chatSummary.markdown,
+          analysisCard: result.analysisCard ?? null,
+          suggestedCommand: result.suggestedCommand ?? null,
         };
       } finally {
         clearCleanupTimer(session.sessionId);

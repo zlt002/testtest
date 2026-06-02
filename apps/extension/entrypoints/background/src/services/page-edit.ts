@@ -1,5 +1,6 @@
 ﻿import {
   publishAgentV2ComposerAppend,
+  publishAgentV2DomAnalysisSuggestion,
   publishAgentV2QuickActionFeedback,
 } from '@/entrypoints/sidepanel/lib/agent-v2/session-selection';
 import type { PickedElementContext } from '@/entrypoints/lib/page-picker';
@@ -384,6 +385,7 @@ async function clearSelectionAnalysisGuidance(input: {
 async function publishPageEditSelectionAnalysisResult(input: {
   pending: PendingPageEditSelectionAnalysis;
   completeSelectionAnalysis: typeof pageEditElementAnalysisService.completeSelectionAnalysis;
+  publishDomAnalysisSuggestion: typeof publishAgentV2DomAnalysisSuggestion;
   publishComposerAppend: typeof publishAgentV2ComposerAppend;
   openSidePanel: (windowId: number) => Promise<void>;
 }) {
@@ -397,12 +399,19 @@ async function publishPageEditSelectionAnalysisResult(input: {
       sessionId: input.pending.sessionId,
     });
 
-    const publishComposerAppendTask = input.publishComposerAppend({
-      text: completed.markdown,
-      source: 'page-edit:analyze-result',
-    }).catch(() => undefined);
+    const publishSuggestionTask = completed.analysisCard
+      ? input
+          .publishDomAnalysisSuggestion({
+            card: completed.analysisCard,
+            suggestedCommand: completed.suggestedCommand,
+          })
+          .catch(() => undefined)
+      : input.publishComposerAppend({
+          text: completed.markdown,
+          source: 'page-edit:analyze-result',
+        }).catch(() => undefined);
 
-    await Promise.allSettled([openSidePanelTask, publishComposerAppendTask]);
+    await Promise.allSettled([openSidePanelTask, publishSuggestionTask]);
   } catch (error) {
     const publishComposerAppendTask = input.publishComposerAppend({
       text: `页面元素分析收口失败：${error instanceof Error ? error.message : String(error)}`,
@@ -1282,6 +1291,7 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
   clearPendingSelectionAnalysis?: (sessionId: string) => void;
   completeSelectionAnalysis?: typeof pageEditElementAnalysisService.completeSelectionAnalysis;
   clearSelectionAnalysisGuidance?: typeof clearSelectionAnalysisGuidance;
+  publishDomAnalysisSuggestion?: typeof publishAgentV2DomAnalysisSuggestion;
   publishComposerAppend?: typeof publishAgentV2ComposerAppend;
   openSidePanel?: (windowId: number) => Promise<void>;
 }) {
@@ -1295,6 +1305,8 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
     input.completeSelectionAnalysis ?? pageEditElementAnalysisService.completeSelectionAnalysis;
   const clearSelectionAnalysisGuidanceImpl =
     input.clearSelectionAnalysisGuidance ?? clearSelectionAnalysisGuidance;
+  const publishDomAnalysisSuggestion =
+    input.publishDomAnalysisSuggestion ?? publishAgentV2DomAnalysisSuggestion;
   const publishComposerAppend = input.publishComposerAppend ?? publishAgentV2ComposerAppend;
   const openSidePanel =
     input.openSidePanel ??
@@ -1347,6 +1359,7 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
     void publishPageEditSelectionAnalysisResult({
       pending,
       completeSelectionAnalysis,
+      publishDomAnalysisSuggestion,
       publishComposerAppend,
       openSidePanel,
     }).catch(() => undefined);
@@ -1359,6 +1372,7 @@ export function createPageEditSelectionAnalyzeTabUpdateListener(input: {
   listPendingSelectionAnalysesByTabId?: (tabId: number) => PendingPageEditSelectionAnalysis[];
   clearPendingSelectionAnalysis?: (sessionId: string) => void;
   completeSelectionAnalysis?: typeof pageEditElementAnalysisService.completeSelectionAnalysis;
+  publishDomAnalysisSuggestion?: typeof publishAgentV2DomAnalysisSuggestion;
   publishComposerAppend?: typeof publishAgentV2ComposerAppend;
   openSidePanel?: (windowId: number) => Promise<void>;
 }) {
@@ -1368,6 +1382,8 @@ export function createPageEditSelectionAnalyzeTabUpdateListener(input: {
     input.clearPendingSelectionAnalysis ?? clearPendingPageEditSelectionAnalysis;
   const completeSelectionAnalysis =
     input.completeSelectionAnalysis ?? pageEditElementAnalysisService.completeSelectionAnalysis;
+  const publishDomAnalysisSuggestion =
+    input.publishDomAnalysisSuggestion ?? publishAgentV2DomAnalysisSuggestion;
   const publishComposerAppend = input.publishComposerAppend ?? publishAgentV2ComposerAppend;
   const openSidePanel =
     input.openSidePanel ??
@@ -1387,6 +1403,7 @@ export function createPageEditSelectionAnalyzeTabUpdateListener(input: {
       void publishPageEditSelectionAnalysisResult({
         pending,
         completeSelectionAnalysis,
+        publishDomAnalysisSuggestion,
         publishComposerAppend,
         openSidePanel,
       }).catch(() => undefined);

@@ -17,6 +17,11 @@ const state = {
 
 const services = {}
 
+const clearPseudoSelectionPreview = () => {
+  queryPage('[data-pseudo-select]', el =>
+    el.removeAttribute('data-pseudo-select'))
+}
+
 export function MetaTip({select}) {
   services.selectors = {select}
 
@@ -36,6 +41,8 @@ export function MetaTip({select}) {
 }
 
 const mouseMove = e => {
+  clearPseudoSelectionPreview()
+
   const target = deepElementFromPoint(e.clientX, e.clientY)
   if (!target) return
 
@@ -239,8 +246,7 @@ const togglePinned = e => {
 const linkQueryClicked = ({detail:{ text, activator }}) => {
   if (!text) return
 
-  queryPage('[data-pseudo-select]', el =>
-    el.removeAttribute('data-pseudo-select'))
+  clearPseudoSelectionPreview()
 
   queryPage(text + ':not([data-selected])', el =>
     activator === 'mouseenter'
@@ -249,8 +255,7 @@ const linkQueryClicked = ({detail:{ text, activator }}) => {
 }
 
 const linkQueryHoverOut = e => {
-  queryPage('[data-pseudo-select]', el =>
-    el.removeAttribute('data-pseudo-select'))
+  clearPseudoSelectionPreview()
 }
 
 const toggleTargetCursor = (key, target) =>

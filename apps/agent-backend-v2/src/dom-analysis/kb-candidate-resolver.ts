@@ -7,7 +7,6 @@ type KbRouteContext = {
 
 type ResolveKbCandidateInput = {
   routeContext: KbRouteContext;
-  observedApis: string[];
 };
 
 function normalizeKbCandidate(value: string | null): string | null {

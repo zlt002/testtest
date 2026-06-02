@@ -10,6 +10,14 @@ import {
   readCurrentPageContent,
 } from './read-current-page-content';
 import { domAnalysisCdpService } from './dom-analysis-cdp';
+import {
+  EMPTY_STRUCTURED_DOM_SIGNALS,
+  extractStructuredDomSignals,
+  inferStructuredActionType,
+  mergeStructuredSummaryTerms,
+  normalizeStructuredDomSignals,
+  type StructuredDomSignals,
+} from './dom-analysis-structured-signals';
 
 const MAX_PAGE_SUMMARY_ITEMS = 20;
 const MAX_API_CANDIDATES = 12;
@@ -37,6 +45,7 @@ type BuildPageEvidenceDependencies = {
     includeFrameAnalysis?: boolean;
   }) => Promise<ReadCurrentPageContentResult>;
   collectScriptUrls?: (tabId: number | undefined) => Promise<string[]>;
+  collectStructuredSignals?: (tabId: number | undefined) => Promise<StructuredDomSignals>;
   getNetworkEvidence?: (
     tabId: number,
     window: {
@@ -125,12 +134,32 @@ async function defaultCollectScriptUrls(tabId: number | undefined): Promise<stri
   }
 }
 
+async function defaultCollectStructuredSignals(
+  tabId: number | undefined
+): Promise<StructuredDomSignals> {
+  if (typeof tabId !== 'number') {
+    return EMPTY_STRUCTURED_DOM_SIGNALS;
+  }
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: extractStructuredDomSignals,
+    });
+    return normalizeStructuredDomSignals(results[0]?.result as Partial<StructuredDomSignals> | undefined);
+  } catch {
+    return EMPTY_STRUCTURED_DOM_SIGNALS;
+  }
+}
+
 export async function buildPageEvidence(
   input: BuildPageEvidenceInput,
   dependencies: BuildPageEvidenceDependencies = {}
 ): Promise<PageEvidence> {
   const readPageContentImpl = dependencies.readPageContent ?? readCurrentPageContent;
   const collectScriptUrlsImpl = dependencies.collectScriptUrls ?? defaultCollectScriptUrls;
+  const collectStructuredSignalsImpl =
+    dependencies.collectStructuredSignals ?? defaultCollectStructuredSignals;
   const getNetworkEvidenceImpl =
     dependencies.getNetworkEvidence ??
     ((tabId: number, window: { startTime: number; endTime: number }) =>
@@ -144,6 +173,7 @@ export async function buildPageEvidence(
     includeFrameAnalysis: false,
   });
   const scriptUrls = await collectScriptUrlsImpl(input.tab.id);
+  const structuredSignals = await collectStructuredSignalsImpl(input.tab.id);
   const networkEvidence =
     typeof input.tab.id === 'number' && input.networkWindow
       ? getNetworkEvidenceImpl(input.tab.id, input.networkWindow)
@@ -175,6 +205,18 @@ export async function buildPageEvidence(
     networkEvidence.map((item) => extractApiPath(item.url)),
     MAX_API_CANDIDATES
   );
+  const actionType = inferStructuredActionType({
+    tagName: input.targetElement.tagName,
+    text: input.targetElement.text,
+    hasFormContext: structuredSignals.formLabels.length > 0,
+    hasTableContext: structuredSignals.tableHeaders.length > 0,
+  });
+  const pageTextSummary = mergeStructuredSummaryTerms({
+    pageTextSummary: extractPageTextSummary(pageContent.text || ''),
+    structuredSignals,
+    actionType,
+    limit: MAX_PAGE_SUMMARY_ITEMS,
+  });
 
   return PageEvidenceSchema.parse({
     targetElement: {
@@ -191,7 +233,7 @@ export async function buildPageEvidence(
       pathname,
       hashRoute,
       title: pageContent.title || input.tab.title,
-      pageTextSummary: extractPageTextSummary(pageContent.text || ''),
+      pageTextSummary,
       apiCandidates,
       resourceHints,
     },

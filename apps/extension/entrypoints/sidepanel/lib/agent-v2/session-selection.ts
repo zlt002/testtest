@@ -1,4 +1,5 @@
 import { summarizePromptForDisplay } from '../../../../../../shared/utils/src/prompt-metadata.ts';
+import type { DomAnalysisCard } from '../dom-analysis/types';
 import {
   AGENT_V2_SESSION_TABS_STORAGE_KEY,
   type AgentV2SessionSelectedTabs,
@@ -14,6 +15,8 @@ export const AGENT_V2_COMPOSER_APPEND_STORAGE_KEY = 'agentV2.composerAppend';
 export const AGENT_V2_COMPOSER_APPEND_MESSAGE = 'agent_v2_composer_append';
 export const AGENT_V2_QUICK_ACTION_FEEDBACK_STORAGE_KEY = 'agentV2.quickActionFeedback';
 export const AGENT_V2_QUICK_ACTION_FEEDBACK_MESSAGE = 'agent_v2_quick_action_feedback';
+export const AGENT_V2_DOM_ANALYSIS_SUGGESTION_STORAGE_KEY = 'agentV2.domAnalysisSuggestion';
+export const AGENT_V2_DOM_ANALYSIS_SUGGESTION_MESSAGE = 'agent_v2_dom_analysis_suggestion';
 
 export type AgentV2SessionSelection = {
   sessionId: string;
@@ -66,6 +69,17 @@ export type AgentV2QuickActionFeedback = {
 export type AgentV2QuickActionFeedbackMessage = {
   type: typeof AGENT_V2_QUICK_ACTION_FEEDBACK_MESSAGE;
   payload: AgentV2QuickActionFeedback;
+};
+
+export type AgentV2DomAnalysisSuggestion = {
+  card: DomAnalysisCard;
+  suggestedCommand: string | null;
+  createdAt: string;
+};
+
+export type AgentV2DomAnalysisSuggestionMessage = {
+  type: typeof AGENT_V2_DOM_ANALYSIS_SUGGESTION_MESSAGE;
+  payload: AgentV2DomAnalysisSuggestion;
 };
 
 function isAgentV2SessionSelectedTabs(value: unknown): value is AgentV2SessionSelectedTabs {
@@ -134,6 +148,19 @@ export function isAgentV2QuickActionFeedbackMessage(
     typeof (message as { payload?: { kind?: unknown; message?: unknown } }).payload?.kind ===
       'string' &&
     typeof (message as { payload?: { kind?: unknown; message?: unknown } }).payload?.message ===
+      'string'
+  );
+}
+
+export function isAgentV2DomAnalysisSuggestionMessage(
+  message: unknown
+): message is AgentV2DomAnalysisSuggestionMessage {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    (message as { type?: unknown }).type === AGENT_V2_DOM_ANALYSIS_SUGGESTION_MESSAGE &&
+    typeof (message as { payload?: { createdAt?: unknown } }).payload?.createdAt === 'string' &&
+    typeof (message as { payload?: { card?: { confidence?: unknown } } }).payload?.card?.confidence ===
       'string'
   );
 }
@@ -339,6 +366,45 @@ export async function readAgentV2ComposerAppend(): Promise<AgentV2ComposerAppend
   ) {
     await chrome.storage.local.remove(AGENT_V2_COMPOSER_APPEND_STORAGE_KEY);
     return payload as AgentV2ComposerAppend;
+  }
+  return null;
+}
+
+export async function publishAgentV2DomAnalysisSuggestion(input: {
+  card: DomAnalysisCard;
+  suggestedCommand: string | null;
+}) {
+  const payload: AgentV2DomAnalysisSuggestion = {
+    card: input.card,
+    suggestedCommand: input.suggestedCommand,
+    createdAt: new Date().toISOString(),
+  };
+
+  await chrome.storage.local.set({
+    [AGENT_V2_DOM_ANALYSIS_SUGGESTION_STORAGE_KEY]: payload,
+  });
+
+  await chrome.runtime
+    .sendMessage({
+      type: AGENT_V2_DOM_ANALYSIS_SUGGESTION_MESSAGE,
+      payload,
+    } satisfies AgentV2DomAnalysisSuggestionMessage)
+    .catch((error) => {
+      console.debug('[agent-v2] dom analysis suggestion broadcast failed:', error);
+    });
+}
+
+export async function readAgentV2DomAnalysisSuggestion(): Promise<AgentV2DomAnalysisSuggestion | null> {
+  const stored = await chrome.storage.local.get(AGENT_V2_DOM_ANALYSIS_SUGGESTION_STORAGE_KEY);
+  const payload = stored[AGENT_V2_DOM_ANALYSIS_SUGGESTION_STORAGE_KEY];
+  if (
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as AgentV2DomAnalysisSuggestion).createdAt === 'string' &&
+    typeof (payload as AgentV2DomAnalysisSuggestion).card?.confidence === 'string'
+  ) {
+    await chrome.storage.local.remove(AGENT_V2_DOM_ANALYSIS_SUGGESTION_STORAGE_KEY);
+    return payload as AgentV2DomAnalysisSuggestion;
   }
   return null;
 }

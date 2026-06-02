@@ -434,7 +434,6 @@ export function createPageCodeAnalysisRoute(options?: {
           ewankbKb: routeContext.ewankbKb,
           ewankbMode: routeContext.ewankbMode,
         },
-        observedApis,
       });
       const apiTerms = extractApiTerms(attribution.bestApi ?? observedApis[0] ?? null);
       const fieldTerms = extractFieldTerms(cardSignals.tableHeaders);
@@ -448,6 +447,8 @@ export function createPageCodeAnalysisRoute(options?: {
         confidence: cardSignals.confidence,
       });
       const suggestedCommand = buildSuggestedCommand({
+        triggerSkill: routeContext.triggerSkill,
+        ewankbMode: routeContext.ewankbMode,
         kbCandidate,
         featureName: pageFeature.primaryFeatureName,
         actionTerms,

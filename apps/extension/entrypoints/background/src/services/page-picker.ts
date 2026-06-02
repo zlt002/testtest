@@ -58,6 +58,39 @@ type BuildDomAnalysisEvidenceForTargetOptions = {
   buildEvidence?: typeof buildPageEvidence;
 };
 
+function buildEvidenceRequest(input: {
+  tab: chrome.tabs.Tab;
+  tabId: number;
+  sessionId: string;
+  targetElement: PickedElementContext;
+  mode: DomAnalysisSessionMode | CaptureSessionMeta['mode'];
+  startedAt: number;
+  capturedAt: number;
+  includeFrames?: boolean;
+  maxChars?: number;
+  preCaptureWindowMs?: number;
+  postCaptureWindowMs?: number;
+}): Parameters<typeof buildPageEvidence>[0] {
+  return {
+    tab: input.tab,
+    targetElement: input.targetElement,
+    captureSessionMeta: {
+      sessionId: input.sessionId,
+      tabId: input.tabId,
+      capturedAt: input.capturedAt,
+      mode: normalizeDomAnalysisCaptureSessionMode(input.mode),
+    },
+    networkWindow: {
+      startTime:
+        input.startedAt - (input.preCaptureWindowMs ?? DOM_ANALYSIS_PRE_CAPTURE_WINDOW_MS),
+      endTime:
+        input.capturedAt + (input.postCaptureWindowMs ?? DOM_ANALYSIS_POST_CAPTURE_WINDOW_MS),
+    },
+    includeFrames: input.includeFrames,
+    maxChars: input.maxChars,
+  };
+}
+
 export function isSupportedPagePickerUrl(url: string | undefined): boolean {
   if (!url) {
     return false;
@@ -182,25 +215,21 @@ export async function buildDomAnalysisEvidenceForTarget(
   }
 
   const capturedAt = options.capturedAt ?? now();
-  return buildEvidenceImpl({
-    tab,
-    targetElement: options.targetElement,
-    captureSessionMeta: {
-      sessionId: options.sessionId,
+  return buildEvidenceImpl(
+    buildEvidenceRequest({
+      tab,
       tabId: options.tabId,
+      sessionId: options.sessionId,
+      targetElement: options.targetElement,
+      mode: options.mode,
+      startedAt: options.startedAt,
       capturedAt,
-      mode: normalizeDomAnalysisCaptureSessionMode(options.mode),
-    },
-    networkWindow: {
-      startTime:
-        options.startedAt -
-        (options.preCaptureWindowMs ?? DOM_ANALYSIS_PRE_CAPTURE_WINDOW_MS),
-      endTime:
-        capturedAt + (options.postCaptureWindowMs ?? DOM_ANALYSIS_POST_CAPTURE_WINDOW_MS),
-    },
-    includeFrames: options.includeFrames,
-    maxChars: options.maxChars,
-  });
+      includeFrames: options.includeFrames,
+      maxChars: options.maxChars,
+      preCaptureWindowMs: options.preCaptureWindowMs,
+      postCaptureWindowMs: options.postCaptureWindowMs,
+    })
+  );
 }
 
 export async function captureDomAnalysisEvidenceForSession(
@@ -234,24 +263,21 @@ export async function captureDomAnalysisEvidenceForSession(
       capturedAt: now(),
     });
 
-    return await buildEvidenceImpl({
-      tab,
-      targetElement,
-      captureSessionMeta: {
-        ...captureSessionMeta,
-        mode: normalizeDomAnalysisCaptureSessionMode(captureSessionMeta.mode),
-      },
-      networkWindow: {
-        startTime:
-          session.startedAt -
-          (options.preCaptureWindowMs ?? DOM_ANALYSIS_PRE_CAPTURE_WINDOW_MS),
-        endTime:
-          captureSessionMeta.capturedAt +
-          (options.postCaptureWindowMs ?? DOM_ANALYSIS_POST_CAPTURE_WINDOW_MS),
-      },
-      includeFrames: options.includeFrames,
-      maxChars: options.maxChars,
-    });
+    return await buildEvidenceImpl(
+      buildEvidenceRequest({
+        tab,
+        tabId: session.tabId,
+        sessionId: captureSessionMeta.sessionId,
+        targetElement,
+        mode: captureSessionMeta.mode,
+        startedAt: session.startedAt,
+        capturedAt: captureSessionMeta.capturedAt,
+        includeFrames: options.includeFrames,
+        maxChars: options.maxChars,
+        preCaptureWindowMs: options.preCaptureWindowMs,
+        postCaptureWindowMs: options.postCaptureWindowMs,
+      })
+    );
   } finally {
     sessionStore.deleteSession(session.sessionId);
     await cdpService.stopCaptureForTab(session.tabId).catch(() => undefined);

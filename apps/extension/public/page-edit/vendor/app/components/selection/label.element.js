@@ -99,12 +99,12 @@ export class Label extends HTMLElement {
   }
 
   bindInteractiveAnchors() {
-    $('a', this.$shadow).on('click mouseenter', this.boundDispatchQuery);
+    $('a', this.$shadow).on('click mouseenter mouseleave', this.boundDispatchQuery);
     $('button[data-action]', this.$shadow).on('click', this.boundDispatchAction);
   }
 
   unbindInteractiveAnchors() {
-    $('a', this.$shadow).off('click mouseenter', this.boundDispatchQuery);
+    $('a', this.$shadow).off('click mouseenter mouseleave', this.boundDispatchQuery);
     $('button[data-action]', this.$shadow).off('click', this.boundDispatchAction);
   }
 
@@ -209,6 +209,23 @@ export class Label extends HTMLElement {
   }
 
   renderActionButtons(pageMode) {
+    const isMultiSelectionLabel =
+      this.$shadow.host.getAttribute('data-multi-selection-label') === 'true';
+
+    if (isMultiSelectionLabel) {
+      return [
+        { action: 'send-selection', label: '发送' },
+        { action: 'select-parent', label: '父级' },
+      ]
+        .map(
+          ({ action, label, disabled, title }) =>
+            `<button type="button" data-action="${action}"${disabled ? ' disabled' : ''}${
+              title ? ` title="${title}"` : ''
+            }>${label}</button>`
+        )
+        .join('');
+    }
+
     const actions = isLocalSnapshotMode(pageMode)
       ? [
           { action: 'send-selection', label: '发送' },

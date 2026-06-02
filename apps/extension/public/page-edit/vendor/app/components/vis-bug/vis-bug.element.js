@@ -131,6 +131,56 @@ const runCleanupStep = (label, step) => {
   }
 }
 
+const sanitizePageEditArtifacts = (root, { preserveNodes = [] } = {}) => {
+  const scope = root?.documentElement ?? root
+  if (!scope?.querySelectorAll) return
+
+  const preserved = new Set(
+    preserveNodes.filter((node) => node instanceof Element)
+  )
+  const shouldSkipNode = (node) =>
+    [...preserved].some((preservedNode) => preservedNode === node || preservedNode.contains?.(node))
+
+  scope
+    .querySelectorAll(
+      'vis-bug, visbug-grip, visbug-handles, visbug-label, visbug-hover, visbug-selected, visbug-box-model, visbug-gridlines, visbug-distance, visbug-metatip, visbug-corners, visbug-overlay, visbug-ally'
+    )
+    .forEach((node) => {
+      if (!shouldSkipNode(node)) node.remove()
+    })
+
+  scope
+    .querySelectorAll(
+      '[draggable="true"], [data-webmcp-page-edit-draggable], [data-selected], [data-pseudo-select], [data-selected-hide], [data-pinhover], [data-measuring], [visbug-drag-src], [data-label-id]'
+    )
+    .forEach((node) => {
+      if (shouldSkipNode(node)) return
+
+      node.removeAttribute('draggable')
+      node.removeAttribute('data-webmcp-page-edit-draggable')
+      node.removeAttribute('data-selected')
+      node.removeAttribute('data-pseudo-select')
+      node.removeAttribute('data-selected-hide')
+      node.removeAttribute('data-pinhover')
+      node.removeAttribute('data-measuring')
+      node.removeAttribute('visbug-drag-src')
+      node.removeAttribute('data-label-id')
+    })
+
+  scope.querySelectorAll('[data-webmcp-page-edit-surface-cursor]').forEach((node) => {
+    if (shouldSkipNode(node)) return
+
+    node.removeAttribute('data-webmcp-page-edit-surface-cursor')
+
+    const cursor = node.style?.cursor?.trim?.()
+    if (cursor === 'move' || cursor === 'grab' || cursor === 'grabbing')
+      node.style.cursor = null
+
+    if (!node.getAttribute('style'))
+      node.removeAttribute('style')
+  })
+}
+
 export default class VisBug extends HTMLElement {
   #selectionBridgeNonce = null
 
@@ -159,6 +209,8 @@ export default class VisBug extends HTMLElement {
 
   connectedCallback() {
     if (supportsAdoptedStyleSheets) this.$shadow.adoptedStyleSheets = this.styles
+
+    sanitizePageEditArtifacts(document, { preserveNodes: [this] })
 
     if (!this.$shadow.innerHTML)
       this.setup()
@@ -1913,31 +1965,9 @@ export default class VisBug extends HTMLElement {
 
     root?.querySelectorAll?.('link[data-webmcp-page-edit-style]').forEach(node => node.remove())
     root?.querySelectorAll?.('[data-webmcp-page-edit-root="true"]').forEach(node => node.remove())
-    root?.querySelectorAll?.('vis-bug, visbug-grip, visbug-handles, visbug-label, visbug-hover, visbug-selected, visbug-box-model, visbug-gridlines, visbug-distance, visbug-metatip, visbug-corners, visbug-overlay, visbug-ally').forEach(node => node.remove())
     root?.querySelectorAll?.('[data-webmcp-page-edit-analysis-guidance]').forEach(node => node.remove())
     root?.removeAttribute?.('data-webmcp-page-edit-analysis-mode')
-
-    root?.querySelectorAll?.('[draggable="true"], [data-webmcp-page-edit-draggable], [data-selected], [data-pseudo-select], [data-selected-hide], [data-pinhover], [data-measuring], [visbug-drag-src]').forEach(node => {
-      node.removeAttribute('draggable')
-      node.removeAttribute('data-webmcp-page-edit-draggable')
-      node.removeAttribute('data-selected')
-      node.removeAttribute('data-pseudo-select')
-      node.removeAttribute('data-selected-hide')
-      node.removeAttribute('data-pinhover')
-      node.removeAttribute('data-measuring')
-      node.removeAttribute('visbug-drag-src')
-    })
-
-    root?.querySelectorAll?.('[data-webmcp-page-edit-surface-cursor]').forEach(node => {
-      node.removeAttribute('data-webmcp-page-edit-surface-cursor')
-
-      const cursor = node.style?.cursor?.trim?.()
-      if (cursor === 'move' || cursor === 'grab' || cursor === 'grabbing')
-        node.style.cursor = null
-
-      if (!node.getAttribute('style'))
-        node.removeAttribute('style')
-    })
+    sanitizePageEditArtifacts(snapshot)
 
     return snapshot
   }

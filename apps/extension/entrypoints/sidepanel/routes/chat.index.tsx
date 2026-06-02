@@ -36,6 +36,7 @@ import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { AgentComposer } from '@/entrypoints/sidepanel/components/agent-composer/AgentComposer';
 import { AssistantBubble } from '@/entrypoints/sidepanel/components/chat/AssistantBubble';
+import { DomAnalysisSuggestionCard } from '@/entrypoints/sidepanel/components/chat/DomAnalysisSuggestionCard';
 import { SystemUpdateEntry } from '@/entrypoints/sidepanel/components/settings/SystemUpdateEntry';
 import { UserBubble } from '@/entrypoints/sidepanel/components/chat/UserBubble';
 import { Button } from '@/entrypoints/sidepanel/components/ui/button';
@@ -103,9 +104,11 @@ import {
   retainAttachmentPreviewUrls,
 } from '../lib/agent-v2/attachment-preview-lifecycle';
 import {
+  type AgentV2DomAnalysisSuggestion,
   type AgentV2ProjectSelection,
   type AgentV2SessionSelection,
   isAgentV2ComposerAppendMessage,
+  isAgentV2DomAnalysisSuggestionMessage,
   isAgentV2ProjectSelectedMessage,
   isAgentV2QuickActionFeedbackMessage,
   isAgentV2SessionSelectedMessage,
@@ -113,6 +116,7 @@ import {
   publishAgentV2ProjectSelection,
   publishAgentV2WorkspaceIntent,
   readAgentV2ComposerAppend,
+  readAgentV2DomAnalysisSuggestion,
   readAgentV2ProjectSelection,
   readAgentV2QuickActionFeedback,
   readAgentV2SessionSelectedTabs,
@@ -2396,6 +2400,8 @@ export function Chat() {
   );
   const [isQuickPageEditActionPending, setIsQuickPageEditActionPending] = useState(false);
   const [quickActionFeedback, setQuickActionFeedback] = useState<QuickActionFeedback>(null);
+  const [domAnalysisSuggestion, setDomAnalysisSuggestion] =
+    useState<AgentV2DomAnalysisSuggestion | null>(null);
   const [dismissedCaptureFeedbackItemId, setDismissedCaptureFeedbackItemId] = useState<
     string | null
   >(null);
@@ -4218,11 +4224,11 @@ export function Chat() {
     return () => chrome.runtime.onMessage.removeListener(handleMessage);
   }, [loadSession]);
 
-  useEffect(() => {
-    const appendToInput = (text: string) => {
-      setInput((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
-    };
+  const appendToInput = useCallback((text: string) => {
+    setInput((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
+  }, []);
 
+  useEffect(() => {
     const handleMessage = (message: unknown) => {
       if (!isAgentV2ComposerAppendMessage(message)) {
         return;
@@ -4239,6 +4245,29 @@ export function Chat() {
       })
       .catch((error) => {
         console.debug('[chat] failed to read pending composer append:', error);
+      });
+
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, [appendToInput]);
+
+  useEffect(() => {
+    const handleMessage = (message: unknown) => {
+      if (!isAgentV2DomAnalysisSuggestionMessage(message)) {
+        return;
+      }
+
+      setDomAnalysisSuggestion(message.payload);
+    };
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+    readAgentV2DomAnalysisSuggestion()
+      .then((payload) => {
+        if (payload) {
+          setDomAnalysisSuggestion(payload);
+        }
+      })
+      .catch((error) => {
+        console.debug('[chat] failed to read pending dom analysis suggestion:', error);
       });
 
     return () => chrome.runtime.onMessage.removeListener(handleMessage);
@@ -4720,6 +4749,16 @@ export function Chat() {
           setQuickActionFeedback(null);
         }}
       />
+      {domAnalysisSuggestion ? (
+        <DomAnalysisSuggestionCard
+          card={domAnalysisSuggestion.card}
+          suggestedCommand={domAnalysisSuggestion.suggestedCommand}
+          onInsertCommand={(command) => {
+            appendToInput(command);
+            setDomAnalysisSuggestion(null);
+          }}
+        />
+      ) : null}
       {bootstrapGate.status === 'ready' && bootstrapGate.backgroundSync.status !== 'completed' ? (
         <div className="px-3 pb-2">
           <div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/25 px-3 py-2 text-xs text-muted-foreground">

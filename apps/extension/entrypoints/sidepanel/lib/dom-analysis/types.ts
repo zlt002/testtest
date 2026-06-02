@@ -8,6 +8,16 @@ export type DomAnalyzeRequest = {
   pageEvidence: PageEvidence;
 };
 
+export type DomAnalysisCard = {
+  pageName: string | null;
+  route: string | null;
+  targetAction: string | null;
+  actionType: string | null;
+  tableHeaders: string[];
+  recommendedApi: string | null;
+  confidence: 'low' | 'medium' | 'high';
+};
+
 export type DomAnalyzeResult = {
   page: {
     title?: string;
@@ -26,7 +36,14 @@ export type DomAnalyzeResult = {
     pageTextSummary: string[];
     apiCandidates: string[];
     resourceHints: string[];
+    kbCandidate?: string | null;
+    featureNameCandidates?: string[];
+    actionTerms?: string[];
+    apiTerms?: string[];
+    fieldTerms?: string[];
   };
+  analysisCard?: DomAnalysisCard | null;
+  suggestedCommand?: string | null;
   chatSummary: {
     markdown: string;
   };

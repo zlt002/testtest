@@ -12,7 +12,6 @@ test('kb candidate resolver prefers ewankb kb from matched route context', () =>
         ewankbKb: 'gls',
         ewankbMode: 'graph',
       },
-      observedApis: ['/api-miloms/guarantee/expressCostPrice/summarySearch'],
     }),
     'gls'
   );
@@ -27,7 +26,6 @@ test('kb candidate resolver returns null when route context is not ewankb compat
         ewankbKb: null,
         ewankbMode: null,
       },
-      observedApis: [],
     }),
     null
   );

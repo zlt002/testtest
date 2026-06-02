@@ -131,10 +131,12 @@ const mockSessionsState = {
 const mockOnMessageListeners = new Set<(message: unknown) => void>();
 const sessionSelectionMocks = vi.hoisted(() => ({
   mockIsAgentV2ComposerAppendMessage: vi.fn(() => false),
+  mockIsAgentV2DomAnalysisSuggestionMessage: vi.fn(() => false),
   mockIsAgentV2ProjectSelectedMessage: vi.fn(() => false),
   mockIsAgentV2QuickActionFeedbackMessage: vi.fn(() => false),
   mockIsAgentV2SessionSelectedMessage: vi.fn(() => false),
   mockReadAgentV2ComposerAppend: vi.fn(async () => null),
+  mockReadAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   mockReadAgentV2ProjectSelection: vi.fn(async () => null),
   mockReadAgentV2QuickActionFeedback: vi.fn(async () => null),
   mockReadAgentV2SessionSelectedTabs: vi.fn(async () => null),
@@ -363,6 +365,8 @@ vi.mock('../lib/agent-v2/storage', () => ({
 
 vi.mock('../lib/agent-v2/session-selection', () => ({
   isAgentV2ComposerAppendMessage: sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage,
+  isAgentV2DomAnalysisSuggestionMessage:
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage,
   isAgentV2ProjectSelectedMessage: sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage,
   isAgentV2QuickActionFeedbackMessage: sessionSelectionMocks.mockIsAgentV2QuickActionFeedbackMessage,
   isAgentV2SessionSelectedMessage: sessionSelectionMocks.mockIsAgentV2SessionSelectedMessage,
@@ -370,6 +374,7 @@ vi.mock('../lib/agent-v2/session-selection', () => ({
   publishAgentV2ProjectSelection: sessionSelectionMocks.mockPublishAgentV2ProjectSelection,
   publishAgentV2WorkspaceIntent: sessionSelectionMocks.mockPublishAgentV2WorkspaceIntent,
   readAgentV2ComposerAppend: sessionSelectionMocks.mockReadAgentV2ComposerAppend,
+  readAgentV2DomAnalysisSuggestion: sessionSelectionMocks.mockReadAgentV2DomAnalysisSuggestion,
   readAgentV2ProjectSelection: sessionSelectionMocks.mockReadAgentV2ProjectSelection,
   readAgentV2QuickActionFeedback: sessionSelectionMocks.mockReadAgentV2QuickActionFeedback,
   readAgentV2SessionSelectedTabs: sessionSelectionMocks.mockReadAgentV2SessionSelectedTabs,
@@ -923,6 +928,8 @@ describe('Chat chat selection quote interaction', () => {
     clientMocks.mockUpdateRuntimeCapabilities.mockResolvedValue(undefined);
     sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage.mockReset();
     sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage.mockReturnValue(false);
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockReset();
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockReturnValue(false);
     sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockReset();
     sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage.mockReturnValue(false);
     sessionSelectionMocks.mockIsAgentV2QuickActionFeedbackMessage.mockReset();
@@ -931,6 +938,8 @@ describe('Chat chat selection quote interaction', () => {
     sessionSelectionMocks.mockIsAgentV2SessionSelectedMessage.mockReturnValue(false);
     sessionSelectionMocks.mockReadAgentV2ComposerAppend.mockReset();
     sessionSelectionMocks.mockReadAgentV2ComposerAppend.mockResolvedValue(null);
+    sessionSelectionMocks.mockReadAgentV2DomAnalysisSuggestion.mockReset();
+    sessionSelectionMocks.mockReadAgentV2DomAnalysisSuggestion.mockResolvedValue(null);
     sessionSelectionMocks.mockReadAgentV2ProjectSelection.mockReset();
     sessionSelectionMocks.mockReadAgentV2ProjectSelection.mockResolvedValue(null);
     sessionSelectionMocks.mockReadAgentV2QuickActionFeedback.mockReset();
@@ -1510,6 +1519,49 @@ describe('Chat chat selection quote interaction', () => {
     expect(
       (view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value
     ).toBe('');
+  });
+
+  it('页面分析建议会以卡片展示，并在点击后才把命令插入输入框', async () => {
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_dom_analysis_suggestion'
+    );
+
+    const view = render(<Chat />);
+    dispatchRuntimeMessage({
+      type: 'agent_v2_dom_analysis_suggestion',
+      payload: {
+        card: {
+          pageName: '快递询价',
+          route: '#/entrustedOrderModule/expressInquiry',
+          targetAction: '点击「搜索」',
+          actionType: '列表查询',
+          tableHeaders: ['供应商简称', '价目表名称', '起始国/地区', '目的地', '服务类型'],
+          recommendedApi: '/api-miloms/guarantee/expressCostPrice/summarySearch',
+          confidence: 'medium',
+        },
+        suggestedCommand:
+          '/ewankb-server-query graph gls "快递询价 搜索 列表查询 expressCostPrice summarySearch 供应商简称 目的地 服务类型"',
+        createdAt: '2026-05-24T08:00:00.000Z',
+      },
+    });
+
+    expect(await view.findByTestId('dom-analysis-suggestion-card')).toBeTruthy();
+    expect(
+      (view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value
+    ).toBe('');
+
+    fireEvent.click(view.getByRole('button', { name: '插入命令' }));
+
+    await waitFor(() => {
+      expect(
+        (view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value
+      ).toContain('/ewankb-server-query graph gls');
+    });
+    expect(view.queryByTestId('dom-analysis-suggestion-card')).toBeNull();
   });
 
   it('可以手动关闭采集反馈提示', async () => {
