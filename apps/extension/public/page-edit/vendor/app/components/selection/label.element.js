@@ -238,7 +238,6 @@ export class Label extends HTMLElement {
           { action: 'select-parent', label: '父级' },
           { action: 'capture-selection', label: '采集' },
           { action: 'analyze-selection', label: '分析' },
-          { action: 'annotate-selection', label: '备注' },
         ];
 
     return actions

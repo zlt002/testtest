@@ -213,7 +213,7 @@ describe('selection-actions helpers', () => {
     expect(markup).toContain('>发送<');
   });
 
-  it('shows annotate on live pages and hides snapshot editing entry', async () => {
+  it('hides annotate on live pages and keeps snapshot editing entry hidden', async () => {
     document.documentElement.setAttribute(
       'data-webmcp-page-edit-config',
       JSON.stringify({ pageMode: 'live-page' }),
@@ -228,9 +228,9 @@ describe('selection-actions helpers', () => {
     expect(markup).toContain('data-action="select-parent"');
     expect(markup).toContain('data-action="capture-selection"');
     expect(markup).toContain('data-action="analyze-selection"');
-    expect(markup).toContain('data-action="annotate-selection"');
     expect(markup).toContain('>分析<');
-    expect(markup).toContain('>备注<');
+    expect(markup).not.toContain('data-action="annotate-selection"');
+    expect(markup).not.toContain('>备注<');
     expect(markup).not.toContain('data-action="edit-selection"');
     expect(markup).not.toContain('>编辑<');
   });
@@ -1650,6 +1650,242 @@ describe('selection-actions helpers', () => {
   });
 
   describe('live-page lightweight presentation', () => {
+    it('selects the inner business element when a micro-app host wrapper is hit', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <div class="micro-app-micro-tms" id="micro-host">
+          <micro-app name="otp-tms" id="micro-app-host">
+            <micro-app-head></micro-app-head>
+            <micro-app-body id="micro-body">
+              <section id="pane">
+                <div id="table-wrap">
+                  <button id="query-button">查询</button>
+                </div>
+              </section>
+            </micro-app-body>
+          </micro-app>
+        </div>
+      `;
+
+      const microHost = document.getElementById('micro-host') as HTMLElement;
+      const microAppHost = document.getElementById('micro-app-host') as HTMLElement;
+      const microBody = document.getElementById('micro-body') as HTMLElement;
+      const pane = document.getElementById('pane') as HTMLElement;
+      const tableWrap = document.getElementById('table-wrap') as HTMLElement;
+      const queryButton = document.getElementById('query-button') as HTMLElement;
+
+      const bounds = new Map<HTMLElement, DOMRect>([
+        [microHost, new window.DOMRect(0, 0, 1200, 600)],
+        [microAppHost, new window.DOMRect(0, 0, 1100, 500)],
+        [microBody, new window.DOMRect(10, 10, 1000, 420)],
+        [pane, new window.DOMRect(20, 20, 960, 380)],
+        [tableWrap, new window.DOMRect(30, 30, 920, 340)],
+        [queryButton, new window.DOMRect(40, 40, 88, 32)],
+      ]);
+
+      for (const [element, rect] of bounds) {
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => rect,
+        });
+      }
+
+      document.elementFromPoint = vi.fn(() => microHost);
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(microHost, 'mousedown', {
+          clientX: 60,
+          clientY: 52,
+          button: 0,
+        });
+        dispatchMouse(microHost, 'click', {
+          clientX: 60,
+          clientY: 52,
+          button: 0,
+        });
+
+        expect(selectable.selection()).toHaveLength(1);
+        expect(selectable.selection()[0]).toBe(queryButton);
+      });
+    });
+
+    it('selects the deepest inner business element when a micro-app container block is hit', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <div class="micro-app-micro-tms" id="micro-host">
+          <micro-app name="otp-tms" id="micro-app-host">
+            <micro-app-body id="micro-body">
+              <section id="pane">
+                <div id="table-wrap">
+                  <div id="toolbar-block">
+                    <button id="query-button">查询</button>
+                  </div>
+                </div>
+              </section>
+            </micro-app-body>
+          </micro-app>
+        </div>
+      `;
+
+      const elements = [
+        ['micro-host', new window.DOMRect(0, 0, 1200, 600)],
+        ['micro-app-host', new window.DOMRect(0, 0, 1100, 500)],
+        ['micro-body', new window.DOMRect(10, 10, 1000, 420)],
+        ['pane', new window.DOMRect(20, 20, 960, 380)],
+        ['table-wrap', new window.DOMRect(30, 30, 920, 340)],
+        ['toolbar-block', new window.DOMRect(40, 40, 360, 80)],
+        ['query-button', new window.DOMRect(48, 44, 88, 32)],
+      ].map(([id, rect]) => [document.getElementById(id as string) as HTMLElement, rect] as const);
+
+      for (const [element, rect] of elements) {
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => rect,
+        });
+      }
+
+      const toolbarBlock = document.getElementById('toolbar-block') as HTMLElement;
+      const queryButton = document.getElementById('query-button') as HTMLElement;
+      document.elementFromPoint = vi.fn(() => toolbarBlock);
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(toolbarBlock, 'mousedown', {
+          clientX: 60,
+          clientY: 52,
+          button: 0,
+        });
+        dispatchMouse(toolbarBlock, 'click', {
+          clientX: 60,
+          clientY: 52,
+          button: 0,
+        });
+
+        expect(selectable.selection()).toHaveLength(1);
+        expect(selectable.selection()[0]).toBe(queryButton);
+      });
+    });
+
+    it('uses elementsFromPoint inside micro-app to skip shell wrappers and page-edit overlays', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <div class="micro-app-micro-tms" id="micro-host">
+          <micro-app name="otp-tms" id="micro-app-host">
+            <micro-app-body id="micro-body">
+              <section id="pane">
+                <div id="toolbar-block">
+                  <button id="query-button">查询</button>
+                </div>
+              </section>
+            </micro-app-body>
+          </micro-app>
+        </div>
+      `;
+
+      const microHost = document.getElementById('micro-host') as HTMLElement;
+      const microAppHost = document.getElementById('micro-app-host') as HTMLElement;
+      const microBody = document.getElementById('micro-body') as HTMLElement;
+      const pane = document.getElementById('pane') as HTMLElement;
+      const toolbarBlock = document.getElementById('toolbar-block') as HTMLElement;
+      const queryButton = document.getElementById('query-button') as HTMLElement;
+      const overlay = document.createElement('visbug-hover');
+      document.body.appendChild(overlay);
+
+      const elements = [
+        [microHost, new window.DOMRect(0, 0, 1200, 600)],
+        [microAppHost, new window.DOMRect(0, 0, 1100, 500)],
+        [microBody, new window.DOMRect(10, 10, 1000, 420)],
+        [pane, new window.DOMRect(20, 20, 960, 380)],
+        [toolbarBlock, new window.DOMRect(40, 40, 360, 80)],
+        [queryButton, new window.DOMRect(48, 44, 88, 32)],
+        [overlay, new window.DOMRect(48, 44, 88, 32)],
+      ] as const;
+
+      for (const [element, rect] of elements) {
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => rect,
+        });
+      }
+
+      document.elementFromPoint = vi.fn(() => microHost);
+      Object.defineProperty(document, 'elementsFromPoint', {
+        configurable: true,
+        value: vi.fn(() => [overlay, microAppHost, microBody, toolbarBlock, queryButton, document.body]),
+      });
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(microHost, 'mousedown', {
+          clientX: 60,
+          clientY: 52,
+          button: 0,
+        });
+        dispatchMouse(microHost, 'click', {
+          clientX: 60,
+          clientY: 52,
+          button: 0,
+        });
+
+        expect(selectable.selection()).toHaveLength(1);
+        expect(selectable.selection()[0]).toBe(queryButton);
+      });
+    });
+
+    it('clears the previous selection after SPA route changes', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <aside>
+          <span id="menu-entry">订单工作台-干线</span>
+        </aside>
+        <main>
+          <button id="query-button">查询</button>
+        </main>
+      `;
+
+      const menuEntry = document.getElementById('menu-entry') as HTMLElement;
+
+      Object.defineProperty(menuEntry, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => new window.DOMRect(0, 0, 180, 32),
+      });
+
+      document.elementFromPoint = vi.fn(() => menuEntry);
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(menuEntry, 'mousedown', {
+          clientX: 12,
+          clientY: 12,
+          button: 0,
+        });
+        dispatchMouse(menuEntry, 'click', {
+          clientX: 12,
+          clientY: 12,
+          button: 0,
+        });
+
+        expect(selectable.selection().map((element) => element.id)).toEqual(['menu-entry']);
+
+        window.history.pushState({}, '', 'https://example.com/orders#/dispatch/single-list');
+
+        expect(selectable.selection()).toHaveLength(0);
+      });
+    });
+
     it('renders tag + class metadata on selection while keeping action buttons', async () => {
       document.documentElement.setAttribute(
         'data-webmcp-page-edit-config',
@@ -1679,7 +1915,6 @@ describe('selection-actions helpers', () => {
           'select-parent',
           'capture-selection',
           'analyze-selection',
-          'annotate-selection',
         ]);
         expect(visibleMetadata).toEqual(['span']);
       });

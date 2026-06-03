@@ -7,6 +7,7 @@ type KbRouteContext = {
 
 type ResolveKbCandidateInput = {
   routeContext: KbRouteContext;
+  pageUrl?: string | null;
 };
 
 function normalizeKbCandidate(value: string | null): string | null {
@@ -24,10 +25,29 @@ function supportsEwankbQuery(routeContext: KbRouteContext): boolean {
   );
 }
 
-export function resolveKbCandidate(input: ResolveKbCandidateInput): string | null {
-  if (!supportsEwankbQuery(input.routeContext)) {
+function inferKbCandidateFromUrl(pageUrl?: string | null): string | null {
+  if (!pageUrl) {
     return null;
   }
 
-  return normalizeKbCandidate(input.routeContext.ewankbKb);
+  try {
+    const host = new URL(pageUrl).hostname.toLowerCase();
+    const match = host.match(/^([a-z0-9]+)(?:-[a-z0-9-]+)?\.annto\.com$/i);
+    if (!match) {
+      return null;
+    }
+
+    const candidate = match[1]?.trim();
+    return candidate ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveKbCandidate(input: ResolveKbCandidateInput): string | null {
+  if (supportsEwankbQuery(input.routeContext)) {
+    return normalizeKbCandidate(input.routeContext.ewankbKb);
+  }
+
+  return inferKbCandidateFromUrl(input.pageUrl);
 }

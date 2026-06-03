@@ -182,3 +182,39 @@ test('命中规则时会对重复的图谱项目去重', () => {
     'Users-zhanglt21-Desktop-codebase-tms-components-v3',
   ]);
 });
+
+test('仅命中 host 时不会把整站误判为某个业务页面', () => {
+  const router = createRepoContextRouter();
+
+  const resolution = router.resolve({
+    url: 'https://an-uat.annto.com/#/order-manage/order-center',
+    pathname: '/index.html',
+    hashRoute: '/order-manage/order-center',
+    pageTextSummary: ['订单中心', '订单状态'],
+    apiCandidates: [],
+    resourceHints: [],
+    pageCodebaseMappingConfig: {
+      rules: [
+        {
+          id: 'otp-receipt',
+          businessId: 'otp',
+          pageLabel: '回单管理',
+          triggerSkill: '/ewankb-server-query',
+          ewankbKb: 'otp',
+          ewankbMode: 'graph',
+          enabled: true,
+          hostIncludes: ['an-uat.annto.com'],
+          hashRouteIncludes: ['/distribute/receipt-mngt'],
+          pageTextIncludes: ['回单管理', '监控'],
+          apiPrefixes: ['/api-tms/receipt/'],
+          frontendGraphProjects: ['otp-frontend'],
+          backendGraphProjects: ['otp-backend'],
+        },
+      ],
+    },
+  });
+
+  assert.equal(resolution.matched, false);
+  assert.equal(resolution.pageLabel, null);
+  assert.equal(resolution.ewankbKb, null);
+});

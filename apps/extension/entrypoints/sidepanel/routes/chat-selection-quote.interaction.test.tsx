@@ -758,6 +758,69 @@ function setCaptureProcessConversationItems() {
   ];
 }
 
+function setInteractivePromptConversationItems() {
+  mockStreamState.sessionId = 'session-1';
+  mockStreamState.conversationItems = [
+    {
+      type: 'user',
+      message: {
+        id: 'message-1',
+        sessionId: 'session-1',
+        role: 'user',
+        kind: 'text',
+        text: '请继续确认方案',
+        timestamp: '2026-05-19T10:00:00.000Z',
+      },
+    },
+    {
+      type: 'run',
+      card: {
+        id: 'run-1',
+        sessionId: 'session-1',
+        runId: 'run-1',
+        anchorMessageId: 'message-1',
+        cardStatus: 'waiting_for_input',
+        headline: '等待用户确认',
+        finalResponse: '',
+        responseMessages: [],
+        processItems: [],
+        processItemCount: 0,
+        previewItems: [],
+        todos: [],
+        files: [],
+        subagents: [],
+        activeInteraction: {
+          requestId: 'interactive-1',
+          kind: 'interactive_prompt',
+          title: '确认思路',
+          message: '以上三个解决思路是否符合你的预期？ 是否有倾向或需要调整的方向？',
+          input: {
+            questions: [
+              {
+                header: '确认思路',
+                question: '以上三个解决思路是否符合你的预期？ 是否有倾向或需要调整的方向？',
+                options: [
+                  {
+                    label: '有倾向或要调整',
+                    description: '三个思路中有明确倾向，或需要合并/调整某些方向',
+                  },
+                  {
+                    label: '符合预期，继续',
+                    description: '思路覆盖了需求，可以继续补充信息缺口',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        startedAt: '2026-05-19T10:00:10.000Z',
+        updatedAt: '2026-05-19T10:00:11.000Z',
+        source: 'sdk-live',
+      },
+    },
+  ];
+}
+
 function dispatchSelectionLifecycle(target: Node) {
   act(() => {
     document.dispatchEvent(new window.Event('selectionchange'));
@@ -1521,7 +1584,7 @@ describe('Chat chat selection quote interaction', () => {
     ).toBe('');
   });
 
-  it('页面分析建议会以卡片展示，并在点击后才把命令插入输入框', async () => {
+  it('页面分析建议会以完整查询块覆盖写入输入框，并清掉旧文本', async () => {
     sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockImplementation(
       (message: unknown) =>
         typeof message === 'object' &&
@@ -1531,37 +1594,93 @@ describe('Chat chat selection quote interaction', () => {
     );
 
     const view = render(<Chat />);
+    fireEvent.input(view.getByRole('textbox', { name: '对话输入框' }), {
+      target: { value: '旧的残留文本' },
+    });
+
     dispatchRuntimeMessage({
       type: 'agent_v2_dom_analysis_suggestion',
       payload: {
         card: {
-          pageName: '快递询价',
-          route: '#/entrustedOrderModule/expressInquiry',
+          pageName: '快递管理',
+          route: '#/entrustedOrderModule/expressManagement',
           targetAction: '点击「搜索」',
           actionType: '列表查询',
-          tableHeaders: ['供应商简称', '价目表名称', '起始国/地区', '目的地', '服务类型'],
-          recommendedApi: '/api-miloms/guarantee/expressCostPrice/summarySearch',
+          tableHeaders: ['收货公司', '收货人', '状态', '快递公司', '渠道名称'],
+          recommendedApi: '/api-miloms/order/logistics/v1/count-express-status',
           confidence: 'medium',
         },
         suggestedCommand:
-          '/ewankb-server-query graph gls "快递询价 搜索 列表查询 expressCostPrice summarySearch 供应商简称 目的地 服务类型"',
+          '/ewankb-server-query graph gls "快递管理 搜索 列表查询 状态"',
         createdAt: '2026-05-24T08:00:00.000Z',
       },
     });
 
-    expect(await view.findByTestId('dom-analysis-suggestion-card')).toBeTruthy();
-    expect(
-      (view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value
-    ).toBe('');
+    const composerDock = await view.findByTestId('chat-v2-composer-dock');
+    const domAnalysisSuggestionLayer = await within(composerDock).findByTestId(
+      'dom-analysis-suggestion-layer'
+    );
+    expect(domAnalysisSuggestionLayer).toBeTruthy();
+    expect(await within(composerDock).findByTestId('dom-analysis-suggestion-card')).toBeTruthy();
+    expect((view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value).toBe(
+      '旧的残留文本'
+    );
 
-    fireEvent.click(view.getByRole('button', { name: '插入命令' }));
+    fireEvent.click(within(composerDock).getByRole('button', { name: '插入命令' }));
 
     await waitFor(() => {
-      expect(
-        (view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value
-      ).toContain('/ewankb-server-query graph gls');
+      expect((view.getByRole('textbox', { name: '对话输入框' }) as HTMLTextAreaElement).value).toBe(
+        [
+          '/ewankb-server-query graph gls "快递管理 搜索 列表查询 状态"',
+          '页面：快递管理',
+          '位置：#/entrustedOrderModule/expressManagement',
+          '目标操作：点击「搜索」',
+          '推断意图：列表查询',
+          '业务对象：收货公司、收货人、状态、快递公司、渠道名称',
+          '候选接口：/api-miloms/order/logistics/v1/count-express-status',
+        ].join('\n')
+      );
     });
     expect(view.queryByTestId('dom-analysis-suggestion-card')).toBeNull();
+  });
+
+  it('页面分析建议浮层可以手动关闭', async () => {
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_dom_analysis_suggestion'
+    );
+
+    const view = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_dom_analysis_suggestion',
+      payload: {
+        card: {
+          pageName: '合同查询',
+          route: '#/mod/mdm/contract-view',
+          targetAction: '点击「搜索」',
+          actionType: '列表查询',
+          tableHeaders: ['合同状态', '业务类型', '客户名称'],
+          recommendedApi: '/api-lcrm/contract/info/page',
+          confidence: 'medium',
+        },
+        suggestedCommand: '/ewankb-server-query graph crm "合同查询 搜索 列表查询"',
+        createdAt: '2026-05-24T08:00:00.000Z',
+      },
+    });
+
+    const composerDock = await view.findByTestId('chat-v2-composer-dock');
+    expect(await within(composerDock).findByTestId('dom-analysis-suggestion-layer')).toBeTruthy();
+    expect(await within(composerDock).findByTestId('dom-analysis-suggestion-card')).toBeTruthy();
+
+    fireEvent.click(within(composerDock).getByRole('button', { name: '关闭页面分析建议' }));
+
+    await waitFor(() => {
+      expect(within(composerDock).queryByTestId('dom-analysis-suggestion-card')).toBeNull();
+    });
   });
 
   it('可以手动关闭采集反馈提示', async () => {
@@ -2267,6 +2386,30 @@ describe('Chat chat selection quote interaction', () => {
       expect(view.getByRole('button', { name: '发送' })).toBeTruthy();
       expect(view.queryByRole('button', { name: '停止' })).toBeNull();
     });
+  });
+
+  it('确认卡支持右上角收起后仅保留标题栏，再次点击可恢复展开', async () => {
+    setInteractivePromptConversationItems();
+
+    const view = render(<Chat />);
+
+    expect(
+      view.getByText('以上三个解决思路是否符合你的预期？ 是否有倾向或需要调整的方向？')
+    ).toBeTruthy();
+    expect(view.getByRole('button', { name: '跳过' })).toBeTruthy();
+
+    fireEvent.click(view.getByRole('button', { name: '收起确认卡片' }));
+
+    expect(
+      view.getByText('以上三个解决思路是否符合你的预期？ 是否有倾向或需要调整的方向？')
+    ).toBeTruthy();
+    expect(view.queryByRole('button', { name: '跳过' })).toBeNull();
+    expect(view.queryByText('有倾向或要调整')).toBeNull();
+
+    fireEvent.click(view.getByRole('button', { name: '展开确认卡片' }));
+
+    expect(view.getByRole('button', { name: '跳过' })).toBeTruthy();
+    expect(view.getByText('有倾向或要调整')).toBeTruthy();
   });
 
   it('对话流外的选区不显示该按钮', async () => {

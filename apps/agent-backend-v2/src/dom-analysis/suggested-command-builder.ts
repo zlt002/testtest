@@ -19,15 +19,11 @@ function resolveCommandPrefix(input: {
   triggerSkill: string | null;
   ewankbMode: 'graph' | 'kb' | 'deep' | null;
 }): string | null {
-  if (input.triggerSkill !== '/ewankb-server-query') {
-    return null;
+  if (input.triggerSkill === '/ewankb-server-query' && input.ewankbMode) {
+    return `${input.triggerSkill} ${input.ewankbMode}`;
   }
 
-  if (!input.ewankbMode) {
-    return null;
-  }
-
-  return `${input.triggerSkill} ${input.ewankbMode}`;
+  return '/ewankb-server-query graph';
 }
 
 function scoreFieldTerm(term: string): number {

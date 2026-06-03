@@ -12,12 +12,13 @@ test('kb candidate resolver prefers ewankb kb from matched route context', () =>
         ewankbKb: 'gls',
         ewankbMode: 'graph',
       },
+      pageUrl: 'https://other-uat.annto.com/#/demo',
     }),
     'gls'
   );
 });
 
-test('kb candidate resolver returns null when route context is not ewankb compatible', () => {
+test('kb candidate resolver falls back to host-inferred kb when route context is not ewankb compatible', () => {
   assert.equal(
     resolveKbCandidate({
       routeContext: {
@@ -26,6 +27,22 @@ test('kb candidate resolver returns null when route context is not ewankb compat
         ewankbKb: null,
         ewankbMode: null,
       },
+      pageUrl: 'https://gls-uat.annto.com/#/entrustedOrderModule/expressManagement',
+    }),
+    'gls'
+  );
+});
+
+test('kb candidate resolver returns null when neither route context nor host can infer kb', () => {
+  assert.equal(
+    resolveKbCandidate({
+      routeContext: {
+        matched: false,
+        triggerSkill: null,
+        ewankbKb: null,
+        ewankbMode: null,
+      },
+      pageUrl: 'https://example.com/dashboard',
     }),
     null
   );
@@ -42,6 +59,21 @@ test('page feature resolver returns primary name and deduped candidates', () => 
     {
       primaryFeatureName: '快递询价',
       featureNameCandidates: ['快递询价', '委托中心', '搜索'],
+    }
+  );
+});
+
+test('page feature resolver prefers route and nav feature over generic site title', () => {
+  assert.deepEqual(
+    resolvePageFeature({
+      pageTitle: 'GLS',
+      hashRoute: '/entrustedOrderModule/expressManagement',
+      navLabels: ['委托中心', '快递管理'],
+      pageTextSummary: ['搜索', '物流订单号', '快递单号'],
+    }),
+    {
+      primaryFeatureName: '快递管理',
+      featureNameCandidates: ['快递管理', '委托中心', 'GLS', '搜索', '物流订单号', '快递单号'],
     }
   );
 });

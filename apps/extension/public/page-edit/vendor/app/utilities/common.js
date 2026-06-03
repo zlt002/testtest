@@ -1,6 +1,93 @@
 import $ from '../vendor-deps/blingblingjs.js'
 import { nodeKey } from './strings.js'
 
+const MICRO_APP_SHELL_TAGS = new Set(['micro-app', 'micro-app-body', 'micro-app-head'])
+
+const isPageEditOverlayElement = node =>
+  !!node &&
+  node.nodeType === 1 && (
+       node.closest?.('vis-bug')
+    || node.closest?.('visbug-label')
+    || node.closest?.('visbug-handles')
+    || node.closest?.('visbug-selected')
+    || node.closest?.('visbug-hover')
+    || node.closest?.('visbug-corners')
+    || node.closest?.('[data-webmcp-annotation-ui="true"]')
+  )
+
+const isMicroAppShellElement = node =>
+  !!node &&
+  node.nodeType === 1 && (
+       MICRO_APP_SHELL_TAGS.has(node.tagName?.toLowerCase?.())
+    || /\bmicro-app-/.test(node.className || '')
+  )
+
+const resolveMicroAppBusinessElement = (node, x, y) => {
+  if (!isMicroAppShellElement(node)) return null
+
+  const root =
+    node.matches?.('micro-app-body')
+      ? node
+      : node.querySelector?.('micro-app-body') || node
+
+  const stack = typeof document.elementsFromPoint === 'function'
+    ? document.elementsFromPoint(x, y)
+    : []
+
+  const containsPoint = candidate => {
+    const rect = candidate?.getBoundingClientRect?.()
+    if (!rect) return false
+    if (rect.width <= 0 || rect.height <= 0) return false
+
+    return (
+      x >= rect.left &&
+      x <= rect.right &&
+      y >= rect.top &&
+      y <= rect.bottom
+    )
+  }
+
+  const stackMatch = stack
+    .filter(candidate =>
+         candidate instanceof Element
+      && !isPageEditOverlayElement(candidate)
+      && !isMicroAppShellElement(candidate)
+      && root.contains(candidate)
+      && containsPoint(candidate)
+    )
+    .reduce((deepest, candidate) => {
+      if (!deepest) return candidate
+      if (deepest.contains(candidate)) return candidate
+      return deepest
+    }, null)
+
+  if (stackMatch) return stackMatch
+
+  const descendToDeepestHit = current => {
+    if (!current?.children?.length) return current
+
+    for (const child of Array.from(current.children)) {
+      if (MICRO_APP_SHELL_TAGS.has(child.tagName.toLowerCase())) {
+        if (containsPoint(child)) {
+          return descendToDeepestHit(child)
+        }
+        continue
+      }
+
+      if (!containsPoint(child)) {
+        continue
+      }
+
+      return descendToDeepestHit(child)
+    }
+
+    return current
+  }
+
+  const deepest = descendToDeepestHit(root)
+  return deepest === root ? null : deepest
+}
+
 export const deepElementFromPoint = (x, y) => {
   const el = document.elementFromPoint(x, y)
 
@@ -19,8 +106,12 @@ export const deepElementFromPoint = (x, y) => {
   }
 
   const nested_shadow = crawlShadows(el)
+  const hit = nested_shadow || el
+  const microAppScope =
+    hit?.closest?.('micro-app-body, micro-app, [class*="micro-app-"]') || hit
+  const nestedMicroAppElement = resolveMicroAppBusinessElement(microAppScope, x, y)
 
-  return nested_shadow || el
+  return nestedMicroAppElement || hit
 }
 
 export const getSide = direction => {

@@ -661,7 +661,7 @@ describe('page-edit async rejection guards', () => {
         payload: {
           nonce: 'nonce-7',
           source: 'file',
-          text: '瀹氫綅淇℃伅锛歕n鏂囦欢: /tmp/mock.html',
+          text: '定位信息：\n文件: /tmp/mock.html',
         },
       },
       { tab: { id: 7, windowId: 7 } } as chrome.runtime.MessageSender
@@ -781,4 +781,3 @@ describe('page-edit async rejection guards', () => {
     });
   });
 });
-

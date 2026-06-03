@@ -959,6 +959,34 @@ function formatTodoContent(content: string) {
   return localizeTodoContent(content);
 }
 
+function buildDomAnalysisSuggestionInsertText(input: {
+  card: AgentV2DomAnalysisSuggestion['card'];
+  suggestedCommand: string | null;
+}) {
+  const lines = [input.suggestedCommand ?? ''].filter(Boolean);
+
+  if (input.card.pageName) {
+    lines.push(`页面：${input.card.pageName}`);
+  }
+  if (input.card.route) {
+    lines.push(`位置：${input.card.route}`);
+  }
+  if (input.card.targetAction) {
+    lines.push(`目标操作：${input.card.targetAction}`);
+  }
+  if (input.card.actionType) {
+    lines.push(`推断意图：${input.card.actionType}`);
+  }
+  if (input.card.tableHeaders.length > 0) {
+    lines.push(`业务对象：${input.card.tableHeaders.join('、')}`);
+  }
+  if (input.card.recommendedApi) {
+    lines.push(`候选接口：${input.card.recommendedApi}`);
+  }
+
+  return lines.join('\n');
+}
+
 function formatSubagentDuration(startedAt: string | null, updatedAt: string | null) {
   if (!startedAt || !updatedAt) {
     return null;
@@ -1354,6 +1382,7 @@ function AskUserQuestionPanel({
   const panelRef = useRef<HTMLFieldSetElement | null>(null);
   const input = isRecord(interaction.input) ? interaction.input : {};
   const questions = normalizeAskQuestions(interaction.input, interaction.message);
+  const [collapsed, setCollapsed] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [selections, setSelections] = useState<Map<number, Set<string>>>(() => new Map());
   const [otherText, setOtherText] = useState<Map<number, string>>(() => new Map());
@@ -1500,18 +1529,30 @@ function AskUserQuestionPanel({
               {question.question}
             </span>
           </div>
-          {questions.length > 1 ? (
-            <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
-              {currentStep + 1}/{questions.length}
-            </span>
-          ) : null}
-          {question.multiSelect ? (
-            <div className="mt-1 text-[10px] text-muted-foreground">可多选</div>
-          ) : null}
+          <div className="flex shrink-0 items-start gap-2">
+            {questions.length > 1 ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                {currentStep + 1}/{questions.length}
+              </span>
+            ) : null}
+            {question.multiSelect ? (
+              <div className="mt-1 text-[10px] text-muted-foreground">可多选</div>
+            ) : null}
+            <button
+              type="button"
+              aria-label={collapsed ? '展开确认卡片' : '收起确认卡片'}
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => setCollapsed((value) => !value)}
+            >
+              <ChevronDownIcon
+                className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`}
+              />
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {isStructured && question ? (
+      {collapsed ? null : isStructured && question ? (
         <div className="mt-2 max-h-44 space-y-1 overflow-y-auto">
           {question.options.map((option, index) => {
             const selected = selections.get(currentStep)?.has(option.label) || false;
@@ -1576,7 +1617,7 @@ function AskUserQuestionPanel({
             />
           ) : null}
         </div>
-      ) : (
+      ) : collapsed ? null : (
         <input
           value={answer}
           onChange={(event) => setAnswer(event.target.value)}
@@ -1585,42 +1626,44 @@ function AskUserQuestionPanel({
         />
       )}
 
-      <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => resolve(true)}
-        >
-          跳过
-        </Button>
-        <div className="flex gap-2">
-          {questions.length > 1 && !isFirst ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 px-2 text-xs"
-              onClick={() => setCurrentStep((step) => step - 1)}
-            >
-              <ChevronLeftIcon className="mr-1 h-3 w-3" />
-              上一步
-            </Button>
-          ) : null}
-          {questions.length > 1 && !isLast ? (
-            <Button
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => setCurrentStep((step) => step + 1)}
-            >
-              下一步
-            </Button>
-          ) : (
-            <Button size="sm" className="h-7 px-2 text-xs" onClick={() => resolve(true)}>
-              提交
-            </Button>
-          )}
+      {collapsed ? null : (
+        <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => resolve(true)}
+          >
+            跳过
+          </Button>
+          <div className="flex gap-2">
+            {questions.length > 1 && !isFirst ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => setCurrentStep((step) => step - 1)}
+              >
+                <ChevronLeftIcon className="mr-1 h-3 w-3" />
+                上一步
+              </Button>
+            ) : null}
+            {questions.length > 1 && !isLast ? (
+              <Button
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setCurrentStep((step) => step + 1)}
+              >
+                下一步
+              </Button>
+            ) : (
+              <Button size="sm" className="h-7 px-2 text-xs" onClick={() => resolve(true)}>
+                提交
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </fieldset>
   );
 }
@@ -2402,6 +2445,8 @@ export function Chat() {
   const [quickActionFeedback, setQuickActionFeedback] = useState<QuickActionFeedback>(null);
   const [domAnalysisSuggestion, setDomAnalysisSuggestion] =
     useState<AgentV2DomAnalysisSuggestion | null>(null);
+  const [dismissedDomAnalysisSuggestionCreatedAt, setDismissedDomAnalysisSuggestionCreatedAt] =
+    useState<string | null>(null);
   const [dismissedCaptureFeedbackItemId, setDismissedCaptureFeedbackItemId] = useState<
     string | null
   >(null);
@@ -4228,6 +4273,10 @@ export function Chat() {
     setInput((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
   }, []);
 
+  const replaceInput = useCallback((text: string) => {
+    setInput(text);
+  }, []);
+
   useEffect(() => {
     const handleMessage = (message: unknown) => {
       if (!isAgentV2ComposerAppendMessage(message)) {
@@ -4257,6 +4306,7 @@ export function Chat() {
       }
 
       setDomAnalysisSuggestion(message.payload);
+      setDismissedDomAnalysisSuggestionCreatedAt(null);
     };
 
     chrome.runtime.onMessage.addListener(handleMessage);
@@ -4264,6 +4314,7 @@ export function Chat() {
       .then((payload) => {
         if (payload) {
           setDomAnalysisSuggestion(payload);
+          setDismissedDomAnalysisSuggestionCreatedAt(null);
         }
       })
       .catch((error) => {
@@ -4749,16 +4800,6 @@ export function Chat() {
           setQuickActionFeedback(null);
         }}
       />
-      {domAnalysisSuggestion ? (
-        <DomAnalysisSuggestionCard
-          card={domAnalysisSuggestion.card}
-          suggestedCommand={domAnalysisSuggestion.suggestedCommand}
-          onInsertCommand={(command) => {
-            appendToInput(command);
-            setDomAnalysisSuggestion(null);
-          }}
-        />
-      ) : null}
       {bootstrapGate.status === 'ready' && bootstrapGate.backgroundSync.status !== 'completed' ? (
         <div className="px-3 pb-2">
           <div className="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
@@ -4923,7 +4964,36 @@ export function Chat() {
           )
         : null}
 
-      <div data-chat-v2-composer-dock="true" className="relative z-30">
+      <div
+        data-chat-v2-composer-dock="true"
+        data-testid="chat-v2-composer-dock"
+        className="relative z-30"
+      >
+        {domAnalysisSuggestion &&
+        domAnalysisSuggestion.createdAt !== dismissedDomAnalysisSuggestionCreatedAt ? (
+          <div
+            data-testid="dom-analysis-suggestion-layer"
+            className="absolute bottom-full left-0 right-0 z-10 mb-0 px-3"
+          >
+            <DomAnalysisSuggestionCard
+              card={domAnalysisSuggestion.card}
+              suggestedCommand={domAnalysisSuggestion.suggestedCommand}
+              onInsertCommand={() => {
+                replaceInput(
+                  buildDomAnalysisSuggestionInsertText({
+                    card: domAnalysisSuggestion.card,
+                    suggestedCommand: domAnalysisSuggestion.suggestedCommand,
+                  })
+                );
+                setDomAnalysisSuggestion(null);
+                setDismissedDomAnalysisSuggestionCreatedAt(null);
+              }}
+              onClose={() => {
+                setDismissedDomAnalysisSuggestionCreatedAt(domAnalysisSuggestion.createdAt);
+              }}
+            />
+          </div>
+        ) : null}
         {stream.error ? (
           <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">
             <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{stream.error}</span>

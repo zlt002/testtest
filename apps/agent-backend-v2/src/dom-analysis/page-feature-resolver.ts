@@ -13,6 +13,8 @@ export type PageFeatureResolution = {
 
 const HASH_ROUTE_FEATURE_MAP: Record<string, string> = {
   expressInquiry: '快递询价',
+  expressManagement: '快递管理',
+  'order-center': '订单中心',
 };
 
 function normalizeCandidate(value: string | null | undefined): string | null {
@@ -41,11 +43,11 @@ function resolveRouteFeatureName(hashRoute?: string | null): string | null {
 export function resolvePageFeature(input: ResolvePageFeatureInput): PageFeatureResolution {
   const summaryCandidates = input.pageTextSummary.filter((term) => term.trim().length >= 2);
   const featureNameCandidates = dedupeCandidates([
-    input.pageTitle,
-    input.pageLabel,
-    ...(input.navLabels ?? []),
     resolveRouteFeatureName(input.hashRoute),
+    ...(input.navLabels ?? []),
+    input.pageTitle,
     ...summaryCandidates,
+    input.pageLabel,
   ]);
 
   return {

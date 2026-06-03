@@ -17,6 +17,36 @@ test('page feature resolver prioritizes title and preserves deduped candidates',
   });
 });
 
+test('page feature resolver prefers known hash route mapping over noisy page label', () => {
+  const result = resolvePageFeature({
+    pageTitle: '统一认证平台',
+    pageLabel: '回单管理',
+    hashRoute: '/order-manage/order-center',
+    navLabels: ['订单管理', '订单中心'],
+    pageTextSummary: ['订单中心', '订单状态', '订单号'],
+  });
+
+  assert.deepEqual(result, {
+    primaryFeatureName: '订单中心',
+    featureNameCandidates: ['订单中心', '订单管理', '统一认证平台', '订单状态', '订单号', '回单管理'],
+  });
+});
+
+test('page feature resolver resolves order center from hash route leaf', () => {
+  const result = resolvePageFeature({
+    pageTitle: '',
+    pageLabel: null,
+    hashRoute: '/order-manage/order-center',
+    navLabels: [],
+    pageTextSummary: [],
+  });
+
+  assert.deepEqual(result, {
+    primaryFeatureName: '订单中心',
+    featureNameCandidates: ['订单中心'],
+  });
+});
+
 test('page feature resolver returns empty result for blank inputs', () => {
   const result = resolvePageFeature({
     pageTitle: '',

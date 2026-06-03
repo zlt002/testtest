@@ -1,3 +1,4 @@
+import { XIcon } from 'lucide-react';
 import { Badge } from '@/entrypoints/sidepanel/components/ui/badge';
 import { Button } from '@/entrypoints/sidepanel/components/ui/button';
 import type { DomAnalysisCard } from '@/entrypoints/sidepanel/lib/dom-analysis/types';
@@ -12,26 +13,53 @@ export function DomAnalysisSuggestionCard({
   card,
   suggestedCommand,
   onInsertCommand,
+  onClose,
 }: {
   card: DomAnalysisCard;
   suggestedCommand: string | null;
-  onInsertCommand: (command: string) => void;
+  onInsertCommand: () => void;
+  onClose: () => void;
 }) {
   return (
     <div
       data-testid="dom-analysis-suggestion-card"
-      className="mx-3 mt-2 rounded-lg border bg-card/90 px-3 py-3 text-sm shadow-sm"
+      className="rounded-lg border bg-popover px-3 py-3 text-sm shadow-lg"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div
+        data-testid="dom-analysis-suggestion-header"
+        className="flex items-start justify-between gap-3"
+      >
+        <div className="flex min-w-0 items-center gap-2">
           <div className="text-sm font-semibold text-foreground">页面分析建议</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            围绕 `/ewankb-server-query` 生成了更适合查询知识库的证据摘要。
-          </div>
+          <Badge variant="outline" className="shrink-0">
+            {CONFIDENCE_LABELS[card.confidence]}
+          </Badge>
         </div>
-        <Badge variant="outline" className="shrink-0">
-          {CONFIDENCE_LABELS[card.confidence]}
-        </Badge>
+        <div
+          data-testid="dom-analysis-suggestion-header-actions"
+          className="flex shrink-0 items-center gap-2"
+        >
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              if (suggestedCommand) {
+                onInsertCommand();
+              }
+            }}
+            disabled={!suggestedCommand}
+          >
+            插入命令
+          </Button>
+          <button
+            type="button"
+            className="rounded-sm p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            aria-label="关闭页面分析建议"
+            onClick={onClose}
+          >
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="mt-3 space-y-2 text-xs leading-5">
@@ -81,21 +109,6 @@ export function DomAnalysisSuggestionCard({
           </code>
         </div>
       ) : null}
-
-      <div className="mt-3 flex justify-end">
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => {
-            if (suggestedCommand) {
-              onInsertCommand(suggestedCommand);
-            }
-          }}
-          disabled={!suggestedCommand}
-        >
-          插入命令
-        </Button>
-      </div>
     </div>
   );
 }

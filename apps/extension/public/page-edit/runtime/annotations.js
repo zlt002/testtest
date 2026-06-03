@@ -5,7 +5,9 @@ import {
 import { isLocalSnapshotMode, isLivePageMode } from './page-mode.js';
 
 const ANNOTATION_DIALOG_TAG = 'webmcp-page-annotation-dialog';
-const ANNOTATION_LAYER_SELECTOR = '[data-webmcp-annotation-layer="true"]';
+const ANNOTATION_DIALOG_SELECTOR = ANNOTATION_DIALOG_TAG;
+const ANNOTATION_OVERLAY_LAYER_SELECTOR = '[data-webmcp-annotation-overlay-layer="true"]';
+const ANNOTATION_MARKER_SELECTOR = '[data-webmcp-annotation-marker="true"]';
 const ANNOTATION_UI_SELECTOR = '[data-webmcp-annotation-ui="true"]';
 const DIALOG_STYLES = `
   :host {
@@ -596,9 +598,26 @@ function ensureOverlayLayer() {
 }
 
 function clearRenderedMarkers() {
-  document.querySelectorAll('[data-webmcp-annotation-marker="true"]').forEach((node) => {
+  document.querySelectorAll(ANNOTATION_MARKER_SELECTOR).forEach((node) => {
     node.remove();
   });
+}
+
+function clearTransientAnnotationUi() {
+  document.querySelectorAll(ANNOTATION_DIALOG_SELECTOR).forEach((node) => {
+    node.remove();
+  });
+
+  const overlayLayer = document.querySelector(ANNOTATION_OVERLAY_LAYER_SELECTOR);
+  if (
+    overlayLayer instanceof HTMLElement &&
+    !overlayLayer.querySelector(ANNOTATION_MARKER_SELECTOR)
+  ) {
+    overlayLayer.remove();
+    if (annotationState.overlayLayer === overlayLayer) {
+      annotationState.overlayLayer = null;
+    }
+  }
 }
 
 function parsePixelValue(value) {
@@ -676,6 +695,7 @@ function createMarker(record, selectedKeys, { overlay = false, rect = null } = {
   marker.setAttribute('data-webmcp-annotation-marker', 'true');
   marker.setAttribute('data-webmcp-annotation-ui', 'true');
   marker.setAttribute('data-webmcp-annotation-key', record.key);
+  marker.setAttribute('data-webmcp-annotation-content', record.content ?? '');
   marker.title = record.content;
   marker.style.position = 'absolute';
   if (overlay && rect) {
@@ -899,6 +919,10 @@ export function clearSelectionAnnotationUi() {
   document.querySelectorAll(ANNOTATION_UI_SELECTOR).forEach((node) => node.remove());
   annotationState.overlayLayer = null;
   emitState();
+}
+
+export function clearSelectionAnnotationTransientUi() {
+  clearTransientAnnotationUi();
 }
 
 export function resolveAnnotationElementForTest(target) {

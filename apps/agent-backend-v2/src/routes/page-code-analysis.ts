@@ -434,6 +434,7 @@ export function createPageCodeAnalysisRoute(options?: {
           ewankbKb: routeContext.ewankbKb,
           ewankbMode: routeContext.ewankbMode,
         },
+        pageUrl: pageEvidence.pageContext.url,
       });
       const apiTerms = extractApiTerms(attribution.bestApi ?? observedApis[0] ?? null);
       const fieldTerms = extractFieldTerms(cardSignals.tableHeaders);

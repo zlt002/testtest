@@ -9,7 +9,15 @@
     style.remove();
   }
 
-  document.querySelectorAll('[data-webmcp-annotation-ui="true"]').forEach((node) => {
+  document.querySelectorAll('webmcp-page-annotation-dialog').forEach((node) => {
     node.remove();
   });
+
+  document
+    .querySelectorAll('[data-webmcp-annotation-overlay-layer="true"]')
+    .forEach((node) => {
+      if (!node.querySelector('[data-webmcp-annotation-marker="true"]')) {
+        node.remove();
+      }
+    });
 })();

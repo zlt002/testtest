@@ -44,7 +44,7 @@ import { changeHue }              from '../../features/hueshift.js'
 import { moveElement }            from '../../features/move.js'
 import { getCurrentPageMode, isLocalSnapshotMode } from '../../../../runtime/page-mode.js'
 import {
-  clearSelectionAnnotationUi,
+  clearSelectionAnnotationTransientUi,
   subscribeSelectionAnnotationState,
   toggleSelectionAnnotationMarkers,
 } from '../../../../runtime/annotations.js'
@@ -129,6 +129,112 @@ const runCleanupStep = (label, step) => {
   } catch (error) {
     console.warn(`[page-edit][visbug] cleanup step failed: ${label}`, error)
   }
+}
+
+const savedAnnotationViewerScript = `(() => {
+  const markerSelector = '[data-webmcp-annotation-marker="true"]';
+  const dialogSelector = '[data-webmcp-saved-annotation-dialog="true"]';
+
+  const closeDialog = () => {
+    document.querySelectorAll(dialogSelector).forEach((node) => node.remove());
+  };
+
+  const openDialog = (content) => {
+    closeDialog();
+
+    const overlay = document.createElement('div');
+    overlay.setAttribute('data-webmcp-saved-annotation-dialog', 'true');
+    overlay.style.position = 'fixed';
+    overlay.style.inset = '0';
+    overlay.style.zIndex = '2147483647';
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.style.background = 'rgba(15, 23, 42, 0.32)';
+    overlay.style.backdropFilter = 'blur(8px)';
+    overlay.style.padding = '16px';
+
+    const panel = document.createElement('div');
+    panel.style.width = 'min(520px, calc(100vw - 32px))';
+    panel.style.maxHeight = 'calc(100vh - 48px)';
+    panel.style.overflow = 'auto';
+    panel.style.borderRadius = '20px';
+    panel.style.border = '1px solid rgba(148, 163, 184, 0.22)';
+    panel.style.background = 'rgba(255, 255, 255, 0.98)';
+    panel.style.color = '#0f172a';
+    panel.style.boxShadow = '0 28px 80px rgba(15, 23, 42, 0.24)';
+    panel.style.padding = '18px 20px 20px';
+    panel.style.fontFamily = 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+    const title = document.createElement('div');
+    title.textContent = '备注内容';
+    title.style.fontSize = '16px';
+    title.style.fontWeight = '600';
+    title.style.lineHeight = '1.4';
+    title.style.marginBottom = '10px';
+
+    const body = document.createElement('div');
+    body.textContent = content;
+    body.style.whiteSpace = 'pre-wrap';
+    body.style.wordBreak = 'break-word';
+    body.style.fontSize = '14px';
+    body.style.lineHeight = '1.6';
+    body.style.color = '#334155';
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.justifyContent = 'flex-end';
+    actions.style.marginTop = '16px';
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.textContent = '关闭';
+    closeButton.style.border = '0';
+    closeButton.style.borderRadius = '999px';
+    closeButton.style.padding = '10px 16px';
+    closeButton.style.background = '#2563eb';
+    closeButton.style.color = '#fff';
+    closeButton.style.font = 'inherit';
+    closeButton.style.cursor = 'pointer';
+    closeButton.addEventListener('click', closeDialog);
+
+    actions.appendChild(closeButton);
+    panel.append(title, body, actions);
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) closeDialog();
+    });
+    document.body.appendChild(overlay);
+  };
+
+  document.addEventListener('click', (event) => {
+    const marker = event.target instanceof Element ? event.target.closest(markerSelector) : null;
+    if (!marker) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const content = marker.getAttribute('data-webmcp-annotation-content') || marker.getAttribute('title') || '';
+    if (!content.trim()) return;
+
+    openDialog(content);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeDialog();
+  });
+})();`
+
+const injectSavedAnnotationViewer = (root) => {
+  if (!root?.querySelector?.('[data-webmcp-annotation-marker="true"]')) return
+  if (root?.querySelector?.('script[data-webmcp-saved-annotation-viewer="true"]')) return
+
+  const script = root.createElement?.('script')
+  if (!script) return
+
+  script.setAttribute('data-webmcp-saved-annotation-viewer', 'true')
+  script.textContent = savedAnnotationViewerScript
+  root.body?.appendChild?.(script)
 }
 
 const sanitizePageEditArtifacts = (root, { preserveNodes = [] } = {}) => {
@@ -236,7 +342,7 @@ export default class VisBug extends HTMLElement {
     runCleanupStep('cleanup', () => this.cleanup())
     runCleanupStep('annotation_unsubscribe', () => this._annotationStateUnsubscribe?.())
     this._annotationStateUnsubscribe = null
-    runCleanupStep('annotation_ui', () => clearSelectionAnnotationUi())
+    runCleanupStep('annotation_ui', () => clearSelectionAnnotationTransientUi())
     runCleanupStep('selector_disconnect', () => this.selectorEngine?.disconnect?.())
     runCleanupStep('hotkeys', () =>
       hotkeys.unbind(
@@ -1968,6 +2074,7 @@ export default class VisBug extends HTMLElement {
     root?.querySelectorAll?.('[data-webmcp-page-edit-analysis-guidance]').forEach(node => node.remove())
     root?.removeAttribute?.('data-webmcp-page-edit-analysis-mode')
     sanitizePageEditArtifacts(snapshot)
+    injectSavedAnnotationViewer(snapshot)
 
     return snapshot
   }

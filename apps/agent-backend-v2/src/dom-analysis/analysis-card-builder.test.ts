@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildAnalysisCard } from './analysis-card-builder.ts';
+import { buildAnalysisCard, extractTableHeaders } from './analysis-card-builder.ts';
 
 test('analysis card builder formats target action and keeps key evidence fields', () => {
   assert.deepEqual(
@@ -45,5 +45,27 @@ test('analysis card builder keeps low confidence and empty action text stable', 
       recommendedApi: null,
       confidence: 'low',
     }
+  );
+});
+
+test('extractTableHeaders prefers table-like business columns over nav and form noise', () => {
+  assert.deepEqual(
+    extractTableHeaders([
+      'GLS',
+      '快递管理',
+      '供应商简称',
+      '物流订单号',
+      '快递单号',
+      '快递公司',
+      '渠道名称',
+      '发运类型',
+      '服务类型',
+      '收货公司',
+      '收货人',
+      '始发国/地区',
+      '搜索',
+      '物流订单号，多条运号隔开',
+    ]),
+    ['供应商简称', '物流订单号', '快递单号', '快递公司', '渠道名称']
   );
 });

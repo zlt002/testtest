@@ -36,6 +36,11 @@ const SCORE_BY_SIGNAL = {
   resourceHint: 1,
 };
 
+type RuleSignalScore = {
+  score: number;
+  qualifiedBusinessSignal: boolean;
+};
+
 function normalizeText(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -63,7 +68,7 @@ function collectIncludedMatches(candidates: string[], patterns: string[]): strin
   );
 }
 
-function scoreRule(rule: PageCodebaseRule, input: PageGraphContextResolveInput): number {
+function scoreRule(rule: PageCodebaseRule, input: PageGraphContextResolveInput): RuleSignalScore {
   let score = 0;
 
   const parsedUrl = tryParseUrl(input.url);
@@ -73,43 +78,65 @@ function scoreRule(rule: PageCodebaseRule, input: PageGraphContextResolveInput):
   const pageTextSummary = input.pageTextSummary ?? [];
   const apiCandidates = input.apiCandidates ?? [];
   const resourceHints = input.resourceHints ?? [];
+  const pathnameMatched =
+    Boolean(
+      rule.pathnameIncludes &&
+        pathname &&
+        collectIncludedMatches([pathname], rule.pathnameIncludes).length > 0
+    );
+  const hashRouteMatched =
+    Boolean(
+      rule.hashRouteIncludes &&
+        hashRoute &&
+        collectIncludedMatches([hashRoute], rule.hashRouteIncludes).length > 0
+    );
+  const pageTextMatchedCount = rule.pageTextIncludes
+    ? collectIncludedMatches(pageTextSummary, rule.pageTextIncludes).length
+    : 0;
+  const apiPrefixMatched =
+    Boolean(
+      rule.apiPrefixes &&
+        collectIncludedMatches(apiCandidates, rule.apiPrefixes).length > 0
+    );
+  const resourceHintMatched =
+    Boolean(
+      rule.resourceHintIncludes &&
+        collectIncludedMatches(resourceHints, rule.resourceHintIncludes).length > 0
+    );
 
   if (rule.hostIncludes && collectExactMatches(host, rule.hostIncludes).length > 0) {
     score += SCORE_BY_SIGNAL.host;
   }
 
-  if (
-    rule.pathnameIncludes &&
-    pathname &&
-    collectIncludedMatches([pathname], rule.pathnameIncludes).length > 0
-  ) {
+  if (pathnameMatched) {
     score += SCORE_BY_SIGNAL.pathname;
   }
 
-  if (
-    rule.hashRouteIncludes &&
-    hashRoute &&
-    collectIncludedMatches([hashRoute], rule.hashRouteIncludes).length > 0
-  ) {
+  if (hashRouteMatched) {
     score += SCORE_BY_SIGNAL.hashRoute;
   }
 
-  if (rule.pageTextIncludes) {
-    score += collectIncludedMatches(pageTextSummary, rule.pageTextIncludes).length;
+  if (pageTextMatchedCount > 0) {
+    score += pageTextMatchedCount;
   }
 
-  if (rule.apiPrefixes && collectIncludedMatches(apiCandidates, rule.apiPrefixes).length > 0) {
+  if (apiPrefixMatched) {
     score += SCORE_BY_SIGNAL.apiPrefix;
   }
 
-  if (
-    rule.resourceHintIncludes &&
-    collectIncludedMatches(resourceHints, rule.resourceHintIncludes).length > 0
-  ) {
+  if (resourceHintMatched) {
     score += SCORE_BY_SIGNAL.resourceHint;
   }
 
-  return score;
+  return {
+    score,
+    qualifiedBusinessSignal:
+      pathnameMatched ||
+      hashRouteMatched ||
+      apiPrefixMatched ||
+      resourceHintMatched ||
+      pageTextMatchedCount >= 2,
+  };
 }
 
 function dedupeGraphProjects(graphProjects: string[]): string[] {
@@ -156,14 +183,14 @@ export function createRepoContextRouter(options?: {
       let bestScore = 0;
 
       for (const rule of rules) {
-        const score = scoreRule(rule, input);
+        const signalScore = scoreRule(rule, input);
         const minimumScore = rule.minimumScore ?? 1;
-        if (score < minimumScore) {
+        if (signalScore.score < minimumScore || !signalScore.qualifiedBusinessSignal) {
           continue;
         }
-        if (score > bestScore) {
+        if (signalScore.score > bestScore) {
           bestRule = rule;
-          bestScore = score;
+          bestScore = signalScore.score;
         }
       }
 

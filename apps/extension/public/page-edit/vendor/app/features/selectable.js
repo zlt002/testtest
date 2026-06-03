@@ -321,12 +321,89 @@ export function Selectable(visbug) {
     selectionBridgeNonce = typeof nonce === 'string' && nonce ? nonce : null;
   };
 
+  const locationChangeListenerKey = '__webmcpPageEditLocationChangeListenerCount__';
+  const locationChangePatchStateKey = '__webmcpPageEditLocationChangePatch__';
+
+  const dispatchLocationChangeEvent = (trigger) => {
+    window.dispatchEvent(
+      new window.CustomEvent('webmcp:page-edit-locationchange', {
+        detail: {
+          href: window.location.href,
+          trigger,
+        },
+      })
+    );
+  };
+
+  const ensureLocationChangeEventsPatched = () => {
+    const currentCount = Number(window[locationChangeListenerKey] || 0);
+    window[locationChangeListenerKey] = currentCount + 1;
+
+    if (window[locationChangePatchStateKey]) return;
+
+    const originalPushState = window.history.pushState.bind(window.history);
+    const originalReplaceState = window.history.replaceState.bind(window.history);
+
+    window.history.pushState = function (...args) {
+      const result = originalPushState(...args);
+      dispatchLocationChangeEvent('pushState');
+      return result;
+    };
+
+    window.history.replaceState = function (...args) {
+      const result = originalReplaceState(...args);
+      dispatchLocationChangeEvent('replaceState');
+      return result;
+    };
+
+    window[locationChangePatchStateKey] = {
+      originalPushState,
+      originalReplaceState,
+    };
+  };
+
+  const cleanupLocationChangeEventsPatched = () => {
+    const currentCount = Number(window[locationChangeListenerKey] || 0);
+    const nextCount = Math.max(0, currentCount - 1);
+    window[locationChangeListenerKey] = nextCount;
+
+    if (nextCount > 0) return;
+
+    const patchState = window[locationChangePatchStateKey];
+    if (!patchState) return;
+
+    window.history.pushState = patchState.originalPushState;
+    window.history.replaceState = patchState.originalReplaceState;
+    delete window[locationChangePatchStateKey];
+  };
+
   const isSelectionAnalysisGuidanceActive = () =>
     typeof document?.documentElement?.getAttribute === 'function' &&
     typeof document.documentElement.getAttribute('data-webmcp-page-edit-analysis-mode') ===
       'string';
 
+  let lastKnownHref = window.location.href;
+
+  const handleLocationChange = (event) => {
+    const nextHref = window.location.href;
+    if (nextHref === lastKnownHref) return;
+
+    debugLog('location:change', {
+      previousHref: lastKnownHref,
+      nextHref,
+      trigger: event?.type || event?.detail?.trigger || 'unknown',
+      selectionBefore: formatDebugSelection(selected),
+    });
+
+    lastKnownHref = nextHref;
+    cleanupTransientUi();
+    unselect_all();
+  };
+
   const listen = () => {
+    lastKnownHref = window.location.href;
+    ensureLocationChangeEventsPatched();
+
     document.addEventListener('keydown', freezePageKeyboardInteraction, true);
     document.addEventListener('keyup', freezePageKeyboardInteraction, true);
     page.addEventListener('keydown', freezePageKeyboardInteraction, true);
@@ -345,6 +422,9 @@ export function Selectable(visbug) {
     document.addEventListener('copy', on_copy);
     document.addEventListener('cut', on_cut);
     document.addEventListener('paste', on_paste);
+    window.addEventListener('hashchange', handleLocationChange, true);
+    window.addEventListener('popstate', handleLocationChange, true);
+    window.addEventListener('webmcp:page-edit-locationchange', handleLocationChange, true);
 
     watchCommandKey();
 
@@ -382,6 +462,10 @@ export function Selectable(visbug) {
     document.removeEventListener('copy', on_copy);
     document.removeEventListener('cut', on_cut);
     document.removeEventListener('paste', on_paste);
+    window.removeEventListener('hashchange', handleLocationChange, true);
+    window.removeEventListener('popstate', handleLocationChange, true);
+    window.removeEventListener('webmcp:page-edit-locationchange', handleLocationChange, true);
+    cleanupLocationChangeEventsPatched();
 
     hotkeys.unbind(
       `esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter`

@@ -652,7 +652,7 @@ describe('useAgentV2Chat', () => {
     });
   });
 
-  it('shows a local assistant placeholder before the first run event arrives', async () => {
+  it('shows a localized assistant placeholder before the first run event arrives', async () => {
     let resolveStartRun: (() => void) | null = null;
     clientMocks.startRun.mockImplementationOnce(
       () =>
@@ -666,7 +666,7 @@ describe('useAgentV2Chat', () => {
     );
 
     act(() => {
-      void result.current.sendMessage('浣犲ソ');
+      void result.current.sendMessage('你好');
     });
 
     await waitFor(() => {
@@ -674,11 +674,11 @@ describe('useAgentV2Chat', () => {
     });
     expect(result.current.messages[0]).toMatchObject({
       role: 'user',
-      text: '浣犲ソ',
+      text: '你好',
     });
     expect(result.current.messages[1]).toMatchObject({
       role: 'assistant',
-      text: '姝ｅ湪澶勭悊...',
+      text: '正在处理...',
     });
 
     await act(async () => {

@@ -35,10 +35,53 @@ type AnalysisSignals = {
 };
 
 const ACTION_TYPE_KEYWORDS = ['搜索', '查询', '筛选', '检索'];
-const IGNORED_TABLE_TERMS = new Set(['快递询价', '搜索', '查询', '列表查询']);
+const IGNORED_TABLE_TERMS = new Set([
+  '快递询价',
+  '快递管理',
+  '搜索',
+  '查询',
+  '列表查询',
+  '首页',
+  '委托中心',
+  '物流订单号，多条运号隔开',
+  '快递单号，多条运号隔开',
+]);
+const TABLE_HEADER_POSITIVE_KEYWORDS = [
+  '单号',
+  '简称',
+  '公司',
+  '名称',
+  '类型',
+  '服务',
+  '收货',
+  '发运',
+  '始发',
+  '目的地',
+  '地区',
+  '状态',
+  '物流',
+  '快递',
+];
 
 function dedupe(items: string[]): string[] {
   return items.filter((item, index) => item.length > 0 && items.indexOf(item) === index);
+}
+
+function scoreTableHeader(term: string): number {
+  let score = 0;
+  if (TABLE_HEADER_POSITIVE_KEYWORDS.some((keyword) => term.includes(keyword))) {
+    score += 10;
+  }
+  if (/管理|中心|新增|导入|导出|刷新|按钮|菜单|首页/.test(term)) {
+    score -= 10;
+  }
+  if (/隔开|请输入|请选择/.test(term)) {
+    score -= 12;
+  }
+  if (term.length >= 8) {
+    score += 2;
+  }
+  return score;
 }
 
 function formatRoute(route: string | null): string | null {
@@ -74,8 +117,10 @@ export function extractTableHeaders(pageTextSummary: string[]): string[] {
         (term) =>
           term.length >= 2 &&
           !IGNORED_TABLE_TERMS.has(term) &&
-          !/监控|概览|首页/.test(term)
+          !/监控|概览|首页/.test(term) &&
+          scoreTableHeader(term) > 0
       )
+      .sort((left, right) => scoreTableHeader(right) - scoreTableHeader(left))
   ).slice(0, 5);
 }
 

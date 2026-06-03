@@ -437,7 +437,7 @@ export function useAgentV2Chat(options: { baseUrl: string; endpoint: string }) {
           sessionId: sessionId || '',
           role: 'assistant',
           kind: 'text',
-          text: '姝ｅ湪澶勭悊...',
+          text: '正在处理...',
           timestamp: new Date().toISOString(),
         },
       ]);

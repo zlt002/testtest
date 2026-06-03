@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import { JSDOM } from 'jsdom';
+import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let dom: JSDOM;
@@ -513,6 +514,157 @@ describe('page-edit file save action', () => {
     expect(markup).not.toContain('data-bottom-action="up-1"');
     expect(markup).not.toContain('data-bottom-subtool-list');
     expect(visbug.$shadow.querySelector('button[data-action="toggle-tool-section"]')).toBeNull();
+  });
+
+  it('退出编辑时保留已持久化的备注标识', async () => {
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const annotationRuntime = await import('../../public/page-edit/runtime/annotations.js');
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    annotationRuntime.clearSelectionAnnotationUi();
+    const previousRequestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof window.requestAnimationFrame;
+
+    document.body.innerHTML = '<main><div id="target">测试备注</div></main>';
+    const target = document.getElementById('target') as HTMLElement | null;
+    expect(target).toBeTruthy();
+
+    annotationRuntime.upsertSelectionAnnotation(target!, '这里是持久化备注');
+    expect(document.querySelector('[data-webmcp-annotation-marker="true"]')).toBeTruthy();
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      disconnect: vi.fn(),
+    };
+
+    expect(() => visbug.disconnectedCallback()).not.toThrow();
+    expect(document.querySelector('[data-webmcp-annotation-marker="true"]')).toBeTruthy();
+
+    const ejectSource = await readFile(
+      new URL('../../public/page-edit/eject.js', import.meta.url),
+      'utf8',
+    );
+    window.eval(ejectSource);
+    expect(document.querySelector('[data-webmcp-annotation-marker="true"]')).toBeTruthy();
+
+    window.requestAnimationFrame = previousRequestAnimationFrame;
+    annotationRuntime.clearSelectionAnnotationUi();
+  });
+
+  it('退出编辑后点击备注角标仍可弹出备注内容', async () => {
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const annotationRuntime = await import('../../public/page-edit/runtime/annotations.js');
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    annotationRuntime.clearSelectionAnnotationUi();
+    const previousRequestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof window.requestAnimationFrame;
+
+    document.body.innerHTML = '<main><div id="target">测试备注</div></main>';
+    const target = document.getElementById('target') as HTMLElement | null;
+    expect(target).toBeTruthy();
+
+    const openSpy = vi.fn().mockResolvedValue(null);
+    annotationRuntime.setAnnotationDialogOpenHandlerForTest(openSpy);
+    annotationRuntime.upsertSelectionAnnotation(target!, '退出后仍可查看');
+
+    const visbug = new VisBug();
+    visbug.selectorEngine = {
+      disconnect: vi.fn(),
+    };
+    expect(() => visbug.disconnectedCallback()).not.toThrow();
+
+    const ejectSource = await readFile(
+      new URL('../../public/page-edit/eject.js', import.meta.url),
+      'utf8',
+    );
+    window.eval(ejectSource);
+
+    const marker = document.querySelector('[data-webmcp-annotation-marker="true"]') as HTMLElement | null;
+    expect(marker).toBeTruthy();
+
+    marker?.dispatchEvent(
+      new window.MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await Promise.resolve();
+
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: '退出后仍可查看',
+      }),
+    );
+
+    annotationRuntime.setAnnotationDialogOpenHandlerForTest(null);
+    window.requestAnimationFrame = previousRequestAnimationFrame;
+    annotationRuntime.clearSelectionAnnotationUi();
+  });
+
+  it('保存后的 html 里点击备注角标可以查看备注内容', async () => {
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const annotationRuntime = await import('../../public/page-edit/runtime/annotations.js');
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    annotationRuntime.clearSelectionAnnotationUi();
+    const previousRequestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof window.requestAnimationFrame;
+
+    document.body.innerHTML = '<main><div id="target">测试备注</div></main>';
+    const target = document.getElementById('target') as HTMLElement | null;
+    expect(target).toBeTruthy();
+
+    annotationRuntime.upsertSelectionAnnotation(target!, '这是保存到 html 的备注内容');
+
+    const visbug = new VisBug();
+    const savedHtml = visbug.serializeCurrentDocument();
+
+    expect(savedHtml).toContain('data-webmcp-annotation-marker="true"');
+
+    const savedDom = new JSDOM(savedHtml, {
+      url: 'file:///Users/demo/index.html',
+      runScripts: 'dangerously',
+    });
+
+    try {
+      const marker = savedDom.window.document.querySelector(
+        '[data-webmcp-annotation-marker="true"]',
+      ) as HTMLElement | null;
+      expect(marker).toBeTruthy();
+
+      marker?.dispatchEvent(
+        new savedDom.window.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      const dialog = savedDom.window.document.querySelector(
+        '[data-webmcp-saved-annotation-dialog="true"]',
+      ) as HTMLElement | null;
+      expect(dialog).toBeTruthy();
+      expect(dialog?.textContent).toContain('这是保存到 html 的备注内容');
+    } finally {
+      savedDom.window.close();
+      window.requestAnimationFrame = previousRequestAnimationFrame;
+      annotationRuntime.clearSelectionAnnotationUi();
+    }
   });
 
   it('卸载时即使局部清理报错，也会继续断开选择监听并清掉残留 UI', async () => {
