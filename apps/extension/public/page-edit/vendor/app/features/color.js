@@ -44,11 +44,16 @@ export function ColorPicker(pallete, selectorEngine) {
       selectorEngine.recordStyleMutation({
         elements: state.elements,
         label: 'color-foreground',
+        notifyWatchers: false,
         mutate: () => state.elements.map(el =>
           el.style['color'] = value),
       })
 
       foregroundPicker[0]?.style.setProperty(`--contextual_color`, value)
+    })
+
+    fgInput.on('change', () => {
+      selectorEngine.refreshSelectionUi?.()
     })
   }
 
@@ -57,6 +62,7 @@ export function ColorPicker(pallete, selectorEngine) {
       selectorEngine.recordStyleMutation({
         elements: state.elements,
         label: 'color-background',
+        notifyWatchers: false,
         mutate: () => state.elements.map(el =>
           el.style[el instanceof SVGElement
             ? 'fill'
@@ -66,6 +72,10 @@ export function ColorPicker(pallete, selectorEngine) {
 
       backgroundPicker[0]?.style.setProperty(`--contextual_color`, value)
     })
+
+    bgInput.on('change', () => {
+      selectorEngine.refreshSelectionUi?.()
+    })
   }
 
   if (borderRoot) {
@@ -73,6 +83,7 @@ export function ColorPicker(pallete, selectorEngine) {
       selectorEngine.recordStyleMutation({
         elements: state.elements,
         label: 'color-border',
+        notifyWatchers: false,
         mutate: () => state.elements.map(el =>
           el.style[el instanceof SVGElement
             ? 'stroke'
@@ -81,6 +92,10 @@ export function ColorPicker(pallete, selectorEngine) {
       })
 
       borderPicker[0]?.style.setProperty(`--contextual_color`, value)
+    })
+
+    boInput.on('change', () => {
+      selectorEngine.refreshSelectionUi?.()
     })
   }
 

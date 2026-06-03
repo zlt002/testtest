@@ -8,6 +8,7 @@ const ANNOTATION_DIALOG_TAG = 'webmcp-page-annotation-dialog';
 const ANNOTATION_DIALOG_SELECTOR = ANNOTATION_DIALOG_TAG;
 const ANNOTATION_OVERLAY_LAYER_SELECTOR = '[data-webmcp-annotation-overlay-layer="true"]';
 const ANNOTATION_MARKER_SELECTOR = '[data-webmcp-annotation-marker="true"]';
+const ANNOTATION_POPOVER_SELECTOR = '[data-webmcp-saved-annotation-popover="true"]';
 const ANNOTATION_UI_SELECTOR = '[data-webmcp-annotation-ui="true"]';
 const DIALOG_STYLES = `
   :host {
@@ -170,6 +171,7 @@ const annotationState = {
   renderFrame: null,
   cleanupBound: false,
   dialogOpenHandlerForTest: null,
+  passivePopoverCleanup: null,
 };
 
 async function editAnnotationRecord(record, { pageMode } = {}) {
@@ -607,6 +609,11 @@ function clearTransientAnnotationUi() {
   document.querySelectorAll(ANNOTATION_DIALOG_SELECTOR).forEach((node) => {
     node.remove();
   });
+  document.querySelectorAll(ANNOTATION_POPOVER_SELECTOR).forEach((node) => {
+    node.remove();
+  });
+  annotationState.passivePopoverCleanup?.();
+  annotationState.passivePopoverCleanup = null;
 
   const overlayLayer = document.querySelector(ANNOTATION_OVERLAY_LAYER_SELECTOR);
   if (
@@ -618,6 +625,137 @@ function clearTransientAnnotationUi() {
       annotationState.overlayLayer = null;
     }
   }
+}
+
+function isPageEditUiActive() {
+  return (
+    document.documentElement.hasAttribute('data-webmcp-page-edit-config') ||
+    !!document.querySelector('vis-bug[data-webmcp-page-edit-root="true"]')
+  );
+}
+
+function positionAnnotationPopover(popover, anchorRect) {
+  const gap = 10;
+  const viewportPadding = 12;
+  const popoverRect = popover.getBoundingClientRect();
+  const width = popoverRect.width;
+  const height = popoverRect.height;
+
+  const preferredRightLeft = anchorRect.right + gap;
+  const preferredLeftLeft = anchorRect.left - width - gap;
+  let left =
+    preferredRightLeft + width <= window.innerWidth - viewportPadding
+      ? preferredRightLeft
+      : preferredLeftLeft >= viewportPadding
+        ? preferredLeftLeft
+        : Math.min(
+            Math.max(viewportPadding, anchorRect.left),
+            window.innerWidth - width - viewportPadding,
+          );
+
+  let top = anchorRect.top + anchorRect.height / 2 - height / 2;
+  top = Math.min(
+    Math.max(viewportPadding, top),
+    Math.max(viewportPadding, window.innerHeight - height - viewportPadding),
+  );
+
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.round(top)}px`;
+}
+
+function closePassiveAnnotationPopover() {
+  document.querySelectorAll(ANNOTATION_POPOVER_SELECTOR).forEach((node) => {
+    node.remove();
+  });
+  annotationState.passivePopoverCleanup?.();
+  annotationState.passivePopoverCleanup = null;
+}
+
+function openPassiveAnnotationPopover({ content, anchorRect }) {
+  closePassiveAnnotationPopover();
+
+  const popover = document.createElement('div');
+  popover.setAttribute('data-webmcp-saved-annotation-popover', 'true');
+  popover.setAttribute('data-webmcp-annotation-ui', 'true');
+  popover.style.position = 'fixed';
+  popover.style.zIndex = '2147483647';
+  popover.style.width = `min(320px, calc(100vw - 24px))`;
+  popover.style.maxWidth = '320px';
+  popover.style.borderRadius = '16px';
+  popover.style.border = '1px solid rgba(148, 163, 184, 0.22)';
+  popover.style.background = 'rgba(255, 255, 255, 0.98)';
+  popover.style.boxShadow = '0 18px 42px rgba(15, 23, 42, 0.18)';
+  popover.style.padding = '14px 14px 14px';
+  popover.style.color = '#0f172a';
+  popover.style.fontFamily =
+    'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  popover.style.position = 'fixed';
+
+  const header = document.createElement('div');
+  header.style.display = 'flex';
+  header.style.alignItems = 'flex-start';
+  header.style.justifyContent = 'space-between';
+  header.style.gap = '10px';
+  header.style.marginBottom = '8px';
+
+  const title = document.createElement('div');
+  title.textContent = '备注内容';
+  title.style.fontSize = '14px';
+  title.style.fontWeight = '600';
+  title.style.lineHeight = '1.4';
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.setAttribute('aria-label', '关闭备注');
+  closeButton.textContent = '×';
+  closeButton.style.border = '0';
+  closeButton.style.background = 'transparent';
+  closeButton.style.color = '#64748b';
+  closeButton.style.fontSize = '18px';
+  closeButton.style.lineHeight = '1';
+  closeButton.style.width = '24px';
+  closeButton.style.height = '24px';
+  closeButton.style.padding = '0';
+  closeButton.style.borderRadius = '999px';
+  closeButton.style.cursor = 'pointer';
+  closeButton.style.display = 'inline-flex';
+  closeButton.style.alignItems = 'center';
+  closeButton.style.justifyContent = 'center';
+  closeButton.addEventListener('click', () => closePassiveAnnotationPopover());
+
+  const body = document.createElement('div');
+  body.textContent = content;
+  body.style.whiteSpace = 'pre-wrap';
+  body.style.wordBreak = 'break-word';
+  body.style.fontSize = '13px';
+  body.style.lineHeight = '1.6';
+  body.style.color = '#334155';
+
+  header.append(title, closeButton);
+  popover.append(header, body);
+  document.body.appendChild(popover);
+  positionAnnotationPopover(popover, anchorRect);
+
+  const onPointerDown = (event) => {
+    const target = event.target;
+    if (target instanceof Node && popover.contains(target)) {
+      return;
+    }
+    closePassiveAnnotationPopover();
+  };
+
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      closePassiveAnnotationPopover();
+    }
+  };
+
+  document.addEventListener('pointerdown', onPointerDown, true);
+  document.addEventListener('keydown', onKeyDown, true);
+  annotationState.passivePopoverCleanup = () => {
+    document.removeEventListener('pointerdown', onPointerDown, true);
+    document.removeEventListener('keydown', onKeyDown, true);
+  };
 }
 
 function parsePixelValue(value) {
@@ -696,6 +834,9 @@ function createMarker(record, selectedKeys, { overlay = false, rect = null } = {
   marker.setAttribute('data-webmcp-annotation-ui', 'true');
   marker.setAttribute('data-webmcp-annotation-key', record.key);
   marker.setAttribute('data-webmcp-annotation-content', record.content ?? '');
+  marker.setAttribute('data-webmcp-annotation-selector', record.target?.selector ?? '');
+  marker.setAttribute('data-webmcp-annotation-xpath', record.target?.xpath ?? '');
+  marker.setAttribute('data-webmcp-annotation-overlay-marker', overlay ? 'true' : 'false');
   marker.title = record.content;
   marker.style.position = 'absolute';
   if (overlay && rect) {
@@ -731,7 +872,25 @@ function createMarker(record, selectedKeys, { overlay = false, rect = null } = {
   marker.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    void editAnnotationRecord(record);
+    if (isPageEditUiActive()) {
+      void editAnnotationRecord(record);
+      return;
+    }
+
+    const existing = document.querySelector(ANNOTATION_POPOVER_SELECTOR);
+    if (existing instanceof HTMLElement && existing.dataset.annotationKey === record.key) {
+      closePassiveAnnotationPopover();
+      return;
+    }
+
+    openPassiveAnnotationPopover({
+      content: record.content ?? '',
+      anchorRect: marker.getBoundingClientRect(),
+    });
+    const popover = document.querySelector(ANNOTATION_POPOVER_SELECTOR);
+    if (popover instanceof HTMLElement) {
+      popover.dataset.annotationKey = record.key;
+    }
   });
 
   const dot = document.createElement('span');

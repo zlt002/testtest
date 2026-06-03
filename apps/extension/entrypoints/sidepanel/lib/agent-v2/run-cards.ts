@@ -926,18 +926,8 @@ function buildRunCard(input: {
   };
 }
 
-function nearestUserAround(users: DisplayMessage[], timestamp: string): DisplayMessage | null {
+function nearestSubsequentUser(users: DisplayMessage[], timestamp: string): DisplayMessage | null {
   const target = timeOf(timestamp);
-  let selected: DisplayMessage | null = null;
-  for (const user of users) {
-    if (timeOf(user.timestamp) <= target) {
-      selected = user;
-    }
-  }
-  if (selected) {
-    return selected;
-  }
-
   for (const user of users) {
     if (timeOf(user.timestamp) >= target) {
       return user;
@@ -947,12 +937,34 @@ function nearestUserAround(users: DisplayMessage[], timestamp: string): DisplayM
   return null;
 }
 
+function nearestPreviousUser(users: DisplayMessage[], timestamp: string): DisplayMessage | null {
+  const target = timeOf(timestamp);
+  let selected: DisplayMessage | null = null;
+  for (const user of users) {
+    if (timeOf(user.timestamp) <= target) {
+      selected = user;
+    }
+  }
+  return selected;
+}
+
 export function projectConversationRunItems(messages: DisplayMessage[]): ConversationRunItem[] {
   const sorted = [...messages].sort((left, right) => {
     const timeDelta = timeOf(left.timestamp) - timeOf(right.timestamp);
     return timeDelta || (left.sequence ?? 0) - (right.sequence ?? 0);
   });
   const users = sorted.filter((message) => message.role === 'user' && message.kind === 'text');
+  const latestHistoricalTimestampByUserId = new Map<string, string>();
+  let currentHistoricalUser: DisplayMessage | null = null;
+  for (const message of sorted.filter((item) => !item.runId)) {
+    if (message.role === 'user' && message.kind === 'text') {
+      currentHistoricalUser = message;
+      continue;
+    }
+    if (currentHistoricalUser) {
+      latestHistoricalTimestampByUserId.set(currentHistoricalUser.id, message.timestamp);
+    }
+  }
   const runGroups = new Map<string, DisplayMessage[]>();
   const noRunMessages = sorted.filter((message) => {
     if (message.runId) {
@@ -968,9 +980,19 @@ export function projectConversationRunItems(messages: DisplayMessage[]): Convers
 
   for (const [runId, group] of runGroups) {
     const firstTimestamp = group[0]?.timestamp || '';
-    const anchor =
-      group.find((message) => message.role === 'user' && message.kind === 'text') ||
-      nearestUserAround(users, firstTimestamp);
+    const groupUser = group.find((message) => message.role === 'user' && message.kind === 'text');
+    const subsequentUser = nearestSubsequentUser(users, firstTimestamp);
+    const previousUser = nearestPreviousUser(users, firstTimestamp);
+    const previousUserLatestHistoricalTimestamp = previousUser
+      ? latestHistoricalTimestampByUserId.get(previousUser.id)
+      : null;
+    const fallbackPreviousUser =
+      previousUser &&
+      previousUserLatestHistoricalTimestamp &&
+      timeOf(previousUserLatestHistoricalTimestamp) >= timeOf(firstTimestamp)
+        ? previousUser
+        : null;
+    const anchor = groupUser || subsequentUser || fallbackPreviousUser;
     cards.push(
       buildRunCard({
         id: runId,

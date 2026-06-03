@@ -15,6 +15,7 @@ import {
   type Dispatch,
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type SetStateAction,
   useEffect,
   useMemo,
@@ -67,6 +68,7 @@ type AgentComposerProps = {
   onClearSelectedTabs?: () => void;
   isDecisionBlocked?: boolean;
   takeoverState?: WindowTakeoverState | null;
+  secondaryOverlay?: ReactNode;
 };
 
 type SelectionFeedback = {
@@ -462,6 +464,7 @@ export function AgentComposer({
   onClearSelectedTabs,
   isDecisionBlocked = false,
   takeoverState,
+  secondaryOverlay = null,
 }: AgentComposerProps) {
   const client = useMemo(() => createAgentV2Client({ baseUrl, endpoint }), [baseUrl, endpoint]);
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -860,6 +863,14 @@ export function AgentComposer({
             isDraggingFiles ? 'border-primary/60 ring-2 ring-primary/20' : ''
           }`}
         >
+          {secondaryOverlay ? (
+            <div
+              data-testid="dom-analysis-suggestion-layer"
+              className="absolute bottom-full left-0 right-0 z-10 mb-2"
+            >
+              {secondaryOverlay}
+            </div>
+          ) : null}
           {isCommandsOpen ? (
             <div className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-[300px] overflow-y-auto rounded-lg border bg-popover p-2 shadow-lg">
               <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">

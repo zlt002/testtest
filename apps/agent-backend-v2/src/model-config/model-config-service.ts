@@ -54,10 +54,12 @@ export type OfficialModelCatalogItem = {
   ownedBy?: string;
 };
 
+export type OfficialQuotaResetCycle = 'daily' | 'weekly' | 'monthly' | 'unlimited';
+
 export type OfficialQuota = {
   usagePercent: number | null;
   nextResetTime: string | null;
-  resetCycle: string;
+  resetCycle: OfficialQuotaResetCycle;
 };
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
@@ -83,7 +85,7 @@ const OfficialModelCatalogSchema = z.object({
 const OfficialQuotaSchema = z.object({
   usagePercent: z.number().nullable(),
   nextResetTime: z.string().nullable(),
-  resetCycle: z.string(),
+  resetCycle: z.enum(['daily', 'weekly', 'monthly', 'unlimited']),
 });
 
 const ClaudeSettingsSchema = z.object({

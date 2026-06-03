@@ -55,13 +55,7 @@ export type DisplayMessage = {
   attachments?: DisplayAttachment[];
   requestId?: string | null;
   interactionKind?: 'interactive_prompt' | 'permission_request' | 'plan_approval' | null;
-  runPhase?:
-    | 'planning'
-    | 'awaiting_plan_approval'
-    | 'executing'
-    | 'completed'
-    | 'aborted'
-    | null;
+  runPhase?: 'planning' | 'awaiting_plan_approval' | 'executing' | 'completed' | 'aborted' | null;
 };
 
 export type SessionSubagentActivity = {
@@ -90,10 +84,7 @@ export type SessionSubagentsResponse = {
   subagents: SessionSubagentSnapshot[];
 };
 
-export type AgentV2StopReason =
-  | 'user_stop'
-  | 'window_takeover_user_left'
-  | 'subagent_timeout';
+export type AgentV2StopReason = 'user_stop' | 'window_takeover_user_left' | 'subagent_timeout';
 
 export type ToolDisplayRecord = {
   id: string;
@@ -522,10 +513,12 @@ export type AgentOfficialModelCatalogResponse = {
   models: AgentOfficialModelCatalogItem[];
 };
 
+export type AgentOfficialQuotaResetCycle = 'daily' | 'weekly' | 'monthly' | 'unlimited';
+
 export type AgentOfficialQuota = {
   usagePercent: number | null;
   nextResetTime: string | null;
-  resetCycle: string;
+  resetCycle: AgentOfficialQuotaResetCycle;
 };
 
 export type AgentOfficialQuotaResponse = {

@@ -459,6 +459,57 @@ describe('typography panel state', () => {
     expect(target?.style.color).toBe('rgb(255, 0, 0)');
   });
 
+  it('keeps the typography color picker mounted during live input and refreshes after change', async () => {
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+    const { Selectable } = await import(
+      '../../public/page-edit/vendor/app/features/selectable.js'
+    );
+
+    document.body.innerHTML = `
+      <p id="copy" style="color: rgb(10, 20, 30);">Typography target</p>
+    `;
+
+    const visbug = document.createElement('vis-bug') as InstanceType<typeof VisBug>;
+    document.body.appendChild(visbug);
+    visbug.connectedCallback();
+
+    const selectable = Selectable(visbug);
+    visbug.selectorEngine = selectable;
+    visbug.colorPicker = (await import(
+      '../../public/page-edit/vendor/app/features/color.js'
+    )).ColorPicker(visbug.$shadow, visbug.selectorEngine);
+
+    const refreshSpy = vi.spyOn(visbug, 'refreshBottomToolbar');
+    const target = document.getElementById('copy') as HTMLElement | null;
+    if (!target) throw new Error('typography target missing');
+
+    selectable.select(target);
+    visbug.activateBottomToolbarTool('typography');
+
+    const colorInput = visbug.$shadow.querySelector(
+      '[data-typography-color-palette] input[type="color"]',
+    ) as HTMLInputElement | null;
+
+    expect(colorInput).not.toBeNull();
+    if (!colorInput) throw new Error('foreground color input missing');
+
+    colorInput.value = '#ff0000';
+    colorInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+    expect(target.style.color).toBe('rgb(255, 0, 0)');
+    expect(colorInput.isConnected).toBe(true);
+
+    colorInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+    expect(refreshSpy).toHaveBeenCalled();
+
+    selectable.disconnect();
+    visbug.disconnectedCallback();
+    visbug.remove();
+  });
+
   it('renders spacing panels with linked inputs by default for symmetric values', async () => {
     const { default: VisBug } = await import(
       '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'

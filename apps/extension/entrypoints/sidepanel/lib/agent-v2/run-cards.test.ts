@@ -28,6 +28,54 @@ function message(overrides: Partial<DisplayMessage>): DisplayMessage {
 }
 
 describe('projectConversationRunItems', () => {
+  it('does not attach a restored live run to the previous user message when its own user prompt is missing', () => {
+    const items = projectConversationRunItems([
+      message({
+        id: 'user-1',
+        role: 'user',
+        kind: 'text',
+        text: '第一次提问',
+        timestamp: '2026-05-11T00:00:00.000Z',
+      }),
+      message({
+        id: 'assistant-1',
+        role: 'assistant',
+        kind: 'text',
+        text: '第一次回答',
+        timestamp: '2026-05-11T00:00:01.000Z',
+      }),
+      message({
+        id: 'tool-2',
+        runId: 'run-2',
+        role: 'assistant',
+        kind: 'tool_call',
+        toolName: 'search_graph',
+        timestamp: '2026-05-11T00:00:02.000Z',
+      }),
+      message({
+        id: 'assistant-2',
+        runId: 'run-2',
+        role: 'assistant',
+        kind: 'text',
+        text: '第二次运行恢复中的回答',
+        timestamp: '2026-05-11T00:00:03.000Z',
+      }),
+    ]);
+
+    expect(items).toHaveLength(3);
+    expect(items[0]?.type).toBe('user');
+    expect(items[1]?.type).toBe('run');
+    expect(items[2]?.type).toBe('run');
+    if (items[1]?.type !== 'run' || items[2]?.type !== 'run') return;
+    expect(items[1].card.source).toBe('official-history');
+    expect(items[1].card.anchorMessageId).toBe('user-1');
+    expect(items[1].card.finalResponse).toContain('第一次回答');
+    expect(items[2].card.source).toBe('sdk-live');
+    expect(items[2].card.anchorMessageId).toBeNull();
+    expect(items[2].card.runId).toBe('run-2');
+    expect(items[2].card.finalResponse).toContain('第二次运行恢复中的回答');
+  });
+
   it('collects file references from tool input on live run cards', () => {
     const items = projectConversationRunItems([
       message({

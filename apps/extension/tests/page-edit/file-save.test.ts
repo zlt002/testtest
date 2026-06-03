@@ -61,6 +61,8 @@ beforeAll(() => {
 beforeEach(() => {
   vi.restoreAllMocks();
   document.body.innerHTML = '<main><h1>页面编辑</h1><p>测试内容</p></main>';
+  document.documentElement.removeAttribute('data-webmcp-page-edit-config');
+  document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
   dom.reconfigure({ url: 'https://example.com/' });
 });
 
@@ -530,7 +532,13 @@ describe('page-edit file save action', () => {
       return 1;
     }) as typeof window.requestAnimationFrame;
 
-    document.body.innerHTML = '<main><div id="target">测试备注</div></main>';
+    document.body.innerHTML = `
+      <main>
+        <div style="overflow:hidden; width:120px;">
+          <div id="target">测试备注</div>
+        </div>
+      </main>
+    `;
     const target = document.getElementById('target') as HTMLElement | null;
     expect(target).toBeTruthy();
 
@@ -556,7 +564,7 @@ describe('page-edit file save action', () => {
     annotationRuntime.clearSelectionAnnotationUi();
   });
 
-  it('退出编辑后点击备注角标仍可弹出备注内容', async () => {
+  it('退出编辑后点击备注角标会在元素旁边展开备注卡片', async () => {
     dom.reconfigure({ url: 'file:///Users/demo/index.html' });
     const annotationRuntime = await import('../../public/page-edit/runtime/annotations.js');
     const { default: VisBug } = await import(
@@ -574,8 +582,6 @@ describe('page-edit file save action', () => {
     const target = document.getElementById('target') as HTMLElement | null;
     expect(target).toBeTruthy();
 
-    const openSpy = vi.fn().mockResolvedValue(null);
-    annotationRuntime.setAnnotationDialogOpenHandlerForTest(openSpy);
     annotationRuntime.upsertSelectionAnnotation(target!, '退出后仍可查看');
 
     const visbug = new VisBug();
@@ -601,18 +607,18 @@ describe('page-edit file save action', () => {
     );
     await Promise.resolve();
 
-    expect(openSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: '退出后仍可查看',
-      }),
-    );
+    const popover = document.querySelector(
+      '[data-webmcp-saved-annotation-popover="true"]',
+    ) as HTMLElement | null;
+    expect(popover).toBeTruthy();
+    expect(popover?.textContent).toContain('退出后仍可查看');
+    expect(popover?.style.position).toBe('fixed');
 
-    annotationRuntime.setAnnotationDialogOpenHandlerForTest(null);
     window.requestAnimationFrame = previousRequestAnimationFrame;
     annotationRuntime.clearSelectionAnnotationUi();
   });
 
-  it('保存后的 html 里点击备注角标可以查看备注内容', async () => {
+  it('保存后的 html 里点击备注角标会在元素旁边展开备注卡片', async () => {
     dom.reconfigure({ url: 'file:///Users/demo/index.html' });
     const annotationRuntime = await import('../../public/page-edit/runtime/annotations.js');
     const { default: VisBug } = await import(
@@ -656,10 +662,83 @@ describe('page-edit file save action', () => {
       );
 
       const dialog = savedDom.window.document.querySelector(
-        '[data-webmcp-saved-annotation-dialog="true"]',
+        '[data-webmcp-saved-annotation-popover="true"]',
       ) as HTMLElement | null;
       expect(dialog).toBeTruthy();
       expect(dialog?.textContent).toContain('这是保存到 html 的备注内容');
+      expect(dialog?.style.position).toBe('fixed');
+    } finally {
+      savedDom.window.close();
+      window.requestAnimationFrame = previousRequestAnimationFrame;
+      annotationRuntime.clearSelectionAnnotationUi();
+    }
+  });
+
+  it('保存后的 html 在滚动后会让角标和备注卡片继续跟随目标元素', async () => {
+    dom.reconfigure({ url: 'file:///Users/demo/index.html' });
+    const annotationRuntime = await import('../../public/page-edit/runtime/annotations.js');
+    const { default: VisBug } = await import(
+      '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+    );
+
+    annotationRuntime.clearSelectionAnnotationUi();
+    const previousRequestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    }) as typeof window.requestAnimationFrame;
+
+    document.body.innerHTML = '<main><div id="target">测试备注</div></main>';
+    const target = document.getElementById('target') as HTMLElement | null;
+    expect(target).toBeTruthy();
+
+    annotationRuntime.upsertSelectionAnnotation(target!, '跟随元素移动');
+
+    const visbug = new VisBug();
+    const savedHtml = visbug.serializeCurrentDocument();
+
+    const savedDom = new JSDOM(savedHtml, {
+      url: 'file:///Users/demo/index.html',
+      runScripts: 'dangerously',
+    });
+
+    try {
+      const marker = savedDom.window.document.querySelector(
+        '[data-webmcp-annotation-marker="true"]',
+      ) as HTMLElement | null;
+      expect(marker).toBeTruthy();
+
+      let rect = { top: 120, right: 320, height: 24, left: 280, bottom: 144, width: 36 };
+      Object.defineProperty(marker!, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({
+          ...rect,
+          x: rect.left,
+          y: rect.top,
+          toJSON() {
+            return this;
+          },
+        }),
+      });
+
+      marker?.dispatchEvent(
+        new savedDom.window.MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      const popover = savedDom.window.document.querySelector(
+        '[data-webmcp-saved-annotation-popover="true"]',
+      ) as HTMLElement | null;
+      expect(popover).toBeTruthy();
+      const popoverLeft = popover!.style.left;
+      const popoverTop = popover!.style.top;
+
+      rect = { top: 240, right: 520, height: 24, left: 480, bottom: 264, width: 36 };
+      savedDom.window.dispatchEvent(new savedDom.window.Event('scroll'));
+
+      expect(popover!.style.left).not.toBe(popoverLeft);
+      expect(popover!.style.top).not.toBe(popoverTop);
     } finally {
       savedDom.window.close();
       window.requestAnimationFrame = previousRequestAnimationFrame;

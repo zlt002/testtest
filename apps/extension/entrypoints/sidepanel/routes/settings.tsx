@@ -225,15 +225,17 @@ function resolveSelectedSourceAvailability(input: {
     input.runtimeInfo?.selectedAuthSource === input.selectedAuthSource;
 
   if (input.selectedAuthSource === 'user_claude_settings') {
-    return input.userClaudeSettingsTestResult?.ok ?? (runtimeMatchesSelectedSource
-      ? (input.runtimeInfo?.available ?? false)
-      : false);
+    return (
+      input.userClaudeSettingsTestResult?.ok ??
+      (runtimeMatchesSelectedSource ? (input.runtimeInfo?.available ?? false) : false)
+    );
   }
 
   if (input.selectedAuthSource === 'project_model_config') {
-    return input.projectModelConfigTestResult?.ok ?? (runtimeMatchesSelectedSource
-      ? (input.runtimeInfo?.available ?? false)
-      : false);
+    return (
+      input.projectModelConfigTestResult?.ok ??
+      (runtimeMatchesSelectedSource ? (input.runtimeInfo?.available ?? false) : false)
+    );
   }
 
   return input.runtimeInfo?.available ?? false;
@@ -254,6 +256,34 @@ function formatProbeStatusLabel(status: ModelSourceProbeStatus): string {
     default:
       return '检测中';
   }
+}
+
+function formatOfficialQuotaResetCycle(resetCycle: AgentOfficialQuota['resetCycle']): string {
+  switch (resetCycle) {
+    case 'daily':
+      return '每日';
+    case 'weekly':
+      return '每周';
+    case 'monthly':
+      return '每月';
+    case 'unlimited':
+      return '不限额';
+    default:
+      return resetCycle;
+  }
+}
+
+function formatOfficialQuotaResetTime(nextResetTime: string | null): string | null {
+  if (!nextResetTime) {
+    return null;
+  }
+
+  const parsedDate = new Date(nextResetTime);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate.toLocaleString('zh-CN');
 }
 
 export function ModelSettings({
@@ -574,7 +604,9 @@ export function ModelSettings({
                       </Button>
                       <Button
                         variant="outline"
-                        onClick={() => window.open(OFFICIAL_API_KEY_PORTAL_URL, '_blank', 'noreferrer')}
+                        onClick={() =>
+                          window.open(OFFICIAL_API_KEY_PORTAL_URL, '_blank', 'noreferrer')
+                        }
                       >
                         查看Key
                       </Button>
@@ -632,19 +664,29 @@ export function ModelSettings({
                     {officialQuotaError ? (
                       <div className="text-xs text-destructive">{officialQuotaError}</div>
                     ) : officialQuota ? (
-                      <>
-                        <div className="text-muted-foreground">
-                          {officialQuota.usagePercent === null
-                            ? '当前 Key 为不限额'
-                            : `已使用 ${officialQuota.usagePercent.toFixed(1)}%`}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          重置周期：{officialQuota.resetCycle}
-                          {officialQuota.nextResetTime
-                            ? `，下次重置：${new Date(officialQuota.nextResetTime).toLocaleString('zh-CN')}`
-                            : ''}
-                        </div>
-                      </>
+                      (() => {
+                        const formattedResetCycle = formatOfficialQuotaResetCycle(
+                          officialQuota.resetCycle
+                        );
+                        const formattedResetTime =
+                          officialQuota.resetCycle === 'unlimited'
+                            ? null
+                            : formatOfficialQuotaResetTime(officialQuota.nextResetTime);
+
+                        return (
+                          <>
+                            <div className="text-muted-foreground">
+                              {officialQuota.usagePercent === null
+                                ? '当前 Key 为不限额'
+                                : `已使用 ${officialQuota.usagePercent.toFixed(1)}%`}
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              重置周期：{formattedResetCycle}
+                              {formattedResetTime ? `，下次重置：${formattedResetTime}` : ''}
+                            </div>
+                          </>
+                        );
+                      })()
                     ) : (
                       <div className="text-xs text-muted-foreground">
                         输入官方 Key 后自动加载额度信息。
@@ -771,7 +813,9 @@ export function ModelSettings({
                             )
                           }
                           placeholder={
-                            isDeepSeekAnthropicConfig ? DEEPSEEK_DEFAULT_MODEL : '可直接输入任意模型名'
+                            isDeepSeekAnthropicConfig
+                              ? DEEPSEEK_DEFAULT_MODEL
+                              : '可直接输入任意模型名'
                           }
                         />
                       </div>

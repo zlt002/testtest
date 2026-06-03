@@ -499,6 +499,7 @@ vi.mock('@/entrypoints/sidepanel/components/agent-composer/AgentComposer', () =>
     isDecisionBlocked,
     attachments = [],
     onAttachmentsChange,
+    secondaryOverlay,
   }: {
     value: string;
     onChange: (value: string) => void;
@@ -511,8 +512,12 @@ vi.mock('@/entrypoints/sidepanel/components/agent-composer/AgentComposer', () =>
     onAttachmentsChange?: (
       value: Array<{ id: string }> | ((current: Array<{ id: string }>) => Array<{ id: string }>)
     ) => void;
+    secondaryOverlay?: ReactNode;
   }) => (
-    <div>
+    <div className="relative">
+      {secondaryOverlay ? (
+        <div data-testid="dom-analysis-suggestion-layer">{secondaryOverlay}</div>
+      ) : null}
       <button
         type="button"
         aria-label={`权限等级：${

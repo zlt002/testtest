@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 let dom: JSDOM;
 let previousGlobals: Record<string, unknown>;
 let previousElementFromPoint: Document['elementFromPoint'] | undefined;
+let previousElementsFromPoint: Document['elementsFromPoint'] | undefined;
 
 const baseFixture = `
   <section id="app-shell">
@@ -61,6 +62,7 @@ beforeAll(() => {
   });
 
   previousElementFromPoint = document.elementFromPoint?.bind(document);
+  previousElementsFromPoint = document.elementsFromPoint?.bind(document);
 });
 
 beforeEach(() => {
@@ -73,6 +75,11 @@ afterEach(() => {
     document.elementFromPoint = previousElementFromPoint;
   } else {
     delete document.elementFromPoint;
+  }
+  if (previousElementsFromPoint) {
+    document.elementsFromPoint = previousElementsFromPoint;
+  } else {
+    delete document.elementsFromPoint;
   }
   document.onkeydown = null;
   document.onkeyup = null;
@@ -177,6 +184,88 @@ async function withSelectableFixture(
 }
 
 describe('page-edit freeze page interactions', () => {
+  it('selects same-origin iframe inner elements when the click happens inside the iframe document', async () => {
+    document.body.innerHTML = `
+      <section id="app-shell">
+        <iframe id="micro-frame"></iframe>
+      </section>
+    `;
+
+    const iframe = document.getElementById('micro-frame') as HTMLIFrameElement;
+    const innerDocument = iframe.contentDocument as Document;
+    innerDocument.body.innerHTML = `
+      <main id="page-root">
+        <div id="cell">B2B</div>
+      </main>
+    `;
+
+    const shell = document.getElementById('app-shell') as HTMLElement;
+    const cell = innerDocument.getElementById('cell') as HTMLElement;
+
+    Object.defineProperty(iframe, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        x: 100,
+        y: 200,
+        left: 100,
+        top: 200,
+        width: 800,
+        height: 400,
+        right: 900,
+        bottom: 600,
+        toJSON() {
+          return this;
+        },
+      }),
+    });
+
+    Object.defineProperty(cell, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        x: 24,
+        y: 36,
+        left: 24,
+        top: 36,
+        width: 80,
+        height: 24,
+        right: 104,
+        bottom: 60,
+        toJSON() {
+          return this;
+        },
+      }),
+    });
+
+    document.elementFromPoint = () => iframe;
+    document.elementsFromPoint = () => [iframe, shell];
+    innerDocument.elementFromPoint = () => cell;
+    innerDocument.elementsFromPoint = () => [cell];
+
+    await withSelectableFixture(async ({ selectable }) => {
+      await Promise.resolve();
+      const view = innerDocument.defaultView!;
+      const downEvent = new view.MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: 24,
+        clientY: 36,
+      });
+      const clickEvent = new view.MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: 24,
+        clientY: 36,
+      });
+
+      cell.dispatchEvent(downEvent);
+      cell.dispatchEvent(clickEvent);
+
+      expect(selectable.selection()).toEqual([cell]);
+    });
+  });
+
   it('blocks page business click handlers while editing', async () => {
     const clickSpy = vi.fn();
     const button = document.getElementById('open-picker') as HTMLButtonElement;

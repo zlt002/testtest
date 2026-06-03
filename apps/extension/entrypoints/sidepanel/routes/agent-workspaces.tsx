@@ -742,6 +742,17 @@ function SessionButton({
   );
 }
 
+function buildOptimisticSessionSummary(
+  session: ClaudeSessionSummary,
+  selection: AgentV2SessionSelection
+): ClaudeSessionSummary {
+  return {
+    ...session,
+    updatedAt: selection.selectedAt || session.updatedAt,
+    title: sanitizeSessionTitle(selection.title) || session.title,
+  };
+}
+
 function FileTreeToolbar({
   activeDirPath,
   searchQuery,
@@ -1684,7 +1695,10 @@ export function AgentWorkspacesContent({
   );
 
   const syncCurrentSessionSelection = useCallback(
-    async (selection: AgentV2SessionSelection | null) => {
+    async (
+      selection: AgentV2SessionSelection | null,
+      options?: { refreshIfSessionExists?: boolean }
+    ) => {
       setCurrentSessionSelection(selection);
       if (!activeProject) {
         return;
@@ -1699,7 +1713,10 @@ export function AgentWorkspacesContent({
       if (!selection?.sessionId) {
         return;
       }
-      if (sessions.sessions.some((session) => session.sessionId === selection.sessionId)) {
+      const sessionExists = sessions.sessions.some(
+        (session) => session.sessionId === selection.sessionId
+      );
+      if (sessionExists && !options?.refreshIfSessionExists) {
         return;
       }
       await sessions.refresh({ projectPath: activeProject.projectPath });
@@ -1715,10 +1732,18 @@ export function AgentWorkspacesContent({
     if (!sameProjectPath(selectionProjectPath, activeProject.projectPath)) {
       return sessions.sessions;
     }
-    if (
-      sessions.sessions.some((session) => session.sessionId === currentSessionSelection.sessionId)
-    ) {
-      return sessions.sessions;
+    const existingSession = sessions.sessions.find(
+      (session) => session.sessionId === currentSessionSelection.sessionId
+    );
+    if (existingSession) {
+      const optimisticSession = buildOptimisticSessionSummary(
+        existingSession,
+        currentSessionSelection
+      );
+      return [
+        optimisticSession,
+        ...sessions.sessions.filter((session) => session.sessionId !== optimisticSession.sessionId),
+      ];
     }
     const optimisticSession: ClaudeSessionSummary = {
       sessionId: currentSessionSelection.sessionId,
@@ -1761,7 +1786,7 @@ export function AgentWorkspacesContent({
         typeof change.newValue === 'object' && change.newValue !== null
           ? (change.newValue as AgentV2SessionSelection)
           : null;
-      void syncCurrentSessionSelection(nextSelection);
+      void syncCurrentSessionSelection(nextSelection, { refreshIfSessionExists: true });
     };
 
     chrome.storage.onChanged?.addListener(handleStorageChange);

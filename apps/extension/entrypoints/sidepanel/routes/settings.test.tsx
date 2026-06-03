@@ -213,11 +213,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-import {
-  ModelSettings,
-  SettingsPanel,
-  trimOptionalValue,
-} from './settings';
+import { ModelSettings, SettingsPanel, trimOptionalValue } from './settings';
 
 function getInputBySectionLabel(container: HTMLElement, labelText: string): HTMLInputElement {
   const label = Array.from(container.querySelectorAll('label')).find(
@@ -274,7 +270,7 @@ afterEach(async () => {
   agentClientMocks.startSystemUpdate.mockClear();
   routerMocks.navigate.mockClear();
   // moved out of afterEach
-    /*
+  /*
     routeSearch.mode = 'workspace';
     routeSearch.projectPath = '/tmp/project';
     routeSearch.entryPath = 'captures/mock';
@@ -630,7 +626,6 @@ describe('ModelSettings', () => {
     expect(trimOptionalValue(undefined)).toBeUndefined();
   });
 
-
   it('renders official mode with fixed gateway and quota info', () => {
     const view = render(
       <ModelSettings
@@ -671,7 +666,49 @@ describe('ModelSettings', () => {
 
     expect(view.getByDisplayValue('https://anapi-uat.annto.com/api-sse-anthropic')).toBeTruthy();
     expect(view.getByText('已使用 15.6%')).toBeTruthy();
-    expect(view.getByText(/重置周期：daily/)).toBeTruthy();
+    expect(view.getByText(/重置周期：每日/)).toBeTruthy();
+  });
+
+  it('renders unlimited official quota without next reset time', () => {
+    const view = render(
+      <ModelSettings
+        localConfig={baseModelConfig({
+          configMode: 'official',
+          anthropicModelName: 'claude-sonnet-4-6',
+          anthropicBaseUrl: 'https://anapi-uat.annto.com/api-sse-anthropic/v1',
+        })}
+        setLocalConfig={vi.fn()}
+        runtimeInfo={null}
+        selectedAuthSource="project_model_config"
+        userClaudeSettings={baseUserClaudeSettings()}
+        userClaudeSettingsText={baseUserClaudeSettings().rawJson ?? ''}
+        onChangeUserClaudeSettingsText={vi.fn()}
+        officialModels={[{ id: 'claude-sonnet-4-6', ownedBy: 'openai' }]}
+        officialModelsPending={false}
+        officialModelsError={null}
+        officialQuota={{
+          usagePercent: null,
+          nextResetTime: null,
+          resetCycle: 'unlimited',
+        }}
+        officialQuotaPending={false}
+        officialQuotaError={null}
+        onRefreshOfficialData={vi.fn()}
+        onSelectAuthSource={vi.fn()}
+        onSaveUserClaudeSettings={vi.fn()}
+        onSaveProjectConfig={vi.fn()}
+        onTestUserClaudeSettings={vi.fn()}
+        onTestProjectModelConfig={vi.fn()}
+        userClaudeSettingsTestResult={null}
+        userClaudeSettingsSavePending={false}
+        userClaudeSettingsTestPending={false}
+        projectModelConfigTestResult={null}
+        projectModelConfigTestPending={false}
+      />
+    );
+
+    expect(view.getByText('当前 Key 为不限额')).toBeTruthy();
+    expect(view.getByText('重置周期：不限额')).toBeTruthy();
   });
 
   it('does not warn when the official model select receives a value after first render', () => {
@@ -784,9 +821,7 @@ describe('ModelSettings', () => {
       );
     }
 
-    const view = render(
-      <StatefulModelSettings />
-    );
+    const view = render(<StatefulModelSettings />);
 
     const input = getInputBySectionLabel(view.container, 'Anthropic URL');
     expect(input.value).toBe('https://example.com/anthropic/v1');
@@ -1020,6 +1055,7 @@ describe('SettingsPanel', () => {
       expect(agentClientMocks.getOfficialQuota).toHaveBeenCalledWith('sk-official');
     });
     expect(view.getByText('已使用 15.6%')).toBeTruthy();
+    expect(view.getByText(/重置周期：每日/)).toBeTruthy();
     fireEvent.click(view.getByRole('button', { name: '保存项目模型配置' }));
     await waitFor(() => {
       expect(agentClientMocks.updateModelConfig).toHaveBeenCalledWith(
@@ -1282,45 +1318,51 @@ describe('SettingsPanel', () => {
       userClaudeSettings: baseUserClaudeSettings(),
     }));
     agentClientMocks.testModelConfig
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: false,
-          message: '用户级 Claude settings 自动测试失败',
-          runtimeAuthSummary: '认证摘要 | source=user_claude_settings | available=false',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'user_claude_settings',
-            selectedAuthSource: 'project_model_config',
-            available: false,
-            reason: '自动测试失败',
-          }),
-        },
-      }))
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: false,
-          message: '项目模型配置自动测试失败',
-          runtimeAuthSummary: '认证摘要 | source=project_model_config | available=false',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'project_model_config',
-            selectedAuthSource: 'project_model_config',
-            available: false,
-            reason: '自动测试失败',
-          }),
-        },
-      }))
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: true,
-          message: '项目模型配置测试成功',
-          runtimeAuthSummary: '认证摘要 | source=project_model_config | available=true',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'project_model_config',
-            selectedAuthSource: options?.targetAuthSource ?? 'project_model_config',
-            available: true,
-            reason: '测试成功',
-          }),
-        },
-      }));
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: false,
+            message: '用户级 Claude settings 自动测试失败',
+            runtimeAuthSummary: '认证摘要 | source=user_claude_settings | available=false',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'user_claude_settings',
+              selectedAuthSource: 'project_model_config',
+              available: false,
+              reason: '自动测试失败',
+            }),
+          },
+        })
+      )
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: false,
+            message: '项目模型配置自动测试失败',
+            runtimeAuthSummary: '认证摘要 | source=project_model_config | available=false',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'project_model_config',
+              selectedAuthSource: 'project_model_config',
+              available: false,
+              reason: '自动测试失败',
+            }),
+          },
+        })
+      )
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: true,
+            message: '项目模型配置测试成功',
+            runtimeAuthSummary: '认证摘要 | source=project_model_config | available=true',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'project_model_config',
+              selectedAuthSource: options?.targetAuthSource ?? 'project_model_config',
+              available: true,
+              reason: '测试成功',
+            }),
+          },
+        })
+      );
 
     const view = render(<SettingsPanel />);
 
@@ -1335,9 +1377,7 @@ describe('SettingsPanel', () => {
     await waitFor(() => {
       expect(agentClientMocks.testModelConfig).toHaveBeenCalledTimes(1);
       expect(
-        view.queryByText(
-          '当前选中的来源不可用。请修复此来源，或切换到另一种来源后重新测试。'
-        )
+        view.queryByText('当前选中的来源不可用。请修复此来源，或切换到另一种来源后重新测试。')
       ).toBeNull();
     });
   });
@@ -1359,32 +1399,36 @@ describe('SettingsPanel', () => {
       userClaudeSettings: baseUserClaudeSettings(),
     }));
     agentClientMocks.testModelConfig
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: false,
-          message: '用户级 Claude settings 自动测试失败',
-          runtimeAuthSummary: '认证摘要 | source=user_claude_settings | available=false',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'user_claude_settings',
-            selectedAuthSource: 'project_model_config',
-            available: false,
-            reason: '自动测试失败',
-          }),
-        },
-      }))
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: false,
-          message: '项目模型配置自动测试失败',
-          runtimeAuthSummary: '认证摘要 | source=project_model_config | available=false',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'project_model_config',
-            selectedAuthSource: 'project_model_config',
-            available: false,
-            reason: '自动测试失败',
-          }),
-        },
-      }));
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: false,
+            message: '用户级 Claude settings 自动测试失败',
+            runtimeAuthSummary: '认证摘要 | source=user_claude_settings | available=false',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'user_claude_settings',
+              selectedAuthSource: 'project_model_config',
+              available: false,
+              reason: '自动测试失败',
+            }),
+          },
+        })
+      )
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: false,
+            message: '项目模型配置自动测试失败',
+            runtimeAuthSummary: '认证摘要 | source=project_model_config | available=false',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'project_model_config',
+              selectedAuthSource: 'project_model_config',
+              available: false,
+              reason: '自动测试失败',
+            }),
+          },
+        })
+      );
     agentClientMocks.updateModelConfig.mockImplementationOnce(async (config) => ({
       config,
       runtime: baseRuntimeInfo({
@@ -1410,9 +1454,7 @@ describe('SettingsPanel', () => {
         selectedAuthSource: 'project_model_config',
       });
       expect(
-        view.queryByText(
-          '当前选中的来源不可用。请修复此来源，或切换到另一种来源后重新测试。'
-        )
+        view.queryByText('当前选中的来源不可用。请修复此来源，或切换到另一种来源后重新测试。')
       ).toBeNull();
     });
   });
@@ -1478,32 +1520,36 @@ describe('SettingsPanel', () => {
       userClaudeSettings: baseUserClaudeSettings(),
     }));
     agentClientMocks.testModelConfig
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: false,
-          message: '用户级 Claude settings 自动测试失败',
-          runtimeAuthSummary: '认证摘要 | source=user_claude_settings | available=false',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'user_claude_settings',
-            selectedAuthSource: 'project_model_config',
-            available: false,
-            reason: '自动测试失败',
-          }),
-        },
-      }))
-      .mockImplementationOnce(async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
-        result: {
-          ok: true,
-          message: '项目模型配置测试成功',
-          runtimeAuthSummary: '认证摘要 | source=project_model_config | available=true',
-          runtime: baseRuntimeInfo({
-            authSource: options?.targetAuthSource ?? 'project_model_config',
-            selectedAuthSource: 'project_model_config',
-            available: false,
-            reason: '运行时状态尚未刷新',
-          }),
-        },
-      }));
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: false,
+            message: '用户级 Claude settings 自动测试失败',
+            runtimeAuthSummary: '认证摘要 | source=user_claude_settings | available=false',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'user_claude_settings',
+              selectedAuthSource: 'project_model_config',
+              available: false,
+              reason: '自动测试失败',
+            }),
+          },
+        })
+      )
+      .mockImplementationOnce(
+        async (_config, options?: { targetAuthSource?: AgentAuthSource }) => ({
+          result: {
+            ok: true,
+            message: '项目模型配置测试成功',
+            runtimeAuthSummary: '认证摘要 | source=project_model_config | available=true',
+            runtime: baseRuntimeInfo({
+              authSource: options?.targetAuthSource ?? 'project_model_config',
+              selectedAuthSource: 'project_model_config',
+              available: false,
+              reason: '运行时状态尚未刷新',
+            }),
+          },
+        })
+      );
 
     const view = render(<SettingsPanel />);
 

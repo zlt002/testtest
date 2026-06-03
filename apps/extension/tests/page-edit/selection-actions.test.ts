@@ -1842,6 +1842,191 @@ describe('selection-actions helpers', () => {
       });
     });
 
+    it('prefers inner business elements over oversized main containers on the same hit point', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <main id="main-shell">
+          <section id="filter-bar">
+            <button id="query-button">查询</button>
+          </section>
+        </main>
+      `;
+
+      const mainShell = document.getElementById('main-shell') as HTMLElement;
+      const filterBar = document.getElementById('filter-bar') as HTMLElement;
+      const queryButton = document.getElementById('query-button') as HTMLElement;
+
+      const elements = [
+        [mainShell, new window.DOMRect(0, 0, 1400, 900)],
+        [filterBar, new window.DOMRect(120, 140, 420, 72)],
+        [queryButton, new window.DOMRect(160, 156, 88, 32)],
+      ] as const;
+
+      for (const [element, rect] of elements) {
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => rect,
+        });
+      }
+
+      document.elementFromPoint = vi.fn(() => mainShell);
+      Object.defineProperty(document, 'elementsFromPoint', {
+        configurable: true,
+        value: vi.fn(() => [mainShell, filterBar, queryButton, document.body, document.documentElement]),
+      });
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(mainShell, 'mousedown', {
+          clientX: 180,
+          clientY: 168,
+          button: 0,
+        });
+        dispatchMouse(mainShell, 'click', {
+          clientX: 180,
+          clientY: 168,
+          button: 0,
+        });
+
+        expect(selectable.selection()).toHaveLength(1);
+        expect(selectable.selection()[0]).toBe(queryButton);
+      });
+    });
+
+    it('keeps descending through micro-app business containers until it reaches an inner control', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <micro-app id="micro-app-host">
+          <micro-app-body id="micro-body">
+            <div id="otp-app">
+              <section id="outer-section">
+                <main id="inner-main">
+                  <div id="layout-content">
+                    <div id="toolbar-block">
+                      <button id="query-button">查询</button>
+                    </div>
+                  </div>
+                </main>
+              </section>
+            </div>
+          </micro-app-body>
+        </micro-app>
+      `;
+
+      const microAppHost = document.getElementById('micro-app-host') as HTMLElement;
+      const microBody = document.getElementById('micro-body') as HTMLElement;
+      const otpApp = document.getElementById('otp-app') as HTMLElement;
+      const outerSection = document.getElementById('outer-section') as HTMLElement;
+      const innerMain = document.getElementById('inner-main') as HTMLElement;
+      const layoutContent = document.getElementById('layout-content') as HTMLElement;
+      const toolbarBlock = document.getElementById('toolbar-block') as HTMLElement;
+      const queryButton = document.getElementById('query-button') as HTMLElement;
+
+      const elements = [
+        [microAppHost, new window.DOMRect(0, 0, 1462, 476)],
+        [microBody, new window.DOMRect(0, 0, 1462, 476)],
+        [otpApp, new window.DOMRect(0, 0, 1462, 476)],
+        [outerSection, new window.DOMRect(0, 0, 1462, 476)],
+        [innerMain, new window.DOMRect(0, 0, 1420, 430)],
+        [layoutContent, new window.DOMRect(20, 20, 1380, 390)],
+        [toolbarBlock, new window.DOMRect(1040, 46, 220, 40)],
+        [queryButton, new window.DOMRect(1054, 50, 72, 32)],
+      ] as const;
+
+      for (const [element, rect] of elements) {
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => rect,
+        });
+      }
+
+      document.elementFromPoint = vi.fn(() => outerSection);
+      Object.defineProperty(document, 'elementsFromPoint', {
+        configurable: true,
+        value: vi.fn(() => [outerSection, innerMain, layoutContent, toolbarBlock, document.body]),
+      });
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(outerSection, 'mousedown', {
+          clientX: 1060,
+          clientY: 60,
+          button: 0,
+        });
+        dispatchMouse(outerSection, 'click', {
+          clientX: 1060,
+          clientY: 60,
+          button: 0,
+        });
+
+        expect(selectable.selection()).toHaveLength(1);
+        expect(selectable.selection()[0]).toBe(queryButton);
+      });
+    });
+
+    it('promotes inline leaf hits inside a button to the button itself', async () => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+
+      document.body.innerHTML = `
+        <section id="panel">
+          <button id="query-button" class="md-button md-button--primary">
+            <i id="query-icon" class="el-icon-search"></i>
+            <span id="query-text">查询</span>
+          </button>
+        </section>
+      `;
+
+      const panel = document.getElementById('panel') as HTMLElement;
+      const queryButton = document.getElementById('query-button') as HTMLElement;
+      const queryIcon = document.getElementById('query-icon') as HTMLElement;
+      const queryText = document.getElementById('query-text') as HTMLElement;
+
+      const elements = [
+        [panel, new window.DOMRect(0, 0, 400, 200)],
+        [queryButton, new window.DOMRect(100, 80, 96, 32)],
+        [queryIcon, new window.DOMRect(110, 88, 14, 14)],
+        [queryText, new window.DOMRect(132, 86, 32, 18)],
+      ] as const;
+
+      for (const [element, rect] of elements) {
+        Object.defineProperty(element, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => rect,
+        });
+      }
+
+      document.elementFromPoint = vi.fn(() => queryIcon);
+      Object.defineProperty(document, 'elementsFromPoint', {
+        configurable: true,
+        value: vi.fn(() => [queryIcon, queryButton, panel, document.body, document.documentElement]),
+      });
+
+      await withSelectableFixture(({ selectable }) => {
+        dispatchMouse(queryIcon, 'mousedown', {
+          clientX: 116,
+          clientY: 94,
+          button: 0,
+        });
+        dispatchMouse(queryIcon, 'click', {
+          clientX: 116,
+          clientY: 94,
+          button: 0,
+        });
+
+        expect(selectable.selection()).toHaveLength(1);
+        expect(selectable.selection()[0]).toBe(queryButton);
+      });
+    });
+
     it('clears the previous selection after SPA route changes', async () => {
       document.documentElement.setAttribute(
         'data-webmcp-page-edit-config',

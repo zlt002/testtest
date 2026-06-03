@@ -1,10 +1,11 @@
 // @vitest-environment node
 
 import { JSDOM } from 'jsdom';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 let dom: JSDOM;
 let previousGlobals: Record<string, unknown>;
+let previousElementFromPoint: Document['elementFromPoint'] | undefined;
 
 beforeAll(() => {
   dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -48,6 +49,21 @@ beforeAll(() => {
     configurable: true,
     value: dom.window.navigator,
   });
+
+  previousElementFromPoint = document.elementFromPoint?.bind(document);
+});
+
+afterEach(() => {
+  document.body.innerHTML = '';
+  document.documentElement.removeAttribute('data-webmcp-page-edit-config');
+  document.onkeydown = null;
+  document.onkeyup = null;
+
+  if (previousElementFromPoint) {
+    document.elementFromPoint = previousElementFromPoint;
+  } else {
+    delete document.elementFromPoint;
+  }
 });
 
 afterAll(() => {
@@ -59,6 +75,58 @@ afterAll(() => {
     value: previousNavigator,
   });
 });
+
+function dispatchKeyboard(
+  type: 'keydown' | 'keyup',
+  init: KeyboardEventInit & { keyCode: number },
+) {
+  const event = new window.KeyboardEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+
+  Object.defineProperty(event, 'keyCode', {
+    configurable: true,
+    get: () => init.keyCode,
+  });
+  Object.defineProperty(event, 'which', {
+    configurable: true,
+    get: () => init.keyCode,
+  });
+
+  document.dispatchEvent(event);
+}
+
+function triggerShortcut(init: KeyboardEventInit & { key: string; keyCode: number }) {
+  const modifierEvents: Array<KeyboardEventInit & { key: string; keyCode: number }> = [];
+
+  if (init.ctrlKey) {
+    modifierEvents.push({ key: 'Control', ctrlKey: true, keyCode: 17 });
+  }
+
+  if (init.metaKey) {
+    modifierEvents.push({ key: 'Meta', metaKey: true, keyCode: 91 });
+  }
+
+  if (init.shiftKey) {
+    modifierEvents.push({
+      key: 'Shift',
+      ctrlKey: init.ctrlKey,
+      metaKey: init.metaKey,
+      shiftKey: true,
+      keyCode: 16,
+    });
+  }
+
+  modifierEvents.forEach(event => dispatchKeyboard('keydown', event));
+  dispatchKeyboard('keydown', init);
+  dispatchKeyboard('keyup', init);
+  modifierEvents
+    .slice()
+    .reverse()
+    .forEach(event => dispatchKeyboard('keyup', event));
+}
 
 describe('page-edit bottom toolbar shell', () => {
   it('includes flat bottom toolbar shell styles for idle and selected states', async () => {
@@ -512,4 +580,90 @@ describe('page-edit bottom toolbar shell', () => {
 
     visbug.disconnectedCallback();
   });
+
+  it.each([
+    ['padding', 'paddingTop', '5px', '8px'],
+    ['margin', 'marginTop', '13px', '16px'],
+  ])(
+    'syncs %s panel inputs after shortcut-based style updates',
+    async (toolId, topKey, expectedTop, expectedRight) => {
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'local-snapshot' }),
+      );
+
+      document.body.innerHTML = `
+        <div
+          id="target"
+          style="
+            padding-top: 4px;
+            padding-right: 8px;
+            padding-bottom: 4px;
+            padding-left: 8px;
+            margin-top: 12px;
+            margin-right: 16px;
+            margin-bottom: 12px;
+            margin-left: 16px;
+          "
+        >Hello</div>
+      `;
+
+      const { default: VisBug } = await import(
+        '../../public/page-edit/vendor/app/components/vis-bug/vis-bug.element.js'
+      );
+
+      const visbug = document.createElement('vis-bug') as InstanceType<typeof VisBug>;
+      document.body.appendChild(visbug);
+      visbug.connectedCallback();
+
+      const target = document.getElementById('target') as HTMLElement;
+      Object.defineProperty(target, 'computedStyleMap', {
+        configurable: true,
+        value: () => ({
+          get(property: string) {
+            const value = window.getComputedStyle(target).getPropertyValue(property);
+            return {
+              value: Number.parseFloat(value) || 0,
+            };
+          },
+        }),
+      });
+      visbug.selectorEngine.select(target);
+      visbug.activateBottomToolbarTool(toolId);
+      visbug.toggleSpacingPanelMode(toolId);
+
+      const topInput = visbug.$shadow.querySelector(
+        `input[data-spacing-kind="${toolId}"][data-spacing-input="top"]`,
+      ) as HTMLInputElement | null;
+      const rightInput = visbug.$shadow.querySelector(
+        `input[data-spacing-kind="${toolId}"][data-spacing-input="right"]`,
+      ) as HTMLInputElement | null;
+
+      expect(topInput?.value).toBe(
+        toolId === 'padding' ? '4px' : '12px',
+      );
+      expect(rightInput?.value).toBe(
+        toolId === 'padding' ? '8px' : '16px',
+      );
+
+      triggerShortcut({
+        key: 'ArrowUp',
+        keyCode: 38,
+      });
+
+      const refreshedTopInput = visbug.$shadow.querySelector(
+        `input[data-spacing-kind="${toolId}"][data-spacing-input="top"]`,
+      ) as HTMLInputElement | null;
+      const refreshedRightInput = visbug.$shadow.querySelector(
+        `input[data-spacing-kind="${toolId}"][data-spacing-input="right"]`,
+      ) as HTMLInputElement | null;
+
+      expect(target.style[topKey as keyof CSSStyleDeclaration]).toBe(expectedTop);
+      expect(refreshedTopInput?.value).toBe(expectedTop);
+      expect(refreshedRightInput?.value).toBe(expectedRight);
+
+      visbug.disconnectedCallback();
+      visbug.remove();
+    },
+  );
 });

@@ -4964,36 +4964,7 @@ export function Chat() {
           )
         : null}
 
-      <div
-        data-chat-v2-composer-dock="true"
-        data-testid="chat-v2-composer-dock"
-        className="relative z-30"
-      >
-        {domAnalysisSuggestion &&
-        domAnalysisSuggestion.createdAt !== dismissedDomAnalysisSuggestionCreatedAt ? (
-          <div
-            data-testid="dom-analysis-suggestion-layer"
-            className="absolute bottom-full left-0 right-0 z-10 mb-0 px-3"
-          >
-            <DomAnalysisSuggestionCard
-              card={domAnalysisSuggestion.card}
-              suggestedCommand={domAnalysisSuggestion.suggestedCommand}
-              onInsertCommand={() => {
-                replaceInput(
-                  buildDomAnalysisSuggestionInsertText({
-                    card: domAnalysisSuggestion.card,
-                    suggestedCommand: domAnalysisSuggestion.suggestedCommand,
-                  })
-                );
-                setDomAnalysisSuggestion(null);
-                setDismissedDomAnalysisSuggestionCreatedAt(null);
-              }}
-              onClose={() => {
-                setDismissedDomAnalysisSuggestionCreatedAt(domAnalysisSuggestion.createdAt);
-              }}
-            />
-          </div>
-        ) : null}
+      <div data-chat-v2-composer-dock="true" data-testid="chat-v2-composer-dock" className="z-30">
         {stream.error ? (
           <div className="mx-3 mb-2 flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs text-destructive">
             <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{stream.error}</span>
@@ -5063,6 +5034,28 @@ export function Chat() {
             onToggleSelectedTab={handleToggleSelectedTab}
             onClearSelectedTabs={handleClearSelectedTabs}
             isWorkspaceSelectionRequired={isWorkspaceSelectionRequired}
+            secondaryOverlay={
+              domAnalysisSuggestion &&
+              domAnalysisSuggestion.createdAt !== dismissedDomAnalysisSuggestionCreatedAt ? (
+                <DomAnalysisSuggestionCard
+                  card={domAnalysisSuggestion.card}
+                  suggestedCommand={domAnalysisSuggestion.suggestedCommand}
+                  onInsertCommand={() => {
+                    replaceInput(
+                      buildDomAnalysisSuggestionInsertText({
+                        card: domAnalysisSuggestion.card,
+                        suggestedCommand: domAnalysisSuggestion.suggestedCommand,
+                      })
+                    );
+                    setDomAnalysisSuggestion(null);
+                    setDismissedDomAnalysisSuggestionCreatedAt(null);
+                  }}
+                  onClose={() => {
+                    setDismissedDomAnalysisSuggestionCreatedAt(domAnalysisSuggestion.createdAt);
+                  }}
+                />
+              ) : null
+            }
             status={stream.status}
             contextPercent={stream.contextPercent}
             permissionMode={permissionMode}

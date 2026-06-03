@@ -133,78 +133,185 @@ const runCleanupStep = (label, step) => {
 
 const savedAnnotationViewerScript = `(() => {
   const markerSelector = '[data-webmcp-annotation-marker="true"]';
-  const dialogSelector = '[data-webmcp-saved-annotation-dialog="true"]';
+  const popoverSelector = '[data-webmcp-saved-annotation-popover="true"]';
+  let cleanup = null;
+  let activeMarker = null;
 
-  const closeDialog = () => {
-    document.querySelectorAll(dialogSelector).forEach((node) => node.remove());
+  const closePopover = () => {
+    document.querySelectorAll(popoverSelector).forEach((node) => node.remove());
+    if (typeof cleanup === 'function') cleanup();
+    cleanup = null;
+    activeMarker = null;
   };
 
-  const openDialog = (content) => {
-    closeDialog();
+  const resolveAnchorElement = (marker) => {
+    const key = marker.getAttribute('data-webmcp-annotation-key') || '';
+    const selector =
+      marker.getAttribute('data-webmcp-annotation-selector') ||
+      (key.startsWith('selector:') ? key.slice('selector:'.length) : '');
+    if (selector) {
+      try {
+        const matched = document.querySelector(selector);
+        if (matched instanceof HTMLElement) return matched;
+      } catch (_) {}
+    }
 
-    const overlay = document.createElement('div');
-    overlay.setAttribute('data-webmcp-saved-annotation-dialog', 'true');
-    overlay.style.position = 'fixed';
-    overlay.style.inset = '0';
-    overlay.style.zIndex = '2147483647';
-    overlay.style.display = 'flex';
-    overlay.style.alignItems = 'center';
-    overlay.style.justifyContent = 'center';
-    overlay.style.background = 'rgba(15, 23, 42, 0.32)';
-    overlay.style.backdropFilter = 'blur(8px)';
-    overlay.style.padding = '16px';
+    const xpath =
+      marker.getAttribute('data-webmcp-annotation-xpath') ||
+      (key.startsWith('xpath:') ? key.slice('xpath:'.length) : '');
+    if (xpath) {
+      try {
+        const result = document.evaluate(
+          xpath,
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null,
+        );
+        if (result.singleNodeValue instanceof HTMLElement) return result.singleNodeValue;
+      } catch (_) {}
+    }
+
+    return null;
+  };
+
+  const positionOverlayMarker = (marker) => {
+    if (!(marker instanceof HTMLElement)) return;
+    const shouldTrackOverlay =
+      marker.getAttribute('data-webmcp-annotation-overlay-marker') === 'true' ||
+      !!marker.closest('[data-webmcp-annotation-overlay-layer="true"]');
+    if (!shouldTrackOverlay) return;
+
+    const anchorElement = resolveAnchorElement(marker);
+    if (!(anchorElement instanceof HTMLElement)) return;
+
+    const rect = anchorElement.getBoundingClientRect();
+    const left = Math.max(6, Math.min(window.innerWidth - 44, rect.right - 14));
+    const top = Math.max(6, Math.min(window.innerHeight - 26, rect.top - 8));
+    marker.style.left = String(Math.round(left)) + 'px';
+    marker.style.top = String(Math.round(top)) + 'px';
+  };
+
+  const refreshOverlayMarkers = () => {
+    document.querySelectorAll(markerSelector).forEach((marker) => positionOverlayMarker(marker));
+  };
+
+  const positionPopover = (popover, anchorRect) => {
+    const gap = 10;
+    const viewportPadding = 12;
+    const rect = popover.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const rightLeft = anchorRect.right + gap;
+    const leftLeft = anchorRect.left - width - gap;
+    let left =
+      rightLeft + width <= window.innerWidth - viewportPadding
+        ? rightLeft
+        : leftLeft >= viewportPadding
+          ? leftLeft
+          : Math.min(
+              Math.max(viewportPadding, anchorRect.left),
+              window.innerWidth - width - viewportPadding,
+            );
+    let top = anchorRect.top + anchorRect.height / 2 - height / 2;
+    top = Math.min(
+      Math.max(viewportPadding, top),
+      Math.max(viewportPadding, window.innerHeight - height - viewportPadding),
+    );
+    popover.style.left = String(Math.round(left)) + 'px';
+    popover.style.top = String(Math.round(top)) + 'px';
+  };
+
+  const openPopover = (content, marker) => {
+    closePopover();
+    activeMarker = marker;
 
     const panel = document.createElement('div');
-    panel.style.width = 'min(520px, calc(100vw - 32px))';
-    panel.style.maxHeight = 'calc(100vh - 48px)';
-    panel.style.overflow = 'auto';
-    panel.style.borderRadius = '20px';
+    panel.setAttribute('data-webmcp-saved-annotation-popover', 'true');
+    panel.style.position = 'fixed';
+    panel.style.zIndex = '2147483647';
+    panel.style.width = 'min(320px, calc(100vw - 24px))';
+    panel.style.maxWidth = '320px';
+    panel.style.borderRadius = '16px';
     panel.style.border = '1px solid rgba(148, 163, 184, 0.22)';
     panel.style.background = 'rgba(255, 255, 255, 0.98)';
     panel.style.color = '#0f172a';
-    panel.style.boxShadow = '0 28px 80px rgba(15, 23, 42, 0.24)';
-    panel.style.padding = '18px 20px 20px';
+    panel.style.boxShadow = '0 18px 42px rgba(15, 23, 42, 0.18)';
+    panel.style.padding = '14px 14px 14px';
     panel.style.fontFamily = 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.alignItems = 'flex-start';
+    header.style.justifyContent = 'space-between';
+    header.style.gap = '10px';
+    header.style.marginBottom = '8px';
 
     const title = document.createElement('div');
     title.textContent = '备注内容';
-    title.style.fontSize = '16px';
+    title.style.fontSize = '14px';
     title.style.fontWeight = '600';
     title.style.lineHeight = '1.4';
-    title.style.marginBottom = '10px';
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.setAttribute('aria-label', '关闭备注');
+    closeButton.textContent = '×';
+    closeButton.style.border = '0';
+    closeButton.style.background = 'transparent';
+    closeButton.style.color = '#64748b';
+    closeButton.style.fontSize = '18px';
+    closeButton.style.lineHeight = '1';
+    closeButton.style.width = '24px';
+    closeButton.style.height = '24px';
+    closeButton.style.padding = '0';
+    closeButton.style.borderRadius = '999px';
+    closeButton.style.cursor = 'pointer';
+    closeButton.style.display = 'inline-flex';
+    closeButton.style.alignItems = 'center';
+    closeButton.style.justifyContent = 'center';
+    closeButton.addEventListener('click', closePopover);
 
     const body = document.createElement('div');
     body.textContent = content;
     body.style.whiteSpace = 'pre-wrap';
     body.style.wordBreak = 'break-word';
-    body.style.fontSize = '14px';
+    body.style.fontSize = '13px';
     body.style.lineHeight = '1.6';
     body.style.color = '#334155';
 
-    const actions = document.createElement('div');
-    actions.style.display = 'flex';
-    actions.style.justifyContent = 'flex-end';
-    actions.style.marginTop = '16px';
+    header.append(title, closeButton);
+    panel.append(header, body);
+    document.body.appendChild(panel);
+    positionPopover(panel, marker.getBoundingClientRect());
 
-    const closeButton = document.createElement('button');
-    closeButton.type = 'button';
-    closeButton.textContent = '关闭';
-    closeButton.style.border = '0';
-    closeButton.style.borderRadius = '999px';
-    closeButton.style.padding = '10px 16px';
-    closeButton.style.background = '#2563eb';
-    closeButton.style.color = '#fff';
-    closeButton.style.font = 'inherit';
-    closeButton.style.cursor = 'pointer';
-    closeButton.addEventListener('click', closeDialog);
+    const onPointerDown = (event) => {
+      const target = event.target;
+      if (target instanceof Node && panel.contains(target)) return;
+      closePopover();
+    };
 
-    actions.appendChild(closeButton);
-    panel.append(title, body, actions);
-    overlay.appendChild(panel);
-    overlay.addEventListener('click', (event) => {
-      if (event.target === overlay) closeDialog();
-    });
-    document.body.appendChild(overlay);
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closePopover();
+    };
+
+    const onViewportChange = () => {
+      refreshOverlayMarkers();
+      if (activeMarker?.isConnected) {
+        positionPopover(panel, activeMarker.getBoundingClientRect());
+      }
+    };
+
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('scroll', onViewportChange, true);
+    window.addEventListener('resize', onViewportChange, true);
+    cleanup = () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('scroll', onViewportChange, true);
+      window.removeEventListener('resize', onViewportChange, true);
+    };
   };
 
   document.addEventListener('click', (event) => {
@@ -217,12 +324,22 @@ const savedAnnotationViewerScript = `(() => {
     const content = marker.getAttribute('data-webmcp-annotation-content') || marker.getAttribute('title') || '';
     if (!content.trim()) return;
 
-    openDialog(content);
+    const existing = document.querySelector(popoverSelector);
+    if (existing && existing.getAttribute('data-annotation-key') === marker.getAttribute('data-webmcp-annotation-key')) {
+      closePopover();
+      return;
+    }
+
+    openPopover(content, marker);
+    const popover = document.querySelector(popoverSelector);
+    if (popover) {
+      popover.setAttribute('data-annotation-key', marker.getAttribute('data-webmcp-annotation-key') || '');
+    }
   });
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeDialog();
-  });
+  refreshOverlayMarkers();
+  window.addEventListener('scroll', refreshOverlayMarkers, true);
+  window.addEventListener('resize', refreshOverlayMarkers, true);
 })();`
 
 const injectSavedAnnotationViewer = (root) => {

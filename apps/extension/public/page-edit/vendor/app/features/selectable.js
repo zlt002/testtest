@@ -60,6 +60,8 @@ import '../components/selection/selected.element.js';
 export function Selectable(visbug) {
   const page = document.body;
   const history = createHistoryManager();
+  const iframeDocumentListeners = new Map();
+  let iframeDocumentObserver = null;
   let selected = [];
   let selectedCallbacks = [];
   let labels = [];
@@ -88,6 +90,7 @@ export function Selectable(visbug) {
   };
 
   const isPrimaryModifierPressed = (event) => (metaKey === 'cmd' ? event.metaKey : event.ctrlKey);
+  const isElementNode = (value) => !!value && value.nodeType === 1 && typeof value.tagName === 'string';
 
   const pageEditDebugEnabled = () => {
     try {
@@ -101,7 +104,7 @@ export function Selectable(visbug) {
   };
 
   const formatDebugNode = (node) => {
-    if (!(node instanceof Element)) return String(node);
+    if (!isElementNode(node)) return String(node);
 
     const id = node.id ? `#${node.id}` : '';
     const classes =
@@ -174,7 +177,7 @@ export function Selectable(visbug) {
     ']',
   ]);
 
-  const isPageEditUiTarget = (target) => target instanceof Element && isPageEditUiElement(target);
+  const isPageEditUiTarget = (target) => isElementNode(target) && isPageEditUiElement(target);
 
   const stopEventForPageFreeze = (event) => {
     debugLog('freeze:block', {
@@ -203,12 +206,12 @@ export function Selectable(visbug) {
   };
 
   const resolveEditableTarget = (target) => {
-    if (target instanceof Element) {
+    if (isElementNode(target)) {
       return target.closest('[contenteditable="true"], input, textarea');
     }
 
     const parentElement = target?.parentElement;
-    if (parentElement instanceof Element) {
+    if (isElementNode(parentElement)) {
       return parentElement.closest('[contenteditable="true"], input, textarea');
     }
 
@@ -229,13 +232,13 @@ export function Selectable(visbug) {
 
     return selected.some((node) =>
       node === editableRoot ||
-      (node instanceof Element && node.contains(editableRoot)) ||
-      (editableRoot instanceof Element && editableRoot.contains(node))
+      (isElementNode(node) && node.contains(editableRoot)) ||
+      (isElementNode(editableRoot) && editableRoot.contains(node))
     );
   };
 
   const shouldBlockEditableNavigation = (target) => {
-    if (!(target instanceof Element)) {
+    if (!isElementNode(target)) {
       return false;
     }
 
@@ -243,11 +246,11 @@ export function Selectable(visbug) {
       return false;
     }
 
-    return target.closest('a[href]') instanceof Element;
+    return isElementNode(target.closest('a[href]'));
   };
 
   const hasDirectEditableTextContent = (el) => {
-    if (!(el instanceof Element)) return false;
+    if (!isElementNode(el)) return false;
 
     if (el.matches('input, textarea')) return true;
 
@@ -259,7 +262,7 @@ export function Selectable(visbug) {
   };
 
   const shouldAllowSelectionForActiveTool = (el) => {
-    if (!(el instanceof Element)) return false;
+    if (!isElementNode(el)) return false;
 
     if (visbug.activeTool !== 'text') return true;
     return hasDirectEditableTextContent(el);
@@ -299,7 +302,97 @@ export function Selectable(visbug) {
 
   const resolveInteractionTarget = (event) => {
     if (isPageEditUiTarget(event.target)) return event.target;
-    return deepElementFromPoint(event.clientX, event.clientY) || event.target;
+
+    const { clientX, clientY } = getTopDocumentClientPoint(event);
+    return deepElementFromPoint(clientX, clientY) || event.target;
+  };
+
+  const getFrameElementForWindow = (win) => {
+    try {
+      return win?.frameElement || null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const getTopDocumentClientPoint = (event) => {
+    let clientX = Number(event?.clientX || 0);
+    let clientY = Number(event?.clientY || 0);
+    let currentWindow = event?.view || event?.target?.ownerDocument?.defaultView || window;
+
+    while (currentWindow && currentWindow !== window) {
+      const frameElement = getFrameElementForWindow(currentWindow);
+      if (!isElementNode(frameElement)) break;
+
+      const rect = frameElement.getBoundingClientRect?.();
+      if (!rect) break;
+
+      clientX += rect.left;
+      clientY += rect.top;
+      currentWindow = frameElement.ownerDocument?.defaultView || window;
+    }
+
+    return { clientX, clientY };
+  };
+
+  const getAccessibleIframeDocuments = (rootDocument = document, seen = new Set()) => {
+    const iframeDocuments = [];
+
+    if (seen.has(rootDocument)) return iframeDocuments;
+    seen.add(rootDocument);
+
+    const frames = Array.from(rootDocument.querySelectorAll('iframe'));
+    frames.forEach((frame) => {
+      try {
+        const frameDocument = frame.contentDocument || frame.contentWindow?.document || null;
+        if (!frameDocument || seen.has(frameDocument)) return;
+
+        iframeDocuments.push(frameDocument);
+        iframeDocuments.push(...getAccessibleIframeDocuments(frameDocument, seen));
+      } catch (_) {
+        // Cross-origin iframes stay isolated; we intentionally skip them.
+      }
+    });
+
+    return iframeDocuments;
+  };
+
+  const syncIframeDocumentListeners = () => {
+    const nextDocuments = new Set(getAccessibleIframeDocuments(document));
+
+    iframeDocumentListeners.forEach((cleanup, frameDocument) => {
+      if (nextDocuments.has(frameDocument)) return;
+      cleanup();
+      iframeDocumentListeners.delete(frameDocument);
+    });
+
+    nextDocuments.forEach((frameDocument) => {
+      if (iframeDocumentListeners.has(frameDocument)) return;
+
+      frameDocument.addEventListener('keydown', freezePageKeyboardInteraction, true);
+      frameDocument.addEventListener('keyup', freezePageKeyboardInteraction, true);
+      frameDocument.addEventListener('mousemove', on_hover, true);
+      frameDocument.addEventListener('mousedown', on_pointer_down, true);
+      frameDocument.addEventListener('click', on_click, true);
+      frameDocument.addEventListener('dblclick', on_dblclick, true);
+      frameDocument.addEventListener('mouseup', on_pointer_up, true);
+      frameDocument.addEventListener('copy', on_copy);
+      frameDocument.addEventListener('cut', on_cut);
+      frameDocument.addEventListener('paste', on_paste);
+
+      iframeDocumentListeners.set(frameDocument, () => {
+        frameDocument.removeEventListener('keydown', freezePageKeyboardInteraction, true);
+        frameDocument.removeEventListener('keyup', freezePageKeyboardInteraction, true);
+        frameDocument.removeEventListener('mousemove', on_hover, true);
+        frameDocument.removeEventListener('mousedown', on_pointer_down, true);
+        frameDocument.removeEventListener('click', on_click, true);
+        frameDocument.removeEventListener('dblclick', on_dblclick, true);
+        frameDocument.removeEventListener('mouseup', on_pointer_up, true);
+        frameDocument.removeEventListener('copy', on_copy);
+        frameDocument.removeEventListener('cut', on_cut);
+        frameDocument.removeEventListener('paste', on_paste);
+      });
+    });
   };
 
   const debugDocumentBubbleKeyboard = (event) => {
@@ -427,6 +520,14 @@ export function Selectable(visbug) {
     window.addEventListener('webmcp:page-edit-locationchange', handleLocationChange, true);
 
     watchCommandKey();
+    syncIframeDocumentListeners();
+    iframeDocumentObserver = new MutationObserver(() => {
+      syncIframeDocumentListeners();
+    });
+    iframeDocumentObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
 
     hotkeys(`${metaKey}+alt+c`, on_copy_styles);
     hotkeys(`${metaKey}+alt+v`, (e) => on_paste_styles());
@@ -466,6 +567,10 @@ export function Selectable(visbug) {
     window.removeEventListener('popstate', handleLocationChange, true);
     window.removeEventListener('webmcp:page-edit-locationchange', handleLocationChange, true);
     cleanupLocationChangeEventsPatched();
+    iframeDocumentObserver?.disconnect();
+    iframeDocumentObserver = null;
+    iframeDocumentListeners.forEach((cleanup) => cleanup());
+    iframeDocumentListeners.clear();
 
     hotkeys.unbind(
       `esc,${metaKey}+d,backspace,del,delete,alt+del,alt+backspace,${metaKey}+e,${metaKey}+shift+e,${metaKey}+g,${metaKey}+shift+g,tab,shift+tab,enter,shift+enter`
@@ -620,7 +725,12 @@ export function Selectable(visbug) {
     else el.setAttribute('style', styleText);
   };
 
-  const recordStyleMutation = ({ elements = [], label = 'style', mutate }) => {
+  const recordStyleMutation = ({
+    elements = [],
+    label = 'style',
+    mutate,
+    notifyWatchers = true,
+  }) => {
     if (!canEditCurrentPage()) return;
 
     const targets = getConnectedUniqueElements(elements);
@@ -649,6 +759,10 @@ export function Selectable(visbug) {
         tellWatchers();
       },
     });
+
+    if (notifyWatchers !== false) {
+      tellWatchers();
+    }
   };
 
   const createSuppressedClick = (e) => ({
@@ -707,7 +821,7 @@ export function Selectable(visbug) {
   ]);
 
   const isTableStructureElement = (node) =>
-    node instanceof Element && tableStructureTags.has(node.tagName.toLowerCase());
+    isElementNode(node) && tableStructureTags.has(node.tagName.toLowerCase());
 
   const resolveStructuredPasteTargets = (targets, html) => {
     if (!targets.length) return targets;
@@ -956,10 +1070,10 @@ export function Selectable(visbug) {
       return;
     }
     const isSelectedTarget =
-      $target instanceof Element && $target.hasAttribute('data-selected');
+      isElementNode($target) && $target.hasAttribute('data-selected');
     const isMoveToolDragTarget =
       visbug.activeTool === 'move' &&
-      $target instanceof Element &&
+      isElementNode($target) &&
       ($target.hasAttribute('draggable') || $target.closest('[draggable="true"]'));
 
     debugLog('pointer:down', {

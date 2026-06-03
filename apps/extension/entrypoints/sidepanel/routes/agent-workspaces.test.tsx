@@ -1071,6 +1071,48 @@ describe('AgentWorkspacesPage', () => {
     });
   });
 
+  it('已有当前会话收到新消息后，会立刻更新列表标题并刷新会话列表', async () => {
+    render(<AgentWorkspacesPage />);
+
+    await screen.findByText('993b4517');
+
+    projectSessions.set('/Users/zhanglt21/Desktop/accrnew/accr-ui', [
+      {
+        sessionId: '993b4517',
+        title: '发送后应立即更新',
+        updatedAt: '2026-05-19T12:20:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 13,
+      },
+    ]);
+
+    for (const listener of storageChangeListeners) {
+      listener({
+        'agent-v2-current-session': {
+          oldValue: {
+            sessionId: '993b4517',
+            projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+            title: '993b4517',
+            selectedAt: '2026-05-12T06:13:00.000Z',
+          },
+          newValue: {
+            sessionId: '993b4517',
+            projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+            title: '发送后应立即更新',
+            selectedAt: '2026-05-19T12:20:00.000Z',
+          },
+        },
+      });
+    }
+
+    await waitFor(() => {
+      expect(mockRefreshSessions).toHaveBeenCalledWith({
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+      });
+      expect(screen.getByText('发送后应立即更新')).toBeTruthy();
+    });
+  });
+
   it('初始化读取到已存在的当前会话时，不重复刷新会话列表', async () => {
     mockReadCurrentSession.mockResolvedValue({
       sessionId: '993b4517',
