@@ -38,8 +38,8 @@ export function createFilesRoute(fileService: {
       const startedAt = performance.now();
       const projectPath = url.searchParams.get('projectPath') || '';
       const dirPath = url.searchParams.get('dirPath') || undefined;
-      const maxDepth = Number(url.searchParams.get('maxDepth') || 10);
-      const includeMetadata = url.searchParams.get('includeMetadata') !== 'false';
+      const maxDepth = Number(url.searchParams.get('maxDepth') || 0);
+      const includeMetadata = url.searchParams.get('includeMetadata') === 'true';
       sendJson(
         res,
         200,

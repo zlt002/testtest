@@ -409,6 +409,10 @@ export async function readAgentV2DomAnalysisSuggestion(): Promise<AgentV2DomAnal
   return null;
 }
 
+export async function clearAgentV2DomAnalysisSuggestion() {
+  await chrome.storage.local.remove(AGENT_V2_DOM_ANALYSIS_SUGGESTION_STORAGE_KEY);
+}
+
 export async function publishAgentV2QuickActionFeedback(input: {
   kind: AgentV2QuickActionFeedback['kind'];
   message: string;

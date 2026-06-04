@@ -748,7 +748,6 @@ function buildOptimisticSessionSummary(
 ): ClaudeSessionSummary {
   return {
     ...session,
-    updatedAt: selection.selectedAt || session.updatedAt,
     title: sanitizeSessionTitle(selection.title) || session.title,
   };
 }
@@ -1740,10 +1739,9 @@ export function AgentWorkspacesContent({
         existingSession,
         currentSessionSelection
       );
-      return [
-        optimisticSession,
-        ...sessions.sessions.filter((session) => session.sessionId !== optimisticSession.sessionId),
-      ];
+      return sessions.sessions.map((session) =>
+        session.sessionId === optimisticSession.sessionId ? optimisticSession : session
+      );
     }
     const optimisticSession: ClaudeSessionSummary = {
       sessionId: currentSessionSelection.sessionId,

@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import {
   buildCssSelector,
+  buildPickedElementCaptureContext,
   buildElementSummary,
   describeSelectedElement,
   findSelectableParentElement,
@@ -710,6 +711,25 @@ describe('selection-actions helpers', () => {
     document.body.appendChild(host);
 
     expect(findSelectableParentElement(shadowChild)).toBe(host);
+  });
+
+  it('includes iframe framePath when building picked element context', () => {
+    document.body.innerHTML = '<iframe id="micro-frame"></iframe>';
+    const iframe = document.getElementById('micro-frame') as HTMLIFrameElement;
+    const iframeDocument = iframe.contentDocument as Document;
+
+    iframeDocument.body.innerHTML = '<button id="query-btn">查询</button>';
+    const target = iframeDocument.getElementById('query-btn') as HTMLElement;
+
+    const context = buildPickedElementCaptureContext(target);
+
+    expect(context.framePath).toEqual([
+      {
+        selector: '#micro-frame',
+        id: 'micro-frame',
+        tagName: 'iframe',
+      },
+    ]);
   });
 
   it('recognizes page-edit ui descendants in normal dom and shadow dom', () => {
@@ -2235,6 +2255,127 @@ describe('selection-actions helpers', () => {
         });
       } finally {
         document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+      }
+    });
+
+    it('prefers click completion over delayed mousedown fallback during interactive analysis', async () => {
+      vi.useFakeTimers();
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-mode',
+        'interactive',
+      );
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-session-id',
+        'analysis-click-priority',
+      );
+      document.documentElement.setAttribute('data-webmcp-page-edit-analysis-nonce', 'nonce-click');
+
+      try {
+        await withSelectableFixture(async () => {
+          const target = document.querySelector('.status.active') as HTMLElement;
+          const postMessageSpy = vi
+            .spyOn(window, 'postMessage')
+            .mockImplementation(() => undefined);
+
+          dispatchMouse(target, 'mousedown', {
+            clientX: 20,
+            clientY: 20,
+            button: 0,
+          });
+          vi.advanceTimersByTime(200);
+
+          expect(postMessageSpy).not.toHaveBeenCalled();
+
+          dispatchMouse(target, 'click', {
+            clientX: 20,
+            clientY: 20,
+            button: 0,
+          });
+
+          expect(postMessageSpy).toHaveBeenCalledTimes(1);
+          expect(postMessageSpy).toHaveBeenCalledWith(
+            {
+              type: 'page_edit_selection_analysis_complete',
+              payload: {
+                sessionId: 'analysis-click-priority',
+                nonce: 'nonce-click',
+                trigger: 'interaction-complete',
+              },
+            },
+            window.location.origin,
+          );
+
+          vi.runAllTimers();
+          expect(postMessageSpy).toHaveBeenCalledTimes(1);
+
+          postMessageSpy.mockRestore();
+        });
+      } finally {
+        vi.useRealTimers();
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-session-id');
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-nonce');
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-complete');
+      }
+    });
+
+    it('falls back to delayed mousedown completion when click never arrives during interactive analysis', async () => {
+      vi.useFakeTimers();
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-config',
+        JSON.stringify({ pageMode: 'live-page' }),
+      );
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-mode',
+        'interactive',
+      );
+      document.documentElement.setAttribute(
+        'data-webmcp-page-edit-analysis-session-id',
+        'analysis-mousedown-fallback',
+      );
+      document.documentElement.setAttribute('data-webmcp-page-edit-analysis-nonce', 'nonce-fallback');
+
+      try {
+        await withSelectableFixture(async () => {
+          const target = document.querySelector('.status.active') as HTMLElement;
+          const postMessageSpy = vi
+            .spyOn(window, 'postMessage')
+            .mockImplementation(() => undefined);
+
+          dispatchMouse(target, 'mousedown', {
+            clientX: 20,
+            clientY: 20,
+            button: 0,
+          });
+          vi.advanceTimersByTime(319);
+          expect(postMessageSpy).not.toHaveBeenCalled();
+
+          vi.advanceTimersByTime(1);
+          expect(postMessageSpy).toHaveBeenCalledTimes(1);
+          expect(postMessageSpy).toHaveBeenCalledWith(
+            {
+              type: 'page_edit_selection_analysis_complete',
+              payload: {
+                sessionId: 'analysis-mousedown-fallback',
+                nonce: 'nonce-fallback',
+                trigger: 'interaction-complete',
+              },
+            },
+            window.location.origin,
+          );
+
+          postMessageSpy.mockRestore();
+        });
+      } finally {
+        vi.useRealTimers();
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-session-id');
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-nonce');
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-complete');
       }
     });
 

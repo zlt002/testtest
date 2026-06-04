@@ -166,6 +166,8 @@ vi.mock('../lib/agent-v2/client', () => ({
 }));
 
 vi.mock('../lib/agent-v2/session-selection', () => ({
+  clearAgentV2DomAnalysisSuggestion: vi.fn(async () => undefined),
+  readAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   readAgentV2ProjectSelection: vi.fn(async () => null),
 }));
 

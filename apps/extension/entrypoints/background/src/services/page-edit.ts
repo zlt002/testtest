@@ -179,7 +179,101 @@ function listPendingPageEditSelectionAnalysesByTabId(tabId: number) {
   );
 }
 
-async function armInteractiveSelectionAnalysis(input: {
+type PickedElementFramePathEntry = {
+  selector: string | null;
+  id: string | null;
+  tagName: string;
+};
+
+function normalizeElementText(value: string | null | undefined): string {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isHtmlElementNode(value: unknown): value is HTMLElement {
+  return (
+    !!value &&
+    (value as { nodeType?: unknown }).nodeType === 1 &&
+    typeof (value as { tagName?: unknown }).tagName === 'string'
+  );
+}
+
+function resolveTargetInDocument(
+  doc: Document,
+  config: {
+    selector: string | null;
+    id: string | null;
+    tagName: string;
+    text?: string | null;
+  }
+): HTMLElement | null {
+  if (config.selector) {
+    try {
+      const matched = doc.querySelector(config.selector);
+      if (isHtmlElementNode(matched)) {
+        return matched;
+      }
+    } catch {
+      // Ignore invalid selectors and continue with other heuristics.
+    }
+  }
+
+  if (config.id) {
+    const matched = doc.getElementById(config.id);
+    if (isHtmlElementNode(matched)) {
+      return matched;
+    }
+  }
+
+  const normalizedTargetText = normalizeElementText(config.text);
+  if (normalizedTargetText) {
+    const matched = Array.from(doc.querySelectorAll(config.tagName)).find(
+      (candidate) =>
+        isHtmlElementNode(candidate) &&
+        normalizeElementText(candidate.innerText || candidate.textContent) === normalizedTargetText
+    );
+    if (isHtmlElementNode(matched)) {
+      return matched;
+    }
+  }
+
+  const fallback = doc.querySelector(config.tagName);
+  return isHtmlElementNode(fallback) ? fallback : null;
+}
+
+function resolveFrameDocument(
+  rootDocument: Document,
+  framePath: PickedElementFramePathEntry[] | undefined
+): Document | null {
+  if (!framePath?.length) {
+    return rootDocument;
+  }
+
+  let currentDocument: Document | null = rootDocument;
+  for (const frameConfig of framePath) {
+    if (!currentDocument) return null;
+
+    const frameElement = resolveTargetInDocument(currentDocument, {
+      selector: frameConfig.selector,
+      id: frameConfig.id,
+      tagName: frameConfig.tagName,
+    });
+    if (!isHtmlElementNode(frameElement) || frameElement.tagName.toLowerCase() !== 'iframe') {
+      return null;
+    }
+
+    try {
+      currentDocument = frameElement.contentDocument || frameElement.contentWindow?.document || null;
+    } catch {
+      return null;
+    }
+  }
+
+  return currentDocument;
+}
+
+export async function armInteractiveSelectionAnalysis(input: {
   tabId: number;
   sessionId: string;
   nonce: string;
@@ -197,6 +291,8 @@ async function armInteractiveSelectionAnalysis(input: {
         selector: input.targetElement.selector,
         id: input.targetElement.id,
         tagName: input.targetElement.tagName,
+        text: input.targetElement.text,
+        framePath: input.targetElement.framePath ?? [],
       },
     ],
     func: (config: {
@@ -205,9 +301,130 @@ async function armInteractiveSelectionAnalysis(input: {
       selector: string | null;
       id: string | null;
       tagName: string;
+      text: string | null;
+      framePath: PickedElementFramePathEntry[];
     }) => {
+      const normalizeText = (value: string | null | undefined) =>
+        String(value || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const debugBadgeSelector = '[data-webmcp-page-edit-analysis-debug="true"]';
+      const ensureDebugBadge = () => {
+        let badge = document.querySelector(debugBadgeSelector) as HTMLDivElement | null;
+        if (badge) {
+          return badge;
+        }
+
+        badge = document.createElement('div');
+        badge.setAttribute('data-webmcp-page-edit-analysis-debug', 'true');
+        badge.style.position = 'fixed';
+        badge.style.right = '16px';
+        badge.style.bottom = '16px';
+        badge.style.zIndex = '2147483647';
+        badge.style.maxWidth = 'min(420px, calc(100vw - 32px))';
+        badge.style.padding = '8px 10px';
+        badge.style.borderRadius = '10px';
+        badge.style.background = 'rgba(15, 23, 42, 0.92)';
+        badge.style.color = '#fff';
+        badge.style.font = '500 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif';
+        badge.style.boxShadow = '0 10px 24px rgba(15, 23, 42, 0.24)';
+        badge.style.pointerEvents = 'none';
+        badge.style.whiteSpace = 'pre-wrap';
+        document.body.appendChild(badge);
+        return badge;
+      };
+      const appendDebugBadgeText = (text: string) => {
+        const badge = ensureDebugBadge();
+        const lines = (badge.textContent || '')
+          .split('\n')
+          .filter(Boolean)
+          .slice(0, 10);
+        const nextLine = `${new Date().toLocaleTimeString('zh-CN', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })} ${text}`;
+        const nextLines = ['分析调试', nextLine, ...lines.filter((line) => line !== '分析调试')].slice(
+          0,
+          8
+        );
+        badge.textContent = nextLines.join('\n');
+      };
+      const isElementNode = (value: unknown): value is HTMLElement =>
+        !!value &&
+        (value as { nodeType?: unknown }).nodeType === 1 &&
+        typeof (value as { tagName?: unknown }).tagName === 'string';
+
+      const resolveTargetInDoc = (
+        doc: Document,
+        targetConfig: {
+          selector: string | null;
+          id: string | null;
+          tagName: string;
+          text?: string | null;
+        }
+      ) => {
+        if (targetConfig.selector) {
+          try {
+            const matched = doc.querySelector(targetConfig.selector);
+            if (isElementNode(matched)) {
+              return matched;
+            }
+          } catch {
+            // Ignore invalid selectors and continue with other heuristics.
+          }
+        }
+
+        if (targetConfig.id) {
+          const matched = doc.getElementById(targetConfig.id);
+          if (isElementNode(matched)) {
+            return matched;
+          }
+        }
+
+        const normalizedTargetText = normalizeText(targetConfig.text);
+        if (normalizedTargetText) {
+          const matched = Array.from(doc.querySelectorAll(targetConfig.tagName)).find(
+            (candidate) =>
+              isElementNode(candidate) &&
+              normalizeText(candidate.innerText || candidate.textContent) === normalizedTargetText
+          );
+          if (isElementNode(matched)) {
+            return matched;
+          }
+        }
+
+        const fallback = doc.querySelector(targetConfig.tagName);
+        return isElementNode(fallback) ? fallback : null;
+      };
+
+      const resolveFrameDoc = (rootDocument: Document, framePath: PickedElementFramePathEntry[]) => {
+        let currentDocument: Document | null = rootDocument;
+        for (const frameConfig of framePath) {
+          if (!currentDocument) return null;
+          const frameElement = resolveTargetInDoc(currentDocument, {
+            selector: frameConfig.selector,
+            id: frameConfig.id,
+            tagName: frameConfig.tagName,
+            text: null,
+          });
+          if (!isElementNode(frameElement) || frameElement.tagName.toLowerCase() !== 'iframe') {
+            return null;
+          }
+
+          try {
+            currentDocument = frameElement.contentDocument || frameElement.contentWindow?.document || null;
+          } catch {
+            return null;
+          }
+        }
+
+        return currentDocument;
+      };
+
       const matchesTarget = (startNode: EventTarget | null) => {
-        let current = startNode instanceof Element ? startNode : null;
+        let current = isElementNode(startNode) ? startNode : null;
         while (current) {
           if (config.selector) {
             try {
@@ -223,6 +440,15 @@ async function armInteractiveSelectionAnalysis(input: {
             return true;
           }
 
+          if (
+            normalizeText(config.text) &&
+            current.tagName.toLowerCase() === config.tagName.toLowerCase() &&
+            normalizeText((current as HTMLElement).innerText || current.textContent) ===
+              normalizeText(config.text)
+          ) {
+            return true;
+          }
+
           if (current.tagName.toLowerCase() === config.tagName.toLowerCase()) {
             return true;
           }
@@ -233,12 +459,99 @@ async function armInteractiveSelectionAnalysis(input: {
         return false;
       };
 
-      const handler = (event: MouseEvent) => {
-        if (!matchesTarget(event.target)) {
+      const isPageEditUiTarget = (startNode: EventTarget | null) => {
+        let current = isElementNode(startNode) ? startNode : null;
+        while (current) {
+          const tagName = current.tagName.toLowerCase();
+          if (
+            tagName === 'vis-bug' ||
+            tagName.startsWith('visbug-') ||
+            current.getAttribute('data-webmcp-annotation-ui') === 'true'
+          ) {
+            return true;
+          }
+
+          current = current.parentElement;
+        }
+
+        return false;
+      };
+
+      const targetDocument = resolveFrameDoc(document, config.framePath) || document;
+      const collectListenerDocuments = (rootDocument: Document) => {
+        const visited = new Set<Document>();
+        const queue: Document[] = [rootDocument];
+        const documents: Document[] = [];
+
+        while (queue.length > 0) {
+          const currentDocument = queue.shift();
+          if (!currentDocument || visited.has(currentDocument)) {
+            continue;
+          }
+
+          visited.add(currentDocument);
+          documents.push(currentDocument);
+
+          const frameElements = Array.from(currentDocument.querySelectorAll('iframe'));
+          for (const frameElement of frameElements) {
+            try {
+              const childDocument = frameElement.contentDocument || frameElement.contentWindow?.document;
+              if (childDocument && !visited.has(childDocument)) {
+                queue.push(childDocument);
+              }
+            } catch {
+              // Ignore inaccessible subframes.
+            }
+          }
+        }
+
+        return documents;
+      };
+      const listenerDocuments = collectListenerDocuments(targetDocument);
+      const listenerTargets = listenerDocuments.flatMap((listenerDocument) => {
+        const targets: EventTarget[] = [listenerDocument];
+        if (listenerDocument.defaultView) {
+          targets.unshift(listenerDocument.defaultView);
+        }
+        return targets;
+      });
+
+      let completed = false;
+      let pendingCompletionTimer: number | null = null;
+      const cleanup = () => {
+        if (pendingCompletionTimer !== null) {
+          window.clearTimeout(pendingCompletionTimer);
+          pendingCompletionTimer = null;
+        }
+        for (const listenerTarget of listenerTargets) {
+          listenerTarget.removeEventListener('pointerdown', handler, true);
+          listenerTarget.removeEventListener('mousedown', handler, true);
+          listenerTarget.removeEventListener('click', handler, true);
+        }
+      };
+
+      const resolveEventStartNode = (event: MouseEvent | PointerEvent) => {
+        const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+        const pathTarget = path.find(
+          (entry) =>
+            !!entry &&
+            (entry as { nodeType?: unknown }).nodeType === 1 &&
+            typeof (entry as { tagName?: unknown }).tagName === 'string'
+        );
+        return pathTarget ?? event.target;
+      };
+
+      const sendCompletion = (event: MouseEvent | PointerEvent, startNode: EventTarget | null) => {
+        if (completed) {
           return;
         }
 
-        document.removeEventListener('click', handler, true);
+        completed = true;
+        cleanup();
+        const startLabel = isElementNode(startNode)
+          ? `${startNode.tagName.toLowerCase()} ${normalizeText(startNode.innerText || startNode.textContent).slice(0, 24)}`
+          : String(startNode);
+        appendDebugBadgeText(`分析监听准备发送完成消息 | ${event.type} | ${startLabel}`);
         chrome.runtime
           .sendMessage({
             type: 'page_edit_selection_analysis_complete',
@@ -248,20 +561,71 @@ async function armInteractiveSelectionAnalysis(input: {
               trigger: 'interaction-complete',
             },
           })
-          .catch(() => undefined);
+          .then(() => {
+            appendDebugBadgeText(`分析监听完成消息已发送 | ${event.type} | ${startLabel}`);
+          })
+          .catch((error) => {
+            appendDebugBadgeText(
+              `分析监听发送失败 | ${error instanceof Error ? error.message : String(error)}`
+            );
+          });
+      };
+
+      const handler = (event: MouseEvent | PointerEvent) => {
+        if (completed) {
+          return;
+        }
+
+        const startNode = resolveEventStartNode(event);
+        const startLabel = isElementNode(startNode)
+          ? `${startNode.tagName.toLowerCase()} ${normalizeText(startNode.innerText || startNode.textContent).slice(0, 24)}`
+          : String(startNode);
+        appendDebugBadgeText(`分析监听捕获 ${event.type} | ${startLabel}`);
+
+        if (!matchesTarget(startNode) && isPageEditUiTarget(startNode)) {
+          appendDebugBadgeText(`分析监听忽略 UI 事件 ${event.type} | ${startLabel}`);
+          return;
+        }
+
+        if (event.type === 'click') {
+          if (pendingCompletionTimer !== null) {
+            window.clearTimeout(pendingCompletionTimer);
+            pendingCompletionTimer = null;
+          }
+          appendDebugBadgeText(`分析监听立即收口 | click | ${startLabel}`);
+          sendCompletion(event, startNode);
+          return;
+        }
+
+        if (pendingCompletionTimer !== null) {
+          return;
+        }
+
+        appendDebugBadgeText(`分析监听延迟收口 | ${event.type} | ${startLabel} | 320ms`);
+        pendingCompletionTimer = window.setTimeout(() => {
+          pendingCompletionTimer = null;
+          sendCompletion(event, startNode);
+        }, 320);
       };
 
       window.setTimeout(() => {
-        document.addEventListener('click', handler, true);
+        for (const listenerTarget of listenerTargets) {
+          listenerTarget.addEventListener('pointerdown', handler, true);
+          listenerTarget.addEventListener('mousedown', handler, true);
+          listenerTarget.addEventListener('click', handler, true);
+        }
+        appendDebugBadgeText(`分析监听已挂载 | 监听目标数: ${listenerTargets.length}`);
       }, 0);
     },
   });
 }
 
-async function showSelectionAnalysisGuidance(input: {
+export async function showSelectionAnalysisGuidance(input: {
   tabId: number;
   analysisMode: 'interactive' | 'display';
   targetElement: PickedElementContext;
+  sessionId?: string;
+  nonce?: string;
   executeScript?: typeof defaultExecuteScript;
 }) {
   const executeScript = input.executeScript ?? defaultExecuteScript;
@@ -274,6 +638,10 @@ async function showSelectionAnalysisGuidance(input: {
         selector: input.targetElement.selector,
         id: input.targetElement.id,
         tagName: input.targetElement.tagName,
+        text: input.targetElement.text,
+        framePath: input.targetElement.framePath ?? [],
+        sessionId: typeof input.sessionId === 'string' ? input.sessionId : null,
+        nonce: typeof input.nonce === 'string' ? input.nonce : null,
       },
     ],
     func: (config: {
@@ -281,7 +649,85 @@ async function showSelectionAnalysisGuidance(input: {
       selector: string | null;
       id: string | null;
       tagName: string;
+      text: string | null;
+      framePath: PickedElementFramePathEntry[];
+      sessionId: string | null;
+      nonce: string | null;
     }) => {
+      const normalizeText = (value: string | null | undefined) =>
+        String(value || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const isElementNode = (value: unknown): value is HTMLElement =>
+        !!value &&
+        (value as { nodeType?: unknown }).nodeType === 1 &&
+        typeof (value as { tagName?: unknown }).tagName === 'string';
+
+      const resolveTargetInDoc = (
+        doc: Document,
+        targetConfig: {
+          selector: string | null;
+          id: string | null;
+          tagName: string;
+          text?: string | null;
+        }
+      ) => {
+        if (targetConfig.selector) {
+          try {
+            const matched = doc.querySelector(targetConfig.selector);
+            if (isElementNode(matched)) {
+              return matched;
+            }
+          } catch (_) {}
+        }
+
+        if (targetConfig.id) {
+          const matched = doc.getElementById(targetConfig.id);
+          if (isElementNode(matched)) {
+            return matched;
+          }
+        }
+
+        const normalizedTargetText = normalizeText(targetConfig.text);
+        if (normalizedTargetText) {
+          const matched = Array.from(doc.querySelectorAll(targetConfig.tagName)).find(
+            (candidate) =>
+              isElementNode(candidate) &&
+              normalizeText(candidate.innerText || candidate.textContent) === normalizedTargetText
+          );
+          if (isElementNode(matched)) {
+            return matched;
+          }
+        }
+
+        const fallback = doc.querySelector(targetConfig.tagName);
+        return isElementNode(fallback) ? fallback : null;
+      };
+
+      const resolveFrameDoc = (rootDocument: Document, framePath: PickedElementFramePathEntry[]) => {
+        let currentDocument: Document | null = rootDocument;
+        for (const frameConfig of framePath) {
+          if (!currentDocument) return null;
+          const frameElement = resolveTargetInDoc(currentDocument, {
+            selector: frameConfig.selector,
+            id: frameConfig.id,
+            tagName: frameConfig.tagName,
+            text: null,
+          });
+          if (!isElementNode(frameElement) || frameElement.tagName.toLowerCase() !== 'iframe') {
+            return null;
+          }
+
+          try {
+            currentDocument = frameElement.contentDocument || frameElement.contentWindow?.document || null;
+          } catch (_) {
+            return null;
+          }
+        }
+
+        return currentDocument;
+      };
+
       const root = document.querySelector('vis-bug[data-webmcp-page-edit-root="true"]');
       const guidanceSelector = '[data-webmcp-page-edit-analysis-guidance="true"]';
       const focusSelector = 'visbug-selected[data-webmcp-page-edit-analysis-focus="true"]';
@@ -290,6 +736,20 @@ async function showSelectionAnalysisGuidance(input: {
         'data-webmcp-page-edit-analysis-mode',
         config.analysisMode,
       );
+      if (config.sessionId) {
+        document.documentElement.setAttribute(
+          'data-webmcp-page-edit-analysis-session-id',
+          config.sessionId
+        );
+      } else {
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-session-id');
+      }
+      if (config.nonce) {
+        document.documentElement.setAttribute('data-webmcp-page-edit-analysis-nonce', config.nonce);
+      } else {
+        document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-nonce');
+      }
+      document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-complete');
       document.querySelectorAll(guidanceSelector).forEach((node) => node.remove());
       document.querySelectorAll(focusSelector).forEach((node) => node.remove());
 
@@ -304,24 +764,8 @@ async function showSelectionAnalysisGuidance(input: {
       }
 
       const resolveTarget = () => {
-        if (config.selector) {
-          try {
-            const matched = document.querySelector(config.selector);
-            if (matched instanceof HTMLElement) {
-              return matched;
-            }
-          } catch (_) {}
-        }
-
-        if (config.id) {
-          const matched = document.getElementById(config.id);
-          if (matched instanceof HTMLElement) {
-            return matched;
-          }
-        }
-
-        const fallback = document.querySelector(config.tagName);
-        return fallback instanceof HTMLElement ? fallback : null;
+        const targetDocument = resolveFrameDoc(document, config.framePath) || document;
+        return resolveTargetInDoc(targetDocument, config);
       };
 
       const hint = document.createElement('div');
@@ -356,6 +800,7 @@ async function showSelectionAnalysisGuidance(input: {
 
       const focus = document.createElement('visbug-selected');
       focus.setAttribute('data-webmcp-page-edit-analysis-focus', 'true');
+      focus.style.pointerEvents = 'none';
       document.body.appendChild(focus);
       (focus as unknown as { position: { el: HTMLElement; node_label_id: string } }).position = {
         el: target,
@@ -375,9 +820,63 @@ async function clearSelectionAnalysisGuidance(input: {
     world: 'MAIN',
     func: () => {
       document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-mode');
+      document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-session-id');
+      document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-nonce');
+      document.documentElement.removeAttribute('data-webmcp-page-edit-analysis-complete');
       document
         .querySelectorAll('[data-webmcp-page-edit-analysis-guidance="true"], visbug-selected[data-webmcp-page-edit-analysis-focus="true"]')
         .forEach((node) => node.remove());
+    },
+  });
+}
+
+async function appendPageEditAnalysisDebugLine(input: {
+  tabId: number;
+  text: string;
+  executeScript?: typeof defaultExecuteScript;
+}) {
+  const executeScript = input.executeScript ?? defaultExecuteScript;
+  await executeScript({
+    target: { tabId: input.tabId },
+    world: 'ISOLATED',
+    args: [input.text],
+    func: (text: string) => {
+      const debugBadgeSelector = '[data-webmcp-page-edit-analysis-debug="true"]';
+      let badge = document.querySelector(debugBadgeSelector) as HTMLDivElement | null;
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.setAttribute('data-webmcp-page-edit-analysis-debug', 'true');
+        badge.style.position = 'fixed';
+        badge.style.right = '16px';
+        badge.style.bottom = '16px';
+        badge.style.zIndex = '2147483647';
+        badge.style.maxWidth = 'min(420px, calc(100vw - 32px))';
+        badge.style.padding = '8px 10px';
+        badge.style.borderRadius = '10px';
+        badge.style.background = 'rgba(15, 23, 42, 0.92)';
+        badge.style.color = '#fff';
+        badge.style.font = '500 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif';
+        badge.style.boxShadow = '0 10px 24px rgba(15, 23, 42, 0.24)';
+        badge.style.pointerEvents = 'none';
+        badge.style.whiteSpace = 'pre-wrap';
+        document.body.appendChild(badge);
+      }
+
+      const lines = (badge.textContent || '')
+        .split('\n')
+        .filter(Boolean)
+        .slice(0, 10);
+      const nextLine = `${new Date().toLocaleTimeString('zh-CN', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })} ${text}`;
+      const nextLines = ['分析调试', nextLine, ...lines.filter((line) => line !== '分析调试')].slice(
+        0,
+        8
+      );
+      badge.textContent = nextLines.join('\n');
     },
   });
 }
@@ -388,31 +887,72 @@ async function publishPageEditSelectionAnalysisResult(input: {
   publishDomAnalysisSuggestion: typeof publishAgentV2DomAnalysisSuggestion;
   publishComposerAppend: typeof publishAgentV2ComposerAppend;
   openSidePanel: (windowId: number) => Promise<void>;
+  executeScript?: typeof defaultExecuteScript;
 }) {
   const openSidePanelTask =
     typeof input.pending.windowId === 'number'
       ? input.openSidePanel(input.pending.windowId).catch(() => undefined)
       : undefined;
+  const appendDebugLine = (text: string) =>
+    appendPageEditAnalysisDebugLine({
+      tabId: input.pending.tabId,
+      text,
+      executeScript: input.executeScript,
+    }).catch(() => undefined);
 
   try {
+    await appendDebugLine('分析收口开始');
     const completed = await input.completeSelectionAnalysis({
       sessionId: input.pending.sessionId,
+      onProgress: (message) => appendDebugLine(`分析收口进度 | ${message}`),
     });
+    await appendDebugLine(
+      `分析收口完成 | hasCard=${completed.analysisCard ? 'yes' : 'no'} | hasMarkdown=${completed.markdown?.trim() ? 'yes' : 'no'}`
+    );
 
-    const publishSuggestionTask = completed.analysisCard
-      ? input
-          .publishDomAnalysisSuggestion({
-            card: completed.analysisCard,
-            suggestedCommand: completed.suggestedCommand,
-          })
-          .catch(() => undefined)
-      : input.publishComposerAppend({
-          text: completed.markdown,
+    const publishTasks: Promise<unknown>[] = [];
+
+    if (completed.analysisCard) {
+      await appendDebugLine('开始发布页面分析建议卡');
+      publishTasks.push(
+        input.publishDomAnalysisSuggestion({
+          card: completed.analysisCard,
+          suggestedCommand: completed.suggestedCommand,
+        })
+      );
+      publishTasks.push(
+        input.publishComposerAppend({
+          text: [
+            '页面元素分析已完成，已生成页面分析建议卡。',
+            completed.analysisCard.targetAction
+              ? `目标操作：${completed.analysisCard.targetAction}`
+              : null,
+            completed.analysisCard.recommendedApi
+              ? `候选接口：${completed.analysisCard.recommendedApi}`
+              : null,
+            completed.markdown?.trim() ? completed.markdown.trim() : null,
+          ]
+            .filter(Boolean)
+            .join('\n'),
           source: 'page-edit:analyze-result',
-        }).catch(() => undefined);
+        })
+      );
+    } else {
+      await appendDebugLine('未生成页面分析建议卡，改为发布文本结果');
+      publishTasks.push(
+        input.publishComposerAppend({
+          text: completed.markdown || '页面元素分析已完成，但暂未生成建议卡。',
+          source: 'page-edit:analyze-result',
+        })
+      );
+    }
 
-    await Promise.allSettled([openSidePanelTask, publishSuggestionTask]);
+    await Promise.allSettled([openSidePanelTask, ...publishTasks]);
+    await appendDebugLine('分析结果发布流程结束');
   } catch (error) {
+    await appendDebugLine(
+      `分析收口失败 | ${error instanceof Error ? error.message : String(error)}`
+    );
     const publishComposerAppendTask = input.publishComposerAppend({
       text: `页面元素分析收口失败：${error instanceof Error ? error.message : String(error)}`,
       source: 'page-edit:analyze-result',
@@ -1251,6 +1791,8 @@ export function createPageEditSelectionAnalyzeMessageListener(input: {
           tabId,
           analysisMode: started.analysisMode,
           targetElement: target,
+          sessionId: started.sessionId,
+          nonce: selectionNonce,
         }).catch(() => undefined);
 
         const openSidePanelTask =
@@ -1294,6 +1836,7 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
   publishDomAnalysisSuggestion?: typeof publishAgentV2DomAnalysisSuggestion;
   publishComposerAppend?: typeof publishAgentV2ComposerAppend;
   openSidePanel?: (windowId: number) => Promise<void>;
+  executeScript?: typeof defaultExecuteScript;
 }) {
   const getPageEditState =
     input.getPageEditState ?? ((tabId: number) => pageEditService.getState(tabId));
@@ -1311,6 +1854,7 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
   const openSidePanel =
     input.openSidePanel ??
     ((windowId: number) => chrome.sidePanel?.open({ windowId }).then(() => undefined) ?? Promise.resolve());
+  const executeScript = input.executeScript ?? defaultExecuteScript;
 
   return (message: unknown, sender?: chrome.runtime.MessageSender) => {
     if (
@@ -1337,8 +1881,26 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
     }
 
     const pending = getPendingSelectionAnalysis(payload.sessionId);
-    const tabId = sender?.tab?.id;
-    if (!pending || pending.analysisMode !== 'interactive' || tabId !== pending.tabId) {
+    if (pending) {
+      void appendPageEditAnalysisDebugLine({
+        tabId: pending.tabId,
+        text: `BG 收到完成消息 | session=${payload.sessionId}`,
+        executeScript,
+      }).catch(() => undefined);
+    }
+    const senderTabId = sender?.tab?.id;
+    if (
+      !pending ||
+      pending.analysisMode !== 'interactive' ||
+      (typeof senderTabId === 'number' && senderTabId !== pending.tabId)
+    ) {
+      if (pending) {
+        void appendPageEditAnalysisDebugLine({
+          tabId: pending.tabId,
+          text: `BG 忽略完成消息 | senderTab=${String(senderTabId)} | pendingTab=${pending.tabId} | mode=${pending.analysisMode}`,
+          executeScript,
+        }).catch(() => undefined);
+      }
       return false;
     }
 
@@ -1349,12 +1911,26 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
         currentState.selectionSessionNonce !== pending.nonce ||
         pending.nonce !== payload.nonce)
     ) {
+      void appendPageEditAnalysisDebugLine({
+        tabId: pending.tabId,
+        text: `BG 状态校验失败 | status=${currentState?.status ?? 'null'} | stateNonce=${currentState?.selectionSessionNonce ?? 'null'} | pendingNonce=${pending.nonce} | payloadNonce=${payload.nonce}`,
+        executeScript,
+      }).catch(() => undefined);
       return false;
     }
 
     clearPendingSelectionAnalysis(pending.sessionId);
+    void appendPageEditAnalysisDebugLine({
+      tabId: pending.tabId,
+      text: 'BG 已接受完成消息，开始生成分析建议',
+      executeScript,
+    }).catch(() => undefined);
     void clearSelectionAnalysisGuidanceImpl({
       tabId: pending.tabId,
+    }).catch(() => undefined);
+    void publishComposerAppend({
+      text: '已收到真实交互，正在整理页面分析建议...',
+      source: 'page-edit:analyze-progress',
     }).catch(() => undefined);
     void publishPageEditSelectionAnalysisResult({
       pending,
@@ -1362,6 +1938,7 @@ export function createPageEditSelectionAnalyzeCompletionMessageListener(input: {
       publishDomAnalysisSuggestion,
       publishComposerAppend,
       openSidePanel,
+      executeScript,
     }).catch(() => undefined);
 
     return false;

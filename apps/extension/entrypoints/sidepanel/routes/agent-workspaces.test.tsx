@@ -192,10 +192,12 @@ vi.mock('../lib/agent-v2/client', () => ({
 vi.mock('../lib/agent-v2/session-selection', () => ({
   AGENT_V2_CURRENT_SESSION_STORAGE_KEY: 'agent-v2-current-session',
   AGENT_V2_SESSION_SELECTION_STORAGE_KEY: 'agent-v2-selection',
+  clearAgentV2DomAnalysisSuggestion: vi.fn(async () => undefined),
   clearAgentV2WorkspaceIntent: vi.fn(async () => undefined),
   publishAgentV2ProjectSelection: mockPublishProjectSelection,
   publishAgentV2SessionSelection: mockPublishSessionSelection,
   readAgentV2CurrentSession: mockReadCurrentSession,
+  readAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   readAgentV2ProjectSelection: mockReadProjectSelection,
   readAgentV2WorkspaceIntent: mockReadWorkspaceIntent,
 }));
@@ -1111,6 +1113,116 @@ describe('AgentWorkspacesPage', () => {
       });
       expect(screen.getByText('发送后应立即更新')).toBeTruthy();
     });
+  });
+
+  it('仅选中已有会话时，不会因为 selectedAt 被立即置顶', async () => {
+    projectSessions.set('/Users/zhanglt21/Desktop/accrnew/accr-ui', [
+      {
+        sessionId: 'newer-session',
+        title: '较新的会话',
+        updatedAt: '2026-05-19T12:20:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 13,
+      },
+      {
+        sessionId: 'older-session',
+        title: '较老的会话',
+        updatedAt: '2026-05-12T06:13:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 12,
+      },
+    ]);
+    mockReadCurrentSession.mockResolvedValue({
+      sessionId: 'older-session',
+      projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+      title: '较老的会话',
+      selectedAt: '2026-05-19T12:30:00.000Z',
+    });
+
+    render(<AgentWorkspacesPage />);
+
+    const newerButton = await screen.findByRole('button', { name: /较新的会话/ });
+    const olderButton = await screen.findByRole('button', { name: /较老的会话/ });
+
+    expect(newerButton.compareDocumentPosition(olderButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  });
+
+  it('已有会话收到新消息后，会按后端返回的 updatedAt 真正置顶', async () => {
+    projectSessions.set('/Users/zhanglt21/Desktop/accrnew/accr-ui', [
+      {
+        sessionId: 'newer-session',
+        title: '原本较新的会话',
+        updatedAt: '2026-05-19T12:20:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 13,
+      },
+      {
+        sessionId: 'older-session',
+        title: '原本较老的会话',
+        updatedAt: '2026-05-12T06:13:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 12,
+      },
+    ]);
+
+    render(<AgentWorkspacesPage />);
+
+    const initialNewerButton = await screen.findByRole('button', { name: /原本较新的会话/ });
+    const initialOlderButton = await screen.findByRole('button', { name: /原本较老的会话/ });
+    expect(
+      initialNewerButton.compareDocumentPosition(initialOlderButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    projectSessions.set('/Users/zhanglt21/Desktop/accrnew/accr-ui', [
+      {
+        sessionId: 'older-session',
+        title: '收到新消息后的会话',
+        updatedAt: '2026-05-19T12:30:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 14,
+      },
+      {
+        sessionId: 'newer-session',
+        title: '原本较新的会话',
+        updatedAt: '2026-05-19T12:20:00.000Z',
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+        messageCount: 13,
+      },
+    ]);
+
+    for (const listener of storageChangeListeners) {
+      listener({
+        'agent-v2-current-session': {
+          oldValue: {
+            sessionId: 'older-session',
+            projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+            title: '原本较老的会话',
+            selectedAt: '2026-05-12T06:13:00.000Z',
+          },
+          newValue: {
+            sessionId: 'older-session',
+            projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+            title: '收到新消息后的会话',
+            selectedAt: '2026-05-19T12:30:00.000Z',
+          },
+        },
+      });
+    }
+
+    await waitFor(() => {
+      expect(mockRefreshSessions).toHaveBeenCalledWith({
+        projectPath: '/Users/zhanglt21/Desktop/accrnew/accr-ui',
+      });
+      expect(screen.getByText('收到新消息后的会话')).toBeTruthy();
+    });
+
+    const updatedOlderButton = screen.getByRole('button', { name: /收到新消息后的会话/ });
+    const updatedNewerButton = screen.getByRole('button', { name: /原本较新的会话/ });
+    expect(
+      updatedOlderButton.compareDocumentPosition(updatedNewerButton) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('初始化读取到已存在的当前会话时，不重复刷新会话列表', async () => {

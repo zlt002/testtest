@@ -135,6 +135,7 @@ const sessionSelectionMocks = vi.hoisted(() => ({
   mockIsAgentV2ProjectSelectedMessage: vi.fn(() => false),
   mockIsAgentV2QuickActionFeedbackMessage: vi.fn(() => false),
   mockIsAgentV2SessionSelectedMessage: vi.fn(() => false),
+  mockClearAgentV2DomAnalysisSuggestion: vi.fn(async () => undefined),
   mockReadAgentV2ComposerAppend: vi.fn(async () => null),
   mockReadAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   mockReadAgentV2ProjectSelection: vi.fn(async () => null),
@@ -364,6 +365,7 @@ vi.mock('../lib/agent-v2/storage', () => ({
 }));
 
 vi.mock('../lib/agent-v2/session-selection', () => ({
+  clearAgentV2DomAnalysisSuggestion: sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion,
   isAgentV2ComposerAppendMessage: sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage,
   isAgentV2DomAnalysisSuggestionMessage:
     sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage,
@@ -1004,6 +1006,8 @@ describe('Chat chat selection quote interaction', () => {
     sessionSelectionMocks.mockIsAgentV2QuickActionFeedbackMessage.mockReturnValue(false);
     sessionSelectionMocks.mockIsAgentV2SessionSelectedMessage.mockReset();
     sessionSelectionMocks.mockIsAgentV2SessionSelectedMessage.mockReturnValue(false);
+    sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion.mockReset();
+    sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion.mockResolvedValue(undefined);
     sessionSelectionMocks.mockReadAgentV2ComposerAppend.mockReset();
     sessionSelectionMocks.mockReadAgentV2ComposerAppend.mockResolvedValue(null);
     sessionSelectionMocks.mockReadAgentV2DomAnalysisSuggestion.mockReset();
@@ -1649,6 +1653,76 @@ describe('Chat chat selection quote interaction', () => {
     expect(view.queryByTestId('dom-analysis-suggestion-card')).toBeNull();
   });
 
+  it('插入命令后重新打开侧边栏，不会再次显示同一条页面分析建议', async () => {
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_dom_analysis_suggestion'
+    );
+
+    let persistedSuggestion: {
+      card: {
+        pageName: string;
+        route: string;
+        targetAction: string;
+        actionType: string;
+        tableHeaders: string[];
+        recommendedApi: string;
+        confidence: 'medium';
+      };
+      suggestedCommand: string;
+      createdAt: string;
+    } | null = {
+      card: {
+        pageName: '订单中心',
+        route: '#/microOms/order-manage/order-center',
+        targetAction: '点击「查询」',
+        actionType: '查询',
+        tableHeaders: ['订单状态', '订单类型', '收货人地址'],
+        recommendedApi: '/api-otp/customerOrderInfos',
+        confidence: 'medium',
+      },
+      suggestedCommand:
+        '/ewankb-server-query graph el "订单中心 查询 customerOrderInfos 订单状态 订单号"',
+      createdAt: '2026-06-04T08:00:00.000Z',
+    };
+
+    sessionSelectionMocks.mockReadAgentV2DomAnalysisSuggestion.mockImplementation(async () =>
+      persistedSuggestion
+    );
+    sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion.mockImplementation(async () => {
+      persistedSuggestion = null;
+    });
+
+    const firstView = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_dom_analysis_suggestion',
+      payload: persistedSuggestion,
+    });
+
+    const firstComposerDock = await firstView.findByTestId('chat-v2-composer-dock');
+    expect(await within(firstComposerDock).findByTestId('dom-analysis-suggestion-card')).toBeTruthy();
+
+    fireEvent.click(within(firstComposerDock).getByRole('button', { name: '插入命令' }));
+
+    await waitFor(() => {
+      expect(within(firstComposerDock).queryByTestId('dom-analysis-suggestion-card')).toBeNull();
+    });
+
+    firstView.unmount();
+
+    const secondView = render(<Chat />);
+    const secondComposerDock = await secondView.findByTestId('chat-v2-composer-dock');
+
+    await waitFor(() => {
+      expect(within(secondComposerDock).queryByTestId('dom-analysis-suggestion-card')).toBeNull();
+    });
+    expect(sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion).toHaveBeenCalledTimes(1);
+  });
+
   it('页面分析建议浮层可以手动关闭', async () => {
     sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockImplementation(
       (message: unknown) =>
@@ -1686,6 +1760,76 @@ describe('Chat chat selection quote interaction', () => {
     await waitFor(() => {
       expect(within(composerDock).queryByTestId('dom-analysis-suggestion-card')).toBeNull();
     });
+  });
+
+  it('手动关闭页面分析建议后重新打开侧边栏，不会再次显示同一条建议', async () => {
+    sessionSelectionMocks.mockIsAgentV2DomAnalysisSuggestionMessage.mockImplementation(
+      (message: unknown) =>
+        typeof message === 'object' &&
+        message !== null &&
+        'type' in message &&
+        (message as { type?: string }).type === 'agent_v2_dom_analysis_suggestion'
+    );
+
+    let persistedSuggestion: {
+      card: {
+        pageName: string;
+        route: string;
+        targetAction: string;
+        actionType: string;
+        tableHeaders: string[];
+        recommendedApi: string;
+        confidence: 'medium';
+      };
+      suggestedCommand: string;
+      createdAt: string;
+    } | null = {
+      card: {
+        pageName: '订单中心',
+        route: '#/microOms/order-manage/order-center',
+        targetAction: '点击「查询」',
+        actionType: '查询',
+        tableHeaders: ['订单状态', '订单类型', '收货人地址'],
+        recommendedApi: '/api-otp/customerOrderInfos',
+        confidence: 'medium',
+      },
+      suggestedCommand:
+        '/ewankb-server-query graph el "订单中心 查询 customerOrderInfos 订单状态 订单号"',
+      createdAt: '2026-06-04T08:00:00.000Z',
+    };
+
+    sessionSelectionMocks.mockReadAgentV2DomAnalysisSuggestion.mockImplementation(async () =>
+      persistedSuggestion
+    );
+    sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion.mockImplementation(async () => {
+      persistedSuggestion = null;
+    });
+
+    const firstView = render(<Chat />);
+
+    dispatchRuntimeMessage({
+      type: 'agent_v2_dom_analysis_suggestion',
+      payload: persistedSuggestion,
+    });
+
+    const firstComposerDock = await firstView.findByTestId('chat-v2-composer-dock');
+    expect(await within(firstComposerDock).findByTestId('dom-analysis-suggestion-card')).toBeTruthy();
+
+    fireEvent.click(within(firstComposerDock).getByRole('button', { name: '关闭页面分析建议' }));
+
+    await waitFor(() => {
+      expect(within(firstComposerDock).queryByTestId('dom-analysis-suggestion-card')).toBeNull();
+    });
+
+    firstView.unmount();
+
+    const secondView = render(<Chat />);
+    const secondComposerDock = await secondView.findByTestId('chat-v2-composer-dock');
+
+    await waitFor(() => {
+      expect(within(secondComposerDock).queryByTestId('dom-analysis-suggestion-card')).toBeNull();
+    });
+    expect(sessionSelectionMocks.mockClearAgentV2DomAnalysisSuggestion).toHaveBeenCalledTimes(1);
   });
 
   it('可以手动关闭采集反馈提示', async () => {

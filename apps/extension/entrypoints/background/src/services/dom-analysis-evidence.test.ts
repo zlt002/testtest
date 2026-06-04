@@ -191,6 +191,66 @@ describe('buildPageEvidence', () => {
     expect(() => PageEvidenceSchema.parse(result)).not.toThrow();
   });
 
+  it('falls back to main-document reading when frame-aware page content reading times out', async () => {
+    vi.useFakeTimers();
+    const readPageContent = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise(() => {
+            // Simulate a frame-heavy page that never resolves in time.
+          })
+      )
+      .mockResolvedValueOnce({
+        success: true,
+        title: '订单中心',
+        url: 'https://example.com/orders#/list',
+        text: '订单中心 查询 审核 列表',
+      });
+
+    const resultPromise = buildPageEvidence(
+      {
+        tab: {
+          id: 8,
+          windowId: 3,
+          title: '订单中心',
+          url: 'https://example.com/orders#/list',
+        },
+        targetElement: {
+          ...sampleTargetElement,
+          framePath: [{ selector: '#micro-frame', id: 'micro-frame', tagName: 'iframe' }],
+        },
+        captureSessionMeta,
+        includeFrames: true,
+      },
+      {
+        readPageContent,
+        collectScriptUrls: vi.fn().mockResolvedValue([]),
+        collectStructuredSignals: vi.fn().mockResolvedValue({
+          navLabels: [],
+          formLabels: ['订单号'],
+          tableHeaders: ['订单号'],
+        }),
+        getNetworkEvidence: vi.fn().mockReturnValue([]),
+      }
+    );
+
+    await vi.advanceTimersByTimeAsync(2_600);
+
+    const result = await resultPromise;
+
+    expect(readPageContent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ includeFrames: true })
+    );
+    expect(readPageContent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ includeFrames: false })
+    );
+    expect(result.pageContext.title).toBe('订单中心');
+    vi.useRealTimers();
+  });
+
   it('infers 列表查询 for search buttons when form and table areas both exist', async () => {
     const result = await buildPageEvidence(
       {
@@ -287,7 +347,9 @@ describe('buildPageEvidence', () => {
 
     expect(executeScript).toHaveBeenCalledWith({
       target: { tabId: 8 },
-      func: extractStructuredDomSignals,
+      world: 'MAIN',
+      func: expect.any(Function),
+      args: [undefined],
     });
     expect(result.pageContext.pageTextSummary).toEqual(
       expect.arrayContaining([
@@ -343,5 +405,44 @@ describe('buildPageEvidence', () => {
     });
     expect(result.networkEvidence).toEqual([]);
     expect(result.interactionEvidence).toEqual([]);
+  });
+
+  it('passes framePath to structured signal collection for iframe targets', async () => {
+    const collectStructuredSignals = vi.fn().mockResolvedValue({
+      navLabels: ['订单中心'],
+      formLabels: ['客户名称'],
+      tableHeaders: ['订单号'],
+    });
+
+    await buildPageEvidence(
+      {
+        tab: {
+          id: 8,
+          windowId: 3,
+          title: '任务中心',
+          url: 'https://example.com/v3/#/task-center',
+        },
+        targetElement: {
+          ...queryButtonTargetElement,
+          framePath: [{ selector: '#micro-app', id: 'micro-app', tagName: 'iframe' }],
+        },
+        captureSessionMeta,
+      },
+      {
+        readPageContent: vi.fn().mockResolvedValue({
+          success: true,
+          title: '任务中心',
+          url: 'https://example.com/v3/#/task-center',
+          text: '任务中心 查询 客户名称 订单号',
+        }),
+        collectScriptUrls: vi.fn().mockResolvedValue([]),
+        collectStructuredSignals,
+        getNetworkEvidence: vi.fn().mockReturnValue([]),
+      }
+    );
+
+    expect(collectStructuredSignals).toHaveBeenCalledWith(8, [
+      { selector: '#micro-app', id: 'micro-app', tagName: 'iframe' },
+    ]);
   });
 });

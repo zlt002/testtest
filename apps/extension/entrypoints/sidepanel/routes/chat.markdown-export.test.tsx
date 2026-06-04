@@ -247,7 +247,9 @@ vi.mock('../lib/agent-v2/storage', () => ({
 }));
 
 vi.mock('../lib/agent-v2/session-selection', () => ({
+  clearAgentV2DomAnalysisSuggestion: vi.fn(async () => undefined),
   isAgentV2ComposerAppendMessage: vi.fn(() => false),
+  isAgentV2DomAnalysisSuggestionMessage: vi.fn(() => false),
   isAgentV2ProjectSelectedMessage: vi.fn(() => false),
   isAgentV2QuickActionFeedbackMessage: vi.fn(() => false),
   isAgentV2SessionSelectedMessage: vi.fn(() => false),
@@ -255,6 +257,7 @@ vi.mock('../lib/agent-v2/session-selection', () => ({
   publishAgentV2ProjectSelection: vi.fn(async () => undefined),
   publishAgentV2WorkspaceIntent: vi.fn(async () => undefined),
   readAgentV2ComposerAppend: vi.fn(async () => null),
+  readAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   readAgentV2ProjectSelection: vi.fn(async () => ({
     projectPath: '/tmp/project',
     selectedAt: '2026-05-28T04:00:00.000Z',

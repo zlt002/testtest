@@ -168,6 +168,9 @@ const ATTACHMENT_ACCEPT =
   'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json';
 const MAX_ATTACHMENTS = 8;
 const MAX_INPUT_HISTORY = 50;
+const SECONDARY_OVERLAY_VIEWPORT_MARGIN = 16;
+const SECONDARY_OVERLAY_GAP = 8;
+const SECONDARY_OVERLAY_MIN_HEIGHT = 160;
 
 function flattenCatalog(groups: {
   localUi?: CommandCatalogEntry[];
@@ -487,6 +490,7 @@ export function AgentComposer({
   const [selectionFeedback, setSelectionFeedback] = useState<SelectionFeedback>(null);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [secondaryOverlayMaxHeight, setSecondaryOverlayMaxHeight] = useState<number | null>(null);
 
   const slashTrigger = getActiveSlashTrigger(value, cursorPosition);
   const slashIndex = slashTrigger?.start ?? value.lastIndexOf('/');
@@ -551,6 +555,39 @@ export function AgentComposer({
   }, [value]);
 
   useEffect(() => {
+    if (!secondaryOverlay) {
+      setSecondaryOverlayMaxHeight(null);
+      return;
+    }
+
+    const updateSecondaryOverlayMaxHeight = () => {
+      const composerRect = composerRef.current?.getBoundingClientRect();
+      if (!composerRect) {
+        return;
+      }
+
+      const nextMaxHeight = Math.max(
+        SECONDARY_OVERLAY_MIN_HEIGHT,
+        Math.floor(
+          composerRect.top - SECONDARY_OVERLAY_VIEWPORT_MARGIN - SECONDARY_OVERLAY_GAP
+        )
+      );
+      setSecondaryOverlayMaxHeight((current) =>
+        current === nextMaxHeight ? current : nextMaxHeight
+      );
+    };
+
+    updateSecondaryOverlayMaxHeight();
+    window.addEventListener('resize', updateSecondaryOverlayMaxHeight);
+    window.addEventListener('scroll', updateSecondaryOverlayMaxHeight, true);
+
+    return () => {
+      window.removeEventListener('resize', updateSecondaryOverlayMaxHeight);
+      window.removeEventListener('scroll', updateSecondaryOverlayMaxHeight, true);
+    };
+  }, [secondaryOverlay]);
+
+  useEffect(() => {
     let cancelled = false;
     const loadCommands = (forceRefresh = false) => {
       void client
@@ -584,7 +621,11 @@ export function AgentComposer({
 
     let cancelled = false;
     client
-      .listFiles({ projectPath })
+      .listFiles({
+        projectPath,
+        maxDepth: 0,
+        includeMetadata: false,
+      })
       .then((entries) => {
         if (!cancelled) {
           setFiles(entries);
@@ -866,7 +907,12 @@ export function AgentComposer({
           {secondaryOverlay ? (
             <div
               data-testid="dom-analysis-suggestion-layer"
-              className="absolute bottom-full left-0 right-0 z-10 mb-2"
+              className="absolute bottom-full left-0 right-0 z-10 mb-2 flex min-h-0 overflow-hidden"
+              style={
+                secondaryOverlayMaxHeight
+                  ? { maxHeight: `${secondaryOverlayMaxHeight}px` }
+                  : undefined
+              }
             >
               {secondaryOverlay}
             </div>

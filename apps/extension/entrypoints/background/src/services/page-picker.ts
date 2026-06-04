@@ -71,6 +71,9 @@ function buildEvidenceRequest(input: {
   preCaptureWindowMs?: number;
   postCaptureWindowMs?: number;
 }): Parameters<typeof buildPageEvidence>[0] {
+  const shouldIncludeFrames =
+    input.includeFrames === true || Boolean(input.targetElement.framePath?.length);
+
   return {
     tab: input.tab,
     targetElement: input.targetElement,
@@ -86,7 +89,7 @@ function buildEvidenceRequest(input: {
       endTime:
         input.capturedAt + (input.postCaptureWindowMs ?? DOM_ANALYSIS_POST_CAPTURE_WINDOW_MS),
     },
-    includeFrames: input.includeFrames,
+    includeFrames: shouldIncludeFrames,
     maxChars: input.maxChars,
   };
 }

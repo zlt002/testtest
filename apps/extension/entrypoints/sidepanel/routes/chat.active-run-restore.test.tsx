@@ -168,7 +168,9 @@ vi.mock('../lib/agent-v2/storage', () => ({
 }));
 
 vi.mock('../lib/agent-v2/session-selection', () => ({
+  clearAgentV2DomAnalysisSuggestion: vi.fn(async () => undefined),
   isAgentV2ComposerAppendMessage: sessionSelectionMocks.mockIsAgentV2ComposerAppendMessage,
+  isAgentV2DomAnalysisSuggestionMessage: vi.fn(() => false),
   isAgentV2ProjectSelectedMessage: sessionSelectionMocks.mockIsAgentV2ProjectSelectedMessage,
   isAgentV2QuickActionFeedbackMessage: sessionSelectionMocks.mockIsAgentV2QuickActionFeedbackMessage,
   isAgentV2SessionSelectedMessage: sessionSelectionMocks.mockIsAgentV2SessionSelectedMessage,
@@ -176,6 +178,7 @@ vi.mock('../lib/agent-v2/session-selection', () => ({
   publishAgentV2ProjectSelection: sessionSelectionMocks.mockPublishAgentV2ProjectSelection,
   publishAgentV2WorkspaceIntent: sessionSelectionMocks.mockPublishAgentV2WorkspaceIntent,
   readAgentV2ComposerAppend: sessionSelectionMocks.mockReadAgentV2ComposerAppend,
+  readAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   readAgentV2ProjectSelection: sessionSelectionMocks.mockReadAgentV2ProjectSelection,
   readAgentV2QuickActionFeedback: sessionSelectionMocks.mockReadAgentV2QuickActionFeedback,
   readAgentV2SessionSelectedTabs: sessionSelectionMocks.mockReadAgentV2SessionSelectedTabs,

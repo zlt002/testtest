@@ -23,6 +23,7 @@ const MAX_PAGE_SUMMARY_ITEMS = 20;
 const MAX_API_CANDIDATES = 12;
 const MAX_RESOURCE_HINTS = 12;
 const MAX_SCRIPT_URLS = 20;
+const READ_PAGE_CONTENT_TIMEOUT_MS = 2_500;
 
 type BuildPageEvidenceInput = {
   tab: Pick<chrome.tabs.Tab, 'id' | 'windowId' | 'title' | 'url'>;
@@ -111,6 +112,25 @@ function extractApiPath(urlLike: string): string {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallbackMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new Error(fallbackMessage));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        globalThis.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 async function defaultCollectScriptUrls(tabId: number | undefined): Promise<string[]> {
   if (typeof tabId !== 'number') {
     return [];
@@ -134,8 +154,70 @@ async function defaultCollectScriptUrls(tabId: number | undefined): Promise<stri
   }
 }
 
+function resolveDocumentByFramePath(
+  doc: Document,
+  framePath: PickedElementContext['framePath']
+): Document {
+  if (!framePath?.length) {
+    return doc;
+  }
+
+  let currentDocument: Document = doc;
+  for (const frameConfig of framePath) {
+    let frameElement: Element | null = null;
+
+    if (frameConfig.selector) {
+      try {
+        frameElement = currentDocument.querySelector(frameConfig.selector);
+      } catch {
+        frameElement = null;
+      }
+    }
+
+    if (!frameElement && frameConfig.id) {
+      frameElement = currentDocument.getElementById(frameConfig.id);
+    }
+
+    if (!frameElement) {
+      frameElement = Array.from(currentDocument.querySelectorAll('iframe')).find((candidate) => {
+        if (candidate.tagName.toLowerCase() !== 'iframe') {
+          return false;
+        }
+
+        if (frameConfig.id && candidate.id === frameConfig.id) {
+          return true;
+        }
+
+        return candidate.tagName.toLowerCase() === frameConfig.tagName.toLowerCase();
+      }) ?? null;
+    }
+
+    if (!(frameElement instanceof HTMLIFrameElement)) {
+      return doc;
+    }
+
+    try {
+      const nextDocument = frameElement.contentDocument || frameElement.contentWindow?.document;
+      if (!nextDocument) {
+        return doc;
+      }
+      currentDocument = nextDocument;
+    } catch {
+      return doc;
+    }
+  }
+
+  return currentDocument;
+}
+
+function collectStructuredSignalsInPage(framePath?: PickedElementContext['framePath']): StructuredDomSignals {
+  const targetDocument = resolveDocumentByFramePath(document, framePath);
+  return extractStructuredDomSignals(targetDocument);
+}
+
 async function defaultCollectStructuredSignals(
-  tabId: number | undefined
+  tabId: number | undefined,
+  framePath?: PickedElementContext['framePath']
 ): Promise<StructuredDomSignals> {
   if (typeof tabId !== 'number') {
     return EMPTY_STRUCTURED_DOM_SIGNALS;
@@ -144,7 +226,9 @@ async function defaultCollectStructuredSignals(
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: extractStructuredDomSignals,
+      world: 'MAIN',
+      func: collectStructuredSignalsInPage,
+      args: [framePath],
     });
     return normalizeStructuredDomSignals(results[0]?.result as Partial<StructuredDomSignals> | undefined);
   } catch {
@@ -165,15 +249,28 @@ export async function buildPageEvidence(
     ((tabId: number, window: { startTime: number; endTime: number }) =>
       domAnalysisCdpService.getNetworkEvidenceForTab(tabId, window));
 
-  const pageContent = await readPageContentImpl({
-    tabId: input.tab.id,
-    windowId: input.tab.windowId,
-    maxChars: input.maxChars,
-    includeFrames: input.includeFrames,
-    includeFrameAnalysis: false,
-  });
+  const readPageContent = (includeFrames: boolean) =>
+    readPageContentImpl({
+      tabId: input.tab.id,
+      windowId: input.tab.windowId,
+      maxChars: input.maxChars,
+      includeFrames,
+      includeFrameAnalysis: false,
+    });
+
+  const pageContent =
+    input.includeFrames === true
+      ? await withTimeout(
+          readPageContent(true),
+          READ_PAGE_CONTENT_TIMEOUT_MS,
+          'read_page_content_with_frames_timeout'
+        ).catch(() => readPageContent(false))
+      : await readPageContent(false);
   const scriptUrls = await collectScriptUrlsImpl(input.tab.id);
-  const structuredSignals = await collectStructuredSignalsImpl(input.tab.id);
+  const structuredSignals = await collectStructuredSignalsImpl(
+    input.tab.id,
+    input.targetElement.framePath
+  );
   const networkEvidence =
     typeof input.tab.id === 'number' && input.networkWindow
       ? getNetworkEvidenceImpl(input.tab.id, input.networkWindow)

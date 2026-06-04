@@ -5,11 +5,12 @@ import type { SessionAttachment } from '../../lib/agent-v2/types';
 import { AgentComposer } from './AgentComposer';
 
 const listCommandsMock = vi.fn();
+const listFilesMock = vi.fn();
 
 vi.mock('../../lib/agent-v2/client', () => ({
   createAgentV2Client: () => ({
     listCommands: listCommandsMock,
-    listFiles: vi.fn().mockResolvedValue([]),
+    listFiles: listFilesMock,
   }),
 }));
 
@@ -142,6 +143,8 @@ function renderUploadComposer(
 describe('AgentComposer', () => {
   beforeEach(() => {
     listCommandsMock.mockReset();
+    listFilesMock.mockReset();
+    listFilesMock.mockResolvedValue([]);
     listCommandsMock.mockResolvedValue({
       skills: [
         {
@@ -166,6 +169,18 @@ describe('AgentComposer', () => {
     expect(screen.queryByRole('button', { name: '开始 DOM 分析' })).toBeNull();
   });
 
+  it('loads startup file suggestions with a shallow lightweight request', async () => {
+    renderComposer();
+
+    await waitFor(() => {
+      expect(listFilesMock).toHaveBeenCalledWith({
+        projectPath: '/tmp/project',
+        maxDepth: 0,
+        includeMetadata: false,
+      });
+    });
+  });
+
   it('does not render a top divider on the composer dock surface', () => {
     const { container } = renderComposer();
 
@@ -177,6 +192,42 @@ describe('AgentComposer', () => {
 
     expect(screen.queryByRole('button', { name: '读取当前选区' })).toBeNull();
     expect(screen.queryByRole('button', { name: '读取选区' })).toBeNull();
+  });
+
+  it('limits the secondary overlay height based on available viewport space above the composer', async () => {
+    const originalInnerHeight = window.innerHeight;
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    try {
+      window.innerHeight = 900;
+      HTMLElement.prototype.getBoundingClientRect = function mockRect() {
+        return {
+          x: 0,
+          y: 320,
+          top: 320,
+          left: 0,
+          bottom: 420,
+          right: 480,
+          width: 480,
+          height: 100,
+          toJSON: () => ({}),
+        } as DOMRect;
+      };
+
+      render(
+        <AgentComposer
+          {...defaultProps}
+          value=""
+          onChange={vi.fn()}
+          secondaryOverlay={<div>测试建议层</div>}
+        />
+      );
+
+      const overlayLayer = await screen.findByTestId('dom-analysis-suggestion-layer');
+      expect(overlayLayer.style.maxHeight).toBe('296px');
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      window.innerHeight = originalInnerHeight;
+    }
   });
 
   it('shows takeover notice in the top notice slot and hides bypass-permission notice', () => {

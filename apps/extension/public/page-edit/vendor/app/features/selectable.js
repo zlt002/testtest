@@ -88,6 +88,7 @@ export function Selectable(visbug) {
     selectedSnapshot: [],
     overlay: null,
   };
+  let pendingSelectionAnalysisCompletionTimer = null;
 
   const isPrimaryModifierPressed = (event) => (metaKey === 'cmd' ? event.metaKey : event.ctrlKey);
   const isElementNode = (value) => !!value && value.nodeType === 1 && typeof value.tagName === 'string';
@@ -474,6 +475,100 @@ export function Selectable(visbug) {
     typeof document?.documentElement?.getAttribute === 'function' &&
     typeof document.documentElement.getAttribute('data-webmcp-page-edit-analysis-mode') ===
       'string';
+  const getSelectionAnalysisCompletionPayload = () => {
+    if (!isSelectionAnalysisGuidanceActive()) return null;
+
+    const sessionId = document.documentElement.getAttribute(
+      'data-webmcp-page-edit-analysis-session-id'
+    );
+    const nonce = document.documentElement.getAttribute('data-webmcp-page-edit-analysis-nonce');
+
+    if (!sessionId || !nonce) return null;
+
+    return {
+      sessionId,
+      nonce,
+      trigger: 'interaction-complete',
+    };
+  };
+  const selectionAnalysisDebugBadgeSelector = '[data-webmcp-page-edit-analysis-debug="true"]';
+  const appendSelectionAnalysisDebug = (text) => {
+    if (!isSelectionAnalysisGuidanceActive()) return;
+
+    const badge = document.querySelector(selectionAnalysisDebugBadgeSelector);
+    if (!(badge instanceof HTMLElement)) return;
+
+    const lines = String(badge.textContent || '')
+      .split('\n')
+      .filter(Boolean)
+      .slice(0, 10);
+    const time = new Date().toLocaleTimeString('zh-CN', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const nextLines = [`分析调试`, `${time} ${text}`, ...lines.filter((line) => line !== '分析调试')].slice(
+      0,
+      8
+    );
+    badge.textContent = nextLines.join('\n');
+  };
+  const markSelectionAnalysisCompleted = () => {
+    if (!document?.documentElement?.setAttribute) return;
+    document.documentElement.setAttribute('data-webmcp-page-edit-analysis-complete', 'sent');
+  };
+  const hasSelectionAnalysisCompleted = () =>
+    document?.documentElement?.getAttribute?.('data-webmcp-page-edit-analysis-complete') === 'sent';
+  const clearPendingSelectionAnalysisCompletion = () => {
+    if (pendingSelectionAnalysisCompletionTimer !== null) {
+      window.clearTimeout(pendingSelectionAnalysisCompletionTimer);
+      pendingSelectionAnalysisCompletionTimer = null;
+    }
+  };
+  const postSelectionAnalysisCompletion = (eventType, target) => {
+    const payload = getSelectionAnalysisCompletionPayload();
+    if (!payload || hasSelectionAnalysisCompleted()) return false;
+    if (isPageEditUiTarget(target)) {
+      appendSelectionAnalysisDebug(
+        `page-edit 忽略分析完成发送 | ${eventType} | ${formatDebugNode(target)}`
+      );
+      return false;
+    }
+
+    markSelectionAnalysisCompleted();
+    appendSelectionAnalysisDebug(
+      `page-edit 发送分析完成 | ${eventType} | ${formatDebugNode(target)}`
+    );
+    window.postMessage(
+      {
+        type: 'page_edit_selection_analysis_complete',
+        payload,
+      },
+      getSelectionMessageTargetOrigin()
+    );
+    return true;
+  };
+  const scheduleSelectionAnalysisCompletion = (eventType, target, delayMs = 320) => {
+    const payload = getSelectionAnalysisCompletionPayload();
+    if (!payload || hasSelectionAnalysisCompleted()) return false;
+    if (isPageEditUiTarget(target)) {
+      appendSelectionAnalysisDebug(
+        `page-edit 忽略分析完成调度 | ${eventType} | ${formatDebugNode(target)}`
+      );
+      return false;
+    }
+
+    clearPendingSelectionAnalysisCompletion();
+    appendSelectionAnalysisDebug(
+      `page-edit 延迟发送分析完成 | ${eventType} | ${formatDebugNode(target)} | ${delayMs}ms`
+    );
+    pendingSelectionAnalysisCompletionTimer = window.setTimeout(() => {
+      pendingSelectionAnalysisCompletionTimer = null;
+      postSelectionAnalysisCompletion(eventType, target);
+    }, delayMs);
+    return true;
+  };
 
   let lastKnownHref = window.location.href;
 
@@ -581,6 +676,12 @@ export function Selectable(visbug) {
 
   const on_click = (e) => {
     if (isSelectionAnalysisGuidanceActive()) {
+      const interactionTarget = resolveInteractionTarget(e);
+      appendSelectionAnalysisDebug(
+        `page-edit 捕获 click | ${formatDebugNode(interactionTarget || e.target)}`
+      );
+      clearPendingSelectionAnalysisCompletion();
+      postSelectionAnalysisCompletion('click', interactionTarget || e.target);
       clearMeasurements();
       clearHover();
       return;
@@ -1053,6 +1154,11 @@ export function Selectable(visbug) {
 
   const on_pointer_down = (e) => {
     if (isSelectionAnalysisGuidanceActive()) {
+      const interactionTarget = resolveInteractionTarget(e);
+      appendSelectionAnalysisDebug(
+        `page-edit 捕获 mousedown | ${formatDebugNode(interactionTarget || e.target)}`
+      );
+      scheduleSelectionAnalysisCompletion('mousedown', interactionTarget || e.target);
       clearMeasurements();
       clearHover();
       marqueeState.suppressedClick = null;

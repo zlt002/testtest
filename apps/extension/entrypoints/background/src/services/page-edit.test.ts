@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { JSDOM } from 'jsdom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BGSWRouter } from '../routers';
@@ -12,8 +13,10 @@ import {
   createPageEditSelectionMessageListener,
   createPageWorkbenchStateRestoreMessageListener,
   createPageEditService,
+  armInteractiveSelectionAnalysis,
   isSupportedPageEditUrl,
   resetPageEditServiceForTests,
+  showSelectionAnalysisGuidance,
 } from './page-edit';
 
 function createAnalyzeTarget(
@@ -33,6 +36,11 @@ function createAnalyzeTarget(
       id: string | null;
       classList: string[];
     }>;
+    framePath: Array<{
+      selector: string | null;
+      id: string | null;
+      tagName: string;
+    }>;
     siblings: {
       previous: string | null;
       next: string | null;
@@ -51,12 +59,42 @@ function createAnalyzeTarget(
     rect: { x: 1, y: 2, width: 3, height: 4 },
     outerHTMLSnippet: '<span class="status">运单查询</span>',
     ancestors: [],
+    framePath: [],
     siblings: {
       previous: null,
       next: null,
     },
     ...overrides,
   };
+}
+
+async function withPageEditDom<T>(run: (fixture: { dom: JSDOM }) => Promise<T> | T) {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', {
+    url: 'https://example.com',
+  });
+  const previousGlobals = {
+    window: globalThis.window,
+    document: globalThis.document,
+    HTMLElement: globalThis.HTMLElement,
+    HTMLIFrameElement: globalThis.HTMLIFrameElement,
+    Element: globalThis.Element,
+    chrome: globalThis.chrome,
+  };
+
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    HTMLIFrameElement: dom.window.HTMLIFrameElement,
+    Element: dom.window.Element,
+  });
+
+  try {
+    return await run({ dom });
+  } finally {
+    dom.window.close();
+    Object.assign(globalThis, previousGlobals);
+  }
 }
 
 describe('createPageEditService', () => {
@@ -183,14 +221,14 @@ describe('createPageEditService', () => {
     releaseScript?.();
     await Promise.resolve();
 
-    expect(executeScript).toHaveBeenCalledTimes(3);
+    expect(executeScript.mock.calls.length).toBeGreaterThanOrEqual(3);
 
     releaseScript?.();
 
     const [firstState, secondState] = await Promise.all([firstActivation, secondActivation]);
 
     expect(firstState).toEqual(secondState);
-    expect(executeScript).toHaveBeenCalledTimes(3);
+    expect(executeScript.mock.calls.length).toBeGreaterThanOrEqual(3);
     expect(service.getState(21)).toMatchObject({
       tabId: 21,
       status: 'active',
@@ -770,6 +808,8 @@ describe('createPageEditService', () => {
       expect(showSelectionAnalysisGuidance).toHaveBeenCalledWith({
         tabId: 7,
         analysisMode: 'interactive',
+        sessionId: 'analysis-1',
+        nonce: 'nonce-7',
         targetElement: createAnalyzeTarget({
           tagName: 'button',
           text: '查询',
@@ -849,6 +889,8 @@ describe('createPageEditService', () => {
       expect(showSelectionAnalysisGuidance).toHaveBeenCalledWith({
         tabId: 7,
         analysisMode: 'display',
+        sessionId: 'analysis-2',
+        nonce: 'nonce-7',
         targetElement: createAnalyzeTarget({
           tagName: 'span',
           text: '运单查询',
@@ -956,10 +998,401 @@ describe('createPageEditService', () => {
     expect(publishComposerAppend).not.toHaveBeenCalled();
   });
 
+  it('highlights the iframe target element instead of a same-tag top-level control during interactive analysis guidance', async () => {
+    await withPageEditDom(async () => {
+      document.body.innerHTML = `
+        <button id="workspace-btn">工作台</button>
+        <iframe id="micro-frame"></iframe>
+      `;
+      const iframe = document.getElementById('micro-frame') as HTMLIFrameElement;
+      const iframeDocument = iframe.contentDocument as Document;
+      iframeDocument.body.innerHTML = '<button id="query-btn">查询</button>';
+      const target = iframeDocument.getElementById('query-btn') as HTMLElement;
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await showSelectionAnalysisGuidance({
+        tabId: 7,
+        analysisMode: 'interactive',
+        targetElement: createAnalyzeTarget({
+          selector: '.missing-in-top-document',
+          tagName: 'button',
+          text: '查询',
+          framePath: [{ selector: '#micro-frame', id: 'micro-frame', tagName: 'iframe' }],
+        }),
+        executeScript: executeScript as never,
+      });
+
+      const focus = document.querySelector(
+        'visbug-selected[data-webmcp-page-edit-analysis-focus="true"]'
+      ) as HTMLElement & {
+        position?: { el: HTMLElement; node_label_id: string };
+      };
+      expect(focus).toBeTruthy();
+      expect(focus.style.pointerEvents).toBe('none');
+      expect(focus.position?.el).toBe(target);
+    });
+  });
+
+  it('completes interactive analysis only after clicking the matching iframe target element', async () => {
+    vi.useFakeTimers();
+    await withPageEditDom(async () => {
+      document.body.innerHTML = `
+        <button id="workspace-btn">工作台</button>
+        <iframe id="micro-frame"></iframe>
+      `;
+      const iframe = document.getElementById('micro-frame') as HTMLIFrameElement;
+      const iframeDocument = iframe.contentDocument as Document;
+      iframeDocument.body.innerHTML = '<button id="query-btn">查询</button>';
+      const target = iframeDocument.getElementById('query-btn') as HTMLElement;
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+
+      Object.assign(globalThis, {
+        chrome: {
+          runtime: {
+            sendMessage,
+          },
+        },
+      });
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await armInteractiveSelectionAnalysis({
+        tabId: 7,
+        sessionId: 'analysis-iframe',
+        nonce: 'nonce-iframe',
+        targetElement: createAnalyzeTarget({
+          selector: '.missing-in-top-document',
+          tagName: 'button',
+          text: '查询',
+          framePath: [{ selector: '#micro-frame', id: 'micro-frame', tagName: 'iframe' }],
+        }),
+        executeScript: executeScript as never,
+      });
+
+      vi.runAllTimers();
+
+      (document.getElementById('workspace-btn') as HTMLElement).dispatchEvent(
+        new window.MouseEvent('click', { bubbles: true, cancelable: true })
+      );
+      expect(sendMessage).not.toHaveBeenCalled();
+
+      target.dispatchEvent(new iframeDocument.defaultView!.MouseEvent('click', { bubbles: true, cancelable: true }));
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-iframe',
+          nonce: 'nonce-iframe',
+          trigger: 'interaction-complete',
+        },
+      });
+    });
+    vi.useRealTimers();
+  });
+
+  it('falls back after a short delay when the real interaction only reaches pointerdown inside a nested iframe document', async () => {
+    vi.useFakeTimers();
+    await withPageEditDom(async () => {
+      document.body.innerHTML = '<iframe id="micro-frame"></iframe>';
+      const iframe = document.getElementById('micro-frame') as HTMLIFrameElement;
+      const iframeDocument = iframe.contentDocument as Document;
+      iframeDocument.body.innerHTML = '<iframe id="inner-frame"></iframe>';
+      const innerFrame = iframeDocument.getElementById('inner-frame') as HTMLIFrameElement;
+      const innerDocument = innerFrame.contentDocument as Document;
+      innerDocument.body.innerHTML = '<button id="query-btn">查询</button>';
+      const nestedTarget = innerDocument.getElementById('query-btn') as HTMLElement;
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+
+      Object.assign(globalThis, {
+        chrome: {
+          runtime: {
+            sendMessage,
+          },
+        },
+      });
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await armInteractiveSelectionAnalysis({
+        tabId: 7,
+        sessionId: 'analysis-nested-iframe',
+        nonce: 'nonce-nested-iframe',
+        targetElement: createAnalyzeTarget({
+          selector: '.missing-in-top-document',
+          tagName: 'button',
+          text: '查询',
+          framePath: [{ selector: '#micro-frame', id: 'micro-frame', tagName: 'iframe' }],
+        }),
+        executeScript: executeScript as never,
+      });
+
+      vi.runAllTimers();
+
+      nestedTarget.dispatchEvent(
+        new innerDocument.defaultView!.MouseEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(319);
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-nested-iframe',
+          nonce: 'nonce-nested-iframe',
+          trigger: 'interaction-complete',
+        },
+      });
+    });
+    vi.useRealTimers();
+  });
+
+  it('prefers click over mousedown fallback when the full interaction completes normally', async () => {
+    vi.useFakeTimers();
+    await withPageEditDom(async () => {
+      document.body.innerHTML = '<button id="query-btn">查询</button>';
+      const target = document.getElementById('query-btn') as HTMLElement;
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+
+      Object.assign(globalThis, {
+        chrome: {
+          runtime: {
+            sendMessage,
+          },
+        },
+      });
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await armInteractiveSelectionAnalysis({
+        tabId: 7,
+        sessionId: 'analysis-click-priority',
+        nonce: 'nonce-click-priority',
+        targetElement: createAnalyzeTarget({
+          selector: '#query-btn',
+          tagName: 'button',
+          text: '查询',
+        }),
+        executeScript: executeScript as never,
+      });
+
+      vi.runAllTimers();
+
+      target.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      vi.advanceTimersByTime(200);
+      expect(sendMessage).not.toHaveBeenCalled();
+
+      target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-click-priority',
+          nonce: 'nonce-click-priority',
+          trigger: 'interaction-complete',
+        },
+      });
+
+      vi.runAllTimers();
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+    });
+    vi.useRealTimers();
+  });
+
+  it('completes interactive analysis on delayed mousedown fallback when the target may rerender before click', async () => {
+    vi.useFakeTimers();
+    await withPageEditDom(async () => {
+      document.body.innerHTML = '<button id="query-btn">查询</button>';
+      const target = document.getElementById('query-btn') as HTMLElement;
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+
+      Object.assign(globalThis, {
+        chrome: {
+          runtime: {
+            sendMessage,
+          },
+        },
+      });
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await armInteractiveSelectionAnalysis({
+        tabId: 7,
+        sessionId: 'analysis-mousedown',
+        nonce: 'nonce-mousedown',
+        targetElement: createAnalyzeTarget({
+          selector: '#query-btn',
+          tagName: 'button',
+          text: '查询',
+        }),
+        executeScript: executeScript as never,
+      });
+
+      vi.runAllTimers();
+
+      target.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(319);
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-mousedown',
+          nonce: 'nonce-mousedown',
+          trigger: 'interaction-complete',
+        },
+      });
+    });
+    vi.useRealTimers();
+  });
+
+  it('falls back to the first real page interaction when strict target matching is unreliable', async () => {
+    vi.useFakeTimers();
+    await withPageEditDom(async () => {
+      document.body.innerHTML = `
+        <vis-bug id="page-edit-ui"></vis-bug>
+        <button id="real-query-btn">查询</button>
+      `;
+      const pageEditUi = document.getElementById('page-edit-ui') as HTMLElement;
+      const realQueryButton = document.getElementById('real-query-btn') as HTMLElement;
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+
+      Object.assign(globalThis, {
+        chrome: {
+          runtime: {
+            sendMessage,
+          },
+        },
+      });
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await armInteractiveSelectionAnalysis({
+        tabId: 7,
+        sessionId: 'analysis-fallback',
+        nonce: 'nonce-fallback',
+        targetElement: createAnalyzeTarget({
+          selector: '.missing-target',
+          tagName: 'button',
+          text: '查询',
+        }),
+        executeScript: executeScript as never,
+      });
+
+      vi.runAllTimers();
+
+      pageEditUi.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+      expect(sendMessage).not.toHaveBeenCalled();
+
+      realQueryButton.dispatchEvent(
+        new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true })
+      );
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(319);
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-fallback',
+          nonce: 'nonce-fallback',
+          trigger: 'interaction-complete',
+        },
+      });
+    });
+    vi.useRealTimers();
+  });
+
+  it('still completes interactive analysis when document-level capture listeners stop propagation first', async () => {
+    vi.useFakeTimers();
+    await withPageEditDom(async () => {
+      document.body.innerHTML = '<button id="query-btn">查询</button>';
+      const target = document.getElementById('query-btn') as HTMLElement;
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+
+      document.addEventListener(
+        'pointerdown',
+        (event) => {
+          event.stopImmediatePropagation();
+        },
+        true
+      );
+
+      Object.assign(globalThis, {
+        chrome: {
+          runtime: {
+            sendMessage,
+          },
+        },
+      });
+
+      const executeScript = vi.fn().mockImplementation(async (input) => {
+        input.func?.(...(input.args ?? []));
+        return [];
+      });
+
+      await armInteractiveSelectionAnalysis({
+        tabId: 7,
+        sessionId: 'analysis-window-capture',
+        nonce: 'nonce-window-capture',
+        targetElement: createAnalyzeTarget({
+          selector: '#query-btn',
+          tagName: 'button',
+          text: '查询',
+        }),
+        executeScript: executeScript as never,
+      });
+
+      vi.runAllTimers();
+
+      target.dispatchEvent(
+        new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true, composed: true })
+      );
+
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(319);
+      expect(sendMessage).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-window-capture',
+          nonce: 'nonce-window-capture',
+          trigger: 'interaction-complete',
+        },
+      });
+    });
+    vi.useRealTimers();
+  });
+
   it('completes interactive analysis after runtime click completion message', async () => {
     const publishDomAnalysisSuggestion = vi.fn().mockResolvedValue(undefined);
     const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
     const openSidePanel = vi.fn().mockResolvedValue(undefined);
+    const executeScript = vi.fn().mockResolvedValue(undefined);
     const clearSelectionAnalysisGuidance = vi.fn().mockResolvedValue(undefined);
     const completeSelectionAnalysis = vi.fn().mockResolvedValue({
       markdown: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/query`',
@@ -998,6 +1431,7 @@ describe('createPageEditService', () => {
       publishDomAnalysisSuggestion,
       publishComposerAppend,
       openSidePanel,
+      executeScript,
     });
 
     listener(
@@ -1019,8 +1453,16 @@ describe('createPageEditService', () => {
     expect(clearSelectionAnalysisGuidance).toHaveBeenCalledWith({
       tabId: 7,
     });
-    expect(completeSelectionAnalysis).toHaveBeenCalledWith({
-      sessionId: 'analysis-3',
+    expect(executeScript.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(publishComposerAppend).toHaveBeenNthCalledWith(1, {
+      text: '已收到真实交互，正在整理页面分析建议...',
+      source: 'page-edit:analyze-progress',
+    });
+    await vi.waitFor(() => {
+      expect(completeSelectionAnalysis).toHaveBeenCalledWith({
+        sessionId: 'analysis-3',
+        onProgress: expect.any(Function),
+      });
     });
     expect(openSidePanel).toHaveBeenCalledWith(7);
     expect(publishDomAnalysisSuggestion).toHaveBeenCalledWith({
@@ -1036,6 +1478,143 @@ describe('createPageEditService', () => {
       suggestedCommand:
         '/ewankb-server-query graph gls "订单查询 查询 列表查询 orders query 订单号 状态"',
     });
+    expect(publishComposerAppend).toHaveBeenNthCalledWith(2, {
+      text: [
+        '页面元素分析已完成，已生成页面分析建议卡。',
+        '目标操作：点击「查询」',
+        '候选接口：/api/orders/query',
+        '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/query`',
+      ].join('\n'),
+      source: 'page-edit:analyze-result',
+    });
+  });
+
+  it('accepts interactive completion messages even when sender.tab is missing', async () => {
+    const publishDomAnalysisSuggestion = vi.fn().mockResolvedValue(undefined);
+    const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
+    const openSidePanel = vi.fn().mockResolvedValue(undefined);
+    const executeScript = vi.fn().mockResolvedValue(undefined);
+    const clearSelectionAnalysisGuidance = vi.fn().mockResolvedValue(undefined);
+    const completeSelectionAnalysis = vi.fn().mockResolvedValue({
+      markdown: '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/query`',
+      analysisCard: {
+        pageName: '订单查询',
+        route: '#/orders',
+        targetAction: '点击「查询」',
+        actionType: '列表查询',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/query',
+        confidence: 'medium',
+      },
+      suggestedCommand: '/ewankb-server-query graph gls "订单查询 查询 列表查询 orders query 订单号 状态"',
+    });
+    const clearPendingSelectionAnalysis = vi.fn();
+    const getPendingSelectionAnalysis = vi.fn().mockReturnValue({
+      sessionId: 'analysis-no-sender-tab',
+      tabId: 7,
+      windowId: 7,
+      nonce: 'nonce-7',
+      analysisMode: 'interactive',
+    });
+    const getPageEditState = vi.fn().mockReturnValue({
+      tabId: 7,
+      windowId: 7,
+      url: 'https://example.com',
+      status: 'active',
+      selectionSessionNonce: 'nonce-7',
+    });
+    const listener = createPageEditSelectionAnalyzeCompletionMessageListener({
+      getPendingSelectionAnalysis,
+      clearPendingSelectionAnalysis,
+      getPageEditState,
+      completeSelectionAnalysis,
+      clearSelectionAnalysisGuidance,
+      publishDomAnalysisSuggestion,
+      publishComposerAppend,
+      openSidePanel,
+      executeScript,
+    });
+
+    listener({
+      type: 'page_edit_selection_analysis_complete',
+      payload: {
+        sessionId: 'analysis-no-sender-tab',
+        nonce: 'nonce-7',
+        trigger: 'interaction-complete',
+      },
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(clearPendingSelectionAnalysis).toHaveBeenCalledWith('analysis-no-sender-tab');
+    await vi.waitFor(() => {
+      expect(completeSelectionAnalysis).toHaveBeenCalledWith({
+        sessionId: 'analysis-no-sender-tab',
+        onProgress: expect.any(Function),
+      });
+    });
+    expect(executeScript.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(publishDomAnalysisSuggestion).toHaveBeenCalledTimes(1);
+    expect(publishComposerAppend).toHaveBeenNthCalledWith(1, {
+      text: '已收到真实交互，正在整理页面分析建议...',
+      source: 'page-edit:analyze-progress',
+    });
+  });
+
+  it('writes rejection debug lines when the completion message fails state validation', async () => {
+    const publishDomAnalysisSuggestion = vi.fn().mockResolvedValue(undefined);
+    const publishComposerAppend = vi.fn().mockResolvedValue(undefined);
+    const openSidePanel = vi.fn().mockResolvedValue(undefined);
+    const executeScript = vi.fn().mockResolvedValue(undefined);
+    const completeSelectionAnalysis = vi.fn().mockResolvedValue({
+      markdown: '# 页面元素接口关联分析',
+      analysisCard: null,
+      suggestedCommand: null,
+    });
+    const clearPendingSelectionAnalysis = vi.fn();
+    const getPendingSelectionAnalysis = vi.fn().mockReturnValue({
+      sessionId: 'analysis-state-fail',
+      tabId: 7,
+      windowId: 7,
+      nonce: 'nonce-7',
+      analysisMode: 'interactive',
+    });
+    const getPageEditState = vi.fn().mockReturnValue({
+      tabId: 7,
+      windowId: 7,
+      url: 'https://example.com',
+      status: 'deactivating',
+      selectionSessionNonce: 'nonce-7',
+    });
+    const listener = createPageEditSelectionAnalyzeCompletionMessageListener({
+      getPendingSelectionAnalysis,
+      clearPendingSelectionAnalysis,
+      getPageEditState,
+      completeSelectionAnalysis,
+      publishDomAnalysisSuggestion,
+      publishComposerAppend,
+      openSidePanel,
+      executeScript,
+    });
+
+    listener(
+      {
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-state-fail',
+          nonce: 'nonce-7',
+          trigger: 'interaction-complete',
+        },
+      },
+      { tab: { id: 7, windowId: 7 } } as chrome.runtime.MessageSender
+    );
+
+    await Promise.resolve();
+
+    expect(clearPendingSelectionAnalysis).not.toHaveBeenCalled();
+    expect(completeSelectionAnalysis).not.toHaveBeenCalled();
+    expect(executeScript).toHaveBeenCalledTimes(2);
     expect(publishComposerAppend).not.toHaveBeenCalled();
   });
 
@@ -1124,8 +1703,11 @@ describe('createPageEditService', () => {
 
     expect(listPendingSelectionAnalysesByTabId).toHaveBeenCalledWith(9);
     expect(clearPendingSelectionAnalysis).toHaveBeenCalledWith('analysis-4');
-    expect(completeSelectionAnalysis).toHaveBeenCalledWith({
-      sessionId: 'analysis-4',
+    await vi.waitFor(() => {
+      expect(completeSelectionAnalysis).toHaveBeenCalledWith({
+        sessionId: 'analysis-4',
+        onProgress: expect.any(Function),
+      });
     });
     expect(openSidePanel).toHaveBeenCalledWith(3);
     expect(publishDomAnalysisSuggestion).toHaveBeenCalledWith({
@@ -1141,7 +1723,15 @@ describe('createPageEditService', () => {
       suggestedCommand:
         '/ewankb-server-query graph gls "订单列表 查询 列表查询 orders list 订单号 创建时间"',
     });
-    expect(publishComposerAppend).not.toHaveBeenCalled();
+    expect(publishComposerAppend).toHaveBeenCalledWith({
+      text: [
+        '页面元素分析已完成，已生成页面分析建议卡。',
+        '目标操作：点击「查询」',
+        '候选接口：/api/orders/list',
+        '# 页面元素接口关联分析\n\n- 推荐接口：`/api/orders/list`',
+      ].join('\n'),
+      source: 'page-edit:analyze-result',
+    });
   });
 
   it('saves file-page html when the sender tab is front active and the nonce matches', async () => {

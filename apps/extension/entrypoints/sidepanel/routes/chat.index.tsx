@@ -104,6 +104,7 @@ import {
   retainAttachmentPreviewUrls,
 } from '../lib/agent-v2/attachment-preview-lifecycle';
 import {
+  clearAgentV2DomAnalysisSuggestion,
   type AgentV2DomAnalysisSuggestion,
   type AgentV2ProjectSelection,
   type AgentV2SessionSelection,
@@ -5041,6 +5042,9 @@ export function Chat() {
                   card={domAnalysisSuggestion.card}
                   suggestedCommand={domAnalysisSuggestion.suggestedCommand}
                   onInsertCommand={() => {
+                    void clearAgentV2DomAnalysisSuggestion().catch((error) => {
+                      console.debug('[chat] failed to clear dom analysis suggestion:', error);
+                    });
                     replaceInput(
                       buildDomAnalysisSuggestionInsertText({
                         card: domAnalysisSuggestion.card,
@@ -5051,6 +5055,9 @@ export function Chat() {
                     setDismissedDomAnalysisSuggestionCreatedAt(null);
                   }}
                   onClose={() => {
+                    void clearAgentV2DomAnalysisSuggestion().catch((error) => {
+                      console.debug('[chat] failed to clear dom analysis suggestion:', error);
+                    });
                     setDismissedDomAnalysisSuggestionCreatedAt(domAnalysisSuggestion.createdAt);
                   }}
                 />

@@ -31,6 +31,17 @@ type PageEditSelectionAnalyzeMessage = {
   payload: PageEditSelectionAnalyzePayload;
 };
 
+type PageEditSelectionAnalysisCompletePayload = {
+  sessionId: string;
+  nonce: string;
+  trigger: 'interaction-complete';
+};
+
+type PageEditSelectionAnalysisCompleteMessage = {
+  type: 'page_edit_selection_analysis_complete';
+  payload: PageEditSelectionAnalysisCompletePayload;
+};
+
 type PageEditPageCapturePayload = {
   nonce: string;
 };
@@ -109,6 +120,27 @@ export function createPageEditSelectionBridge(sendRuntimeMessage: (message: unkn
         payload: {
           nonce: analyzePayload.nonce,
           target: analyzePayload.target,
+        },
+      });
+      return;
+    }
+
+    const analysisCompletePayload = (
+      event.data as PageEditSelectionAnalysisCompleteMessage | undefined
+    )?.payload;
+    if (
+      event.data?.type === 'page_edit_selection_analysis_complete' &&
+      analysisCompletePayload &&
+      typeof analysisCompletePayload.sessionId === 'string' &&
+      typeof analysisCompletePayload.nonce === 'string' &&
+      analysisCompletePayload.trigger === 'interaction-complete'
+    ) {
+      sendRuntimeMessage({
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: analysisCompletePayload.sessionId,
+          nonce: analysisCompletePayload.nonce,
+          trigger: analysisCompletePayload.trigger,
         },
       });
       return;

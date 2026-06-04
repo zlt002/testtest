@@ -11,6 +11,7 @@ import { buildDomAnalysisEvidenceForTarget } from './page-picker';
 
 export type PageEditElementAnalysisMode = 'interactive' | 'display';
 export type PageEditElementAnalysisStatus = 'waiting-interaction' | 'waiting-refresh';
+const NETWORK_EVIDENCE_RETRY_DELAY_MS = 1_500;
 
 type StartSelectionAnalysisInput = {
   tabId: number;
@@ -19,6 +20,7 @@ type StartSelectionAnalysisInput = {
 
 type CompleteSelectionAnalysisInput = {
   sessionId: string;
+  onProgress?: (message: string) => void | Promise<void>;
 };
 
 type AnalyzeDomInput = {
@@ -55,6 +57,12 @@ async function defaultAnalyzeDom(
   }
 
   return response.json();
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
 }
 
 function hasInteractiveRole(targetElement: PickedElementContext): boolean {
@@ -215,23 +223,76 @@ export function createPageEditElementAnalysisService(
       }
 
       try {
-        const [discovery, pageEvidence] = await Promise.all([
-          ensureCompanionReadyImpl(),
+        await input.onProgress?.('开始收集页面分析证据');
+        const buildEvidence = (capturedAt?: number) =>
           buildEvidenceForTarget({
             sessionId: session.sessionId,
             tabId: session.tabId,
             targetElement: session.targetElement,
             mode: session.mode,
             startedAt: session.startedAt,
-          }),
+            capturedAt,
+          });
+        const [discovery, initialPageEvidence] = await Promise.all([
+          ensureCompanionReadyImpl(),
+          buildEvidence(),
         ]);
+        let pageEvidence = initialPageEvidence;
+        await input.onProgress?.('页面分析证据收集完成');
+        const networkEvidenceCount = Array.isArray(pageEvidence.networkEvidence)
+          ? pageEvidence.networkEvidence.length
+          : 0;
+        const apiCandidates = Array.isArray(pageEvidence.pageContext?.apiCandidates)
+          ? pageEvidence.pageContext.apiCandidates
+          : [];
+        await input.onProgress?.(
+          [
+            '页面分析证据摘要',
+            `network=${networkEvidenceCount}`,
+            `apiCandidates=${apiCandidates.length}`,
+            apiCandidates.length > 0
+              ? `topApis=${apiCandidates.slice(0, 3).join(', ')}`
+              : 'topApis=none',
+          ].join(' | ')
+        );
 
+        if (
+          session.mode === 'selection-interactive' &&
+          networkEvidenceCount === 0 &&
+          apiCandidates.length === 0
+        ) {
+          await input.onProgress?.('未捕获到候选请求，等待页面异步请求后重试');
+          await delay(NETWORK_EVIDENCE_RETRY_DELAY_MS);
+          pageEvidence = await buildEvidence(now());
+          await input.onProgress?.('页面分析证据重试收集完成');
+          const retriedNetworkEvidenceCount = Array.isArray(pageEvidence.networkEvidence)
+            ? pageEvidence.networkEvidence.length
+            : 0;
+          const retriedApiCandidates = Array.isArray(pageEvidence.pageContext?.apiCandidates)
+            ? pageEvidence.pageContext.apiCandidates
+            : [];
+          await input.onProgress?.(
+            [
+              '页面分析证据重试摘要',
+              `network=${retriedNetworkEvidenceCount}`,
+              `apiCandidates=${retriedApiCandidates.length}`,
+              retriedApiCandidates.length > 0
+                ? `topApis=${retriedApiCandidates.slice(0, 3).join(', ')}`
+                : 'topApis=none',
+            ].join(' | ')
+          );
+        }
+
+        await input.onProgress?.('开始请求页面分析服务');
         const result = await analyzeDom({
           agentBaseUrl: discovery.agentBaseUrl,
           input: {
             pageEvidence,
           },
         });
+        await input.onProgress?.(
+          `页面分析服务已返回 | hasCard=${result.analysisCard ? 'yes' : 'no'}`
+        );
 
         return {
           markdown: result.chatSummary.markdown,

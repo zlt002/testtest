@@ -387,6 +387,48 @@ describe('beginPageElementPick', () => {
     });
   });
 
+  it('buildDomAnalysisEvidenceForTarget 在 iframe 目标下会自动开启 includeFrames', async () => {
+    queryTabs.mockResolvedValue([]);
+    const getTab = vi.fn().mockResolvedValue({
+      id: 9,
+      windowId: 3,
+      url: 'https://example.com',
+      title: 'Example',
+    });
+    const pageEvidence = { captureSessionMeta: { sessionId: 'target-frame-session' } } as PageEvidence;
+    const buildEvidence = vi.fn().mockResolvedValue(pageEvidence);
+    vi.stubGlobal('chrome', {
+      tabs: {
+        query: queryTabs,
+        get: getTab,
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+
+    await expect(
+      buildDomAnalysisEvidenceForTarget({
+        tabId: 9,
+        sessionId: 'target-frame-session',
+        targetElement: {
+          ...sampleResult,
+          framePath: [{ selector: '#micro-app', id: 'micro-app', tagName: 'iframe' }],
+        },
+        mode: 'interactive',
+        startedAt: 1_000,
+        capturedAt: 1_300,
+        buildEvidence,
+      })
+    ).resolves.toBe(pageEvidence);
+
+    expect(buildEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({
+        includeFrames: true,
+      })
+    );
+  });
+
   it('exposes the picker through the background router chain', async () => {
     queryTabs.mockResolvedValue([{ id: 9, url: 'https://example.com', active: true, windowId: 1 }]);
     executeScript.mockResolvedValue([{ result: sampleResult }]);

@@ -190,6 +190,7 @@ describe('createPageEditElementAnalysisService', () => {
         url: 'https://example.com/dashboard',
         pathname: '/dashboard',
         hashRoute: '#/orders',
+        apiCandidates: ['/api/orders/query'],
       },
       targetElement: {
         tagName: 'button',
@@ -218,6 +219,7 @@ describe('createPageEditElementAnalysisService', () => {
       agentBaseUrl: 'http://127.0.0.1:8792',
       agentApiBaseUrl: 'http://127.0.0.1:8792/api/agent-v2',
     });
+    const onProgress = vi.fn().mockResolvedValue(undefined);
     const service = createPageEditElementAnalysisService({
       now: () => 10_000,
       sessionStore,
@@ -240,6 +242,7 @@ describe('createPageEditElementAnalysisService', () => {
     await expect(
       service.completeSelectionAnalysis({
         sessionId: 'selection-complete-session',
+        onProgress,
       })
     ).resolves.toEqual({
       markdown: '# DOM 分析摘要\n\n- 推荐接口：`/api/orders/query`',
@@ -257,6 +260,14 @@ describe('createPageEditElementAnalysisService', () => {
     });
 
     expect(ensureCompanionReady).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenNthCalledWith(1, '开始收集页面分析证据');
+    expect(onProgress).toHaveBeenNthCalledWith(2, '页面分析证据收集完成');
+    expect(onProgress).toHaveBeenNthCalledWith(
+      3,
+      '页面分析证据摘要 | network=0 | apiCandidates=1 | topApis=/api/orders/query'
+    );
+    expect(onProgress).toHaveBeenNthCalledWith(4, '开始请求页面分析服务');
+    expect(onProgress).toHaveBeenNthCalledWith(5, '页面分析服务已返回 | hasCard=yes');
     expect(buildEvidenceForTarget).toHaveBeenCalledWith({
       sessionId: 'selection-complete-session',
       tabId: 52,
@@ -273,6 +284,7 @@ describe('createPageEditElementAnalysisService', () => {
             url: 'https://example.com/dashboard',
             pathname: '/dashboard',
             hashRoute: '#/orders',
+            apiCandidates: ['/api/orders/query'],
           },
           targetElement: {
             tagName: 'button',
@@ -286,6 +298,134 @@ describe('createPageEditElementAnalysisService', () => {
     });
     expect(stopCaptureForTab).toHaveBeenCalledWith(52);
     expect(sessionStore.getSession('selection-complete-session')).toBeUndefined();
+  });
+
+  it('retries evidence collection when the first interactive pass has no network candidates', async () => {
+    vi.useFakeTimers();
+    const sessionStore = createDomAnalysisSessionStore({
+      createId: () => 'selection-retry-session',
+      now: () => 20_000,
+    });
+    const retryTarget = {
+      ...buttonTarget,
+      text: '审核',
+      selector: 'button.audit',
+      xpath: '//button[@class="audit"]',
+      outerHTMLSnippet: '<button class="audit">审核</button>',
+    };
+    const buildEvidenceForTarget = vi
+      .fn()
+      .mockResolvedValueOnce({
+        pageContext: {
+          title: '订单中心',
+          url: 'https://example.com/orders',
+          pathname: '/orders',
+          hashRoute: '#/list',
+          apiCandidates: [],
+        },
+        targetElement: {
+          tagName: 'button',
+          text: '审核',
+          selector: 'button.audit',
+          xpath: '//button[@class="audit"]',
+        },
+        networkEvidence: [],
+      })
+      .mockResolvedValueOnce({
+        pageContext: {
+          title: '订单中心',
+          url: 'https://example.com/orders',
+          pathname: '/orders',
+          hashRoute: '#/list',
+          apiCandidates: ['/api/orders/audit'],
+        },
+        targetElement: {
+          tagName: 'button',
+          text: '审核',
+          selector: 'button.audit',
+          xpath: '//button[@class="audit"]',
+        },
+        networkEvidence: [
+          {
+            requestId: 'retry-1',
+            url: 'https://example.com/api/orders/audit',
+            method: 'POST',
+            status: 200,
+            resourceType: 'XHR',
+            startedAt: 20_100,
+            finishedAt: 20_250,
+            initiatorHint: 'script',
+            responsePreview: null,
+          },
+        ],
+      });
+    const analyzeDom = vi.fn().mockResolvedValue({
+      analysisCard: {
+        pageName: '订单中心',
+        route: '#/list',
+        targetAction: '点击「审核」',
+        actionType: '审核',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/audit',
+        confidence: 'medium',
+      },
+      suggestedCommand: '/ewankb-server-query graph el "订单中心 审核"',
+      chatSummary: {
+        markdown: '# DOM 分析摘要\n\n- 推荐接口：`/api/orders/audit`',
+      },
+    });
+    const ensureCompanionReady = vi.fn().mockResolvedValue({
+      agentBaseUrl: 'http://127.0.0.1:8792',
+      agentApiBaseUrl: 'http://127.0.0.1:8792/api/agent-v2',
+    });
+    const onProgress = vi.fn().mockResolvedValue(undefined);
+    const service = createPageEditElementAnalysisService({
+      now: () => 20_000,
+      sessionStore,
+      cdpService: {
+        startCaptureForTab,
+        stopCaptureForTab,
+        getNetworkEvidenceForTab: vi.fn(),
+        clearTab: vi.fn(),
+      },
+      buildEvidenceForTarget,
+      analyzeDom,
+      ensureCompanionReady,
+    });
+
+    await service.startSelectionAnalysis({
+      tabId: 88,
+      targetElement: retryTarget,
+    });
+
+    const resultPromise = service.completeSelectionAnalysis({
+      sessionId: 'selection-retry-session',
+      onProgress,
+    });
+
+    await vi.advanceTimersByTimeAsync(1_600);
+
+    await expect(resultPromise).resolves.toEqual({
+      markdown: '# DOM 分析摘要\n\n- 推荐接口：`/api/orders/audit`',
+      analysisCard: {
+        pageName: '订单中心',
+        route: '#/list',
+        targetAction: '点击「审核」',
+        actionType: '审核',
+        tableHeaders: ['订单号', '状态'],
+        recommendedApi: '/api/orders/audit',
+        confidence: 'medium',
+      },
+      suggestedCommand: '/ewankb-server-query graph el "订单中心 审核"',
+    });
+
+    expect(buildEvidenceForTarget).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenCalledWith('未捕获到候选请求，等待页面异步请求后重试');
+    expect(onProgress).toHaveBeenCalledWith('页面分析证据重试收集完成');
+    expect(onProgress).toHaveBeenCalledWith(
+      '页面分析证据重试摘要 | network=1 | apiCandidates=1 | topApis=/api/orders/audit'
+    );
+    vi.useRealTimers();
   });
 });
 

@@ -46,6 +46,13 @@ const IGNORED_TABLE_TERMS = new Set([
   '物流订单号，多条运号隔开',
   '快递单号，多条运号隔开',
 ]);
+const IGNORED_SUPPLEMENTAL_TERMS = new Set([
+  '搜索',
+  '查询',
+  '列表查询',
+  '首页',
+  'GLS',
+]);
 const TABLE_HEADER_POSITIVE_KEYWORDS = [
   '单号',
   '简称',
@@ -62,6 +69,8 @@ const TABLE_HEADER_POSITIVE_KEYWORDS = [
   '物流',
   '快递',
 ];
+const MAX_BUSINESS_OBJECT_TERMS = 8;
+const MIN_PRIMARY_TABLE_HEADERS = 3;
 
 function dedupe(items: string[]): string[] {
   return items.filter((item, index) => item.length > 0 && items.indexOf(item) === index);
@@ -82,6 +91,30 @@ function scoreTableHeader(term: string): number {
     score += 2;
   }
   return score;
+}
+
+function isLegacyBusinessTerm(term: string): boolean {
+  if (term.length < 2) {
+    return false;
+  }
+
+  if (IGNORED_SUPPLEMENTAL_TERMS.has(term)) {
+    return false;
+  }
+
+  if (/监控|概览|首页/.test(term)) {
+    return false;
+  }
+
+  if (/隔开|请输入|请选择|按钮|点击|查询条件|筛选条件/.test(term)) {
+    return false;
+  }
+
+  if (/^\/api/i.test(term) || /\.chunk\.|\.js$|\.map$/i.test(term)) {
+    return false;
+  }
+
+  return true;
 }
 
 function formatRoute(route: string | null): string | null {
@@ -110,18 +143,27 @@ export function resolveActionType(elementText: string | null): string | null {
 }
 
 export function extractTableHeaders(pageTextSummary: string[]): string[] {
-  return dedupe(
-    pageTextSummary
-      .map((term) => term.trim())
+  const normalizedTerms = pageTextSummary.map((term) => term.trim()).filter(Boolean);
+  const primaryTerms = dedupe(
+    normalizedTerms
       .filter(
         (term) =>
           term.length >= 2 &&
+          !/^\/api/i.test(term) &&
+          !/\.chunk\.|\.js$|\.map$/i.test(term) &&
           !IGNORED_TABLE_TERMS.has(term) &&
           !/监控|概览|首页/.test(term) &&
           scoreTableHeader(term) > 0
       )
       .sort((left, right) => scoreTableHeader(right) - scoreTableHeader(left))
-  ).slice(0, 5);
+  );
+
+  if (primaryTerms.length >= MIN_PRIMARY_TABLE_HEADERS) {
+    return primaryTerms.slice(0, 5);
+  }
+
+  const supplementalTerms = dedupe(normalizedTerms.filter((term) => isLegacyBusinessTerm(term)));
+  return dedupe([...primaryTerms, ...supplementalTerms]).slice(0, MAX_BUSINESS_OBJECT_TERMS);
 }
 
 export function resolveCardConfidence(input: {

@@ -14,6 +14,11 @@ export type PickedElementContext = {
     id: string | null;
     classList: string[];
   }>;
+  framePath?: Array<{
+    selector: string | null;
+    id: string | null;
+    tagName: string;
+  }>;
   siblings: {
     previous: string | null;
     next: string | null;

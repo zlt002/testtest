@@ -68,10 +68,12 @@ vi.mock('../lib/agent-v2/client', () => ({
 
 vi.mock('../lib/agent-v2/session-selection', () => ({
   AGENT_V2_SESSION_SELECTION_STORAGE_KEY: 'agent-v2-selection',
+  clearAgentV2DomAnalysisSuggestion: vi.fn(async () => undefined),
   clearAgentV2WorkspaceIntent: vi.fn(async () => undefined),
   publishAgentV2ProjectSelection: vi.fn(async () => undefined),
   publishAgentV2SessionSelection: vi.fn(async () => undefined),
   readAgentV2CurrentSession: vi.fn(async () => null),
+  readAgentV2DomAnalysisSuggestion: vi.fn(async () => null),
   readAgentV2ProjectSelection: vi.fn(async () => null),
   readAgentV2WorkspaceIntent: vi.fn(async () => null),
 }));

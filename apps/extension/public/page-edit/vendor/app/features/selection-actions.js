@@ -336,6 +336,28 @@ function collectAncestors(element) {
   return ancestors;
 }
 
+function collectFramePath(element) {
+  const frames = [];
+  let currentWindow = element.ownerDocument?.defaultView ?? null;
+
+  while (currentWindow && currentWindow !== window) {
+    const frameElement = currentWindow.frameElement;
+    if (!isDomElement(frameElement)) {
+      break;
+    }
+
+    frames.unshift({
+      selector: buildCssSelector(frameElement) || null,
+      id: frameElement.id || null,
+      tagName: frameElement.tagName.toLowerCase(),
+    });
+
+    currentWindow = frameElement.ownerDocument?.defaultView ?? null;
+  }
+
+  return frames;
+}
+
 export function buildPickedElementCaptureContext(element) {
   const rect = element.getBoundingClientRect();
 
@@ -356,6 +378,7 @@ export function buildPickedElementCaptureContext(element) {
     },
     outerHTMLSnippet: element.outerHTML.slice(0, MAX_HTML_LENGTH),
     ancestors: collectAncestors(element),
+    framePath: collectFramePath(element),
     siblings: {
       previous: normalizePickedText(element.previousElementSibling?.textContent),
       next: normalizePickedText(element.nextElementSibling?.textContent),

@@ -284,6 +284,39 @@ describe('createPageEditSelectionBridge', () => {
     expect(sendRuntimeMessage).not.toHaveBeenCalled();
   });
 
+  it('forwards same-origin selection analysis completion messages to runtime', () => {
+    const sendRuntimeMessage = vi.fn();
+    const pageWindow = {
+      location: {
+        origin: 'https://example.com',
+      },
+    } as unknown as Window & typeof globalThis;
+    vi.stubGlobal('window', pageWindow);
+    const bridge = createPageEditSelectionBridge(sendRuntimeMessage);
+
+    bridge({
+      source: pageWindow,
+      origin: pageWindow.location.origin,
+      data: {
+        type: 'page_edit_selection_analysis_complete',
+        payload: {
+          sessionId: 'analysis-1',
+          nonce: 'nonce-1',
+          trigger: 'interaction-complete',
+        },
+      },
+    } as MessageEvent);
+
+    expect(sendRuntimeMessage).toHaveBeenCalledWith({
+      type: 'page_edit_selection_analysis_complete',
+      payload: {
+        sessionId: 'analysis-1',
+        nonce: 'nonce-1',
+        trigger: 'interaction-complete',
+      },
+    });
+  });
+
   it('ignores messages from a different source window', () => {
     const sendRuntimeMessage = vi.fn();
     const pageWindow = {

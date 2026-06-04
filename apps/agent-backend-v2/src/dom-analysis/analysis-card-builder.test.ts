@@ -69,3 +69,32 @@ test('extractTableHeaders prefers table-like business columns over nav and form 
     ['供应商简称', '物流订单号', '快递单号', '快递公司', '渠道名称']
   );
 });
+
+test('extractTableHeaders falls back to richer business terms when strong table headers are too sparse', () => {
+  assert.deepEqual(
+    extractTableHeaders([
+      'GLS',
+      '委托中心',
+      '小包订单管理',
+      '委托单管理',
+      '快递管理',
+      '委托单审批管理',
+      '快递询价',
+      'cargowise',
+      '订单报价管理',
+      '加价模型',
+      '搜索',
+      '/api-miloms/order/small/bag/header/v1/page',
+    ]),
+    [
+      'cargowise',
+      '委托中心',
+      '小包订单管理',
+      '委托单管理',
+      '快递管理',
+      '委托单审批管理',
+      '快递询价',
+      '订单报价管理',
+    ]
+  );
+});

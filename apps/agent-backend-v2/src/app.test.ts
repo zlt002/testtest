@@ -3165,8 +3165,14 @@ test('file entry routes delegate to file service', async () => {
   try {
     assert.equal(
       (
+        await fetch(`${url}/api/files/tree?projectPath=${encodeURIComponent('C:\\demo')}`)
+      ).status,
+      200
+    );
+    assert.equal(
+      (
         await fetch(
-          `${url}/api/files/tree?projectPath=${encodeURIComponent('C:\\demo')}&maxDepth=4`
+          `${url}/api/files/tree?projectPath=${encodeURIComponent('C:\\demo')}&maxDepth=4&includeMetadata=true`
         )
       ).status,
       200
@@ -3220,6 +3226,13 @@ test('file entry routes delegate to file service', async () => {
       200
     );
     assert.deepEqual(calls, [
+      {
+        action: 'tree',
+        projectPath: 'C:\\demo',
+        dirPath: undefined,
+        maxDepth: 0,
+        includeMetadata: false,
+      },
       {
         action: 'tree',
         projectPath: 'C:\\demo',

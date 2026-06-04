@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { XIcon } from 'lucide-react';
 import { Badge } from '@/entrypoints/sidepanel/components/ui/badge';
 import { Button } from '@/entrypoints/sidepanel/components/ui/button';
@@ -20,14 +21,40 @@ export function DomAnalysisSuggestionCard({
   onInsertCommand: () => void;
   onClose: () => void;
 }) {
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const [showBottomFade, setShowBottomFade] = useState(false);
+
+  useEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) {
+      return;
+    }
+
+    const updateFadeVisibility = () => {
+      const remainingScroll =
+        scrollArea.scrollHeight - scrollArea.clientHeight - scrollArea.scrollTop;
+      setShowBottomFade(remainingScroll > 6);
+    };
+
+    updateFadeVisibility();
+    scrollArea.addEventListener('scroll', updateFadeVisibility, { passive: true });
+    window.addEventListener('resize', updateFadeVisibility);
+
+    return () => {
+      scrollArea.removeEventListener('scroll', updateFadeVisibility);
+      window.removeEventListener('resize', updateFadeVisibility);
+    };
+  }, [card, suggestedCommand]);
+
   return (
     <div
+      ref={scrollAreaRef}
       data-testid="dom-analysis-suggestion-card"
-      className="rounded-lg border bg-popover px-3 py-3 text-sm shadow-lg"
+      className="relative flex max-h-full min-h-0 flex-1 flex-col overflow-y-auto rounded-lg border bg-popover px-3 py-3 text-sm shadow-lg overscroll-contain"
     >
       <div
         data-testid="dom-analysis-suggestion-header"
-        className="flex items-start justify-between gap-3"
+        className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 bg-popover pb-3"
       >
         <div className="flex min-w-0 items-center gap-2">
           <div className="text-sm font-semibold text-foreground">页面分析建议</div>
@@ -62,7 +89,7 @@ export function DomAnalysisSuggestionCard({
         </div>
       </div>
 
-      <div className="mt-3 space-y-2 text-xs leading-5">
+      <div className="space-y-2 pr-1 text-xs leading-5">
         {card.pageName ? (
           <div>
             <span className="text-muted-foreground">页面：</span>
@@ -108,6 +135,13 @@ export function DomAnalysisSuggestionCard({
             {suggestedCommand}
           </code>
         </div>
+      ) : null}
+
+      {showBottomFade ? (
+        <div
+          data-testid="dom-analysis-suggestion-bottom-fade"
+          className="pointer-events-none sticky bottom-0 mt-auto h-10 shrink-0 bg-gradient-to-t from-popover via-popover/90 to-transparent"
+        />
       ) : null}
     </div>
   );
